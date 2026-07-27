@@ -1,20 +1,22 @@
 # Utsusemi
 
-Apple Silicon Mac 上で動く Ephemeral セルフホスト GitHub Actions ランナー。1 ジョブ完了ごとに Tart VM を破棄します。
+Ephemeral self-hosted GitHub Actions runners for Apple Silicon Macs. Utsusemi
+discards the Tart VM after each job completes.
 
-## 要件
+## Requirements
 
-- Apple Silicon Mac（macOS 15+）
-- GitHub Org または Repo への admin 権限
-- Fine-grained PAT（PAT 直結モード）
-- VM Provider に応じたホスト依存（例: `provider: tart` なら [Tart](https://tart.run/)）
+- Apple Silicon Mac running macOS 15 or later
+- Admin access to the target GitHub organization or repository
+- Fine-grained PAT when using direct PAT authentication
+- Host dependencies required by the selected VM provider, such as
+  [Tart](https://tart.run/) for `provider: tart`
 
-## 導入（PAT 直結 / Repo）
+## Installation with direct PAT authentication
 
 ```bash
 brew tap novr/taps
 brew install utsusemi
-brew install tart   # provider: tart の場合
+brew install tart   # Required when provider is tart
 
 sudo utsusemi configure --pat \
   --repo owner/repo \
@@ -24,7 +26,7 @@ utsusemi validate --config /etc/utsusemi/config.yaml
 brew services start utsusemi
 ```
 
-## Org ランナー
+## Organization runner
 
 ```bash
 utsusemi configure --pat \
@@ -33,24 +35,31 @@ utsusemi configure --pat \
   --output /etc/utsusemi/config.yaml
 ```
 
-## Public App 登録
+## Public App registration
 
 ```bash
 utsusemi register --broker https://broker.utsusemi.dev \
   --client-id Iv1.YOUR_APP_CLIENT_ID \
-  --repo owner/repo
+  --org my-org \
+  --runner-group-id 1
 brew services start utsusemi
 ```
 
-設定例は [examples/config.pat.yaml](examples/config.pat.yaml)。認証情報は Keychain のみに保存します。
+The Public App supports organization-level runners only. Repository-level
+runner management requires the GitHub App's `Administration: Read and write`
+repository permission, so use direct PAT authentication for repository
+runners.
 
-## 開発
+See [examples/config.pat.yaml](examples/config.pat.yaml) for an example
+configuration. Credentials are stored only in Keychain.
+
+## Development
 
 ```bash
 make test
 make build
 ```
 
-## ライセンス
+## License
 
 MIT

@@ -33,6 +33,10 @@ func newRegisterCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "register",
 		Short: "Register host with Public App broker",
+		Example: `  utsusemi register --broker https://broker.utsusemi.dev \
+    --client-id Iv1.YOUR_APP_CLIENT_ID \
+    --org my-org \
+    --runner-group-id 1`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if brokerURL == "" {
 				return fmt.Errorf("--broker is required")
