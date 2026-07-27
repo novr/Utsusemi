@@ -133,7 +133,7 @@ func TestBrokerRegistrarUnauthorizedSuggestsReregister(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
-	if !strings.Contains(err.Error(), "utsusemi register") {
+	if !strings.Contains(err.Error(), "utsusemi configure app") {
 		t.Fatalf("error=%v", err)
 	}
 }

@@ -22,7 +22,7 @@ const (
 	publicAppBrokerURL = "https://utsusemi-broker.novrd.workers.dev"
 )
 
-func newRegisterCmd() *cobra.Command {
+func newConfigureAppCmd() *cobra.Command {
 	var (
 		brokerURL   string
 		org         string
@@ -32,9 +32,9 @@ func newRegisterCmd() *cobra.Command {
 	)
 
 	cmd := &cobra.Command{
-		Use:     "register",
-		Short:   "Register host with Public App broker",
-		Example: `  utsusemi register --org my-org`,
+		Use:     "app",
+		Short:   "Configure with the Utsusemi GitHub App",
+		Example: `  utsusemi configure app --org my-org`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !strings.HasPrefix(brokerURL, "https://") &&
 				!strings.HasPrefix(brokerURL, "http://127.0.0.1") &&
@@ -83,7 +83,7 @@ func newRegisterCmd() *cobra.Command {
 				}
 				fmt.Printf("wrote config to %s\n", outputPath)
 			}
-			fmt.Println("registration complete; credential stored in keychain")
+			fmt.Println("configuration complete; credential stored in keychain")
 			return nil
 		},
 	}
@@ -185,9 +185,9 @@ func deviceFlow(ctx context.Context, clientID string) (string, error) {
 			interval += 5 * time.Second
 			continue
 		case "access_denied":
-			return "", fmt.Errorf("device authorization was denied or cancelled; run register again and approve the GitHub App")
+			return "", fmt.Errorf("device authorization was denied or cancelled; run `utsusemi configure app` again and approve the GitHub App")
 		case "expired_token":
-			return "", fmt.Errorf("device code expired; run register again")
+			return "", fmt.Errorf("device code expired; run `utsusemi configure app` again")
 		default:
 			return "", fmt.Errorf("device flow failed: %s", tokenResult.Error)
 		}
@@ -218,7 +218,7 @@ func exchangeCredential(ctx context.Context, brokerURL, userToken string, tgt ta
 		return "", target.Target{}, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return "", target.Target{}, fmt.Errorf("register exchange failed: %s", string(respBody))
+		return "", target.Target{}, fmt.Errorf("configure app exchange failed: %s", string(respBody))
 	}
 
 	var result struct {

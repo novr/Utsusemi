@@ -173,7 +173,7 @@ func (r *BrokerRegistrar) do(ctx context.Context, method, path, token string, bo
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		err := &apiError{StatusCode: resp.StatusCode, Message: strings.TrimSpace(string(respBody))}
 		if resp.StatusCode == http.StatusUnauthorized {
-			return fmt.Errorf("%w; run `utsusemi register` again", err)
+			return fmt.Errorf("%w; run `utsusemi configure app` again", err)
 		}
 		return err
 	}
