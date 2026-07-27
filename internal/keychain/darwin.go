@@ -28,9 +28,12 @@ func (DarwinStore) Get(service, account string) (string, error) {
 }
 
 func (DarwinStore) Set(service, account, secret string) (err error) {
+	if strings.TrimSpace(secret) == "" {
+		return fmt.Errorf("refusing to store empty credential")
+	}
 	_ = exec.Command("security", "delete-generic-password", "-s", service, "-a", account).Run()
-	cmd := exec.Command("security", "add-generic-password", "-U", "-s", service, "-a", account, "-w", "-")
-	cmd.Stdin = strings.NewReader(secret)
+	// security(1) takes the password as the -w argument; "-" is a literal password, not stdin.
+	cmd := exec.Command("security", "add-generic-password", "-U", "-s", service, "-a", account, "-w", secret)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

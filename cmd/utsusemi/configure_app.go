@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -55,7 +56,12 @@ func newConfigureAppCmd() *cobra.Command {
 				return err
 			}
 
-			userToken, err := deviceFlow(cmd.Context(), publicAppClientID)
+			userToken, err := deviceFlow(
+				cmd.Context(),
+				publicAppClientID,
+				cmd.InOrStdin(),
+				cmd.OutOrStdout(),
+			)
 			if err != nil {
 				return err
 			}
@@ -98,7 +104,7 @@ func newConfigureAppCmd() *cobra.Command {
 	return cmd
 }
 
-func deviceFlow(ctx context.Context, clientID string) (string, error) {
+func deviceFlow(ctx context.Context, clientID string, in io.Reader, out io.Writer) (string, error) {
 	form := url.Values{}
 	form.Set("client_id", clientID)
 	form.Set("scope", "")
@@ -135,13 +141,16 @@ func deviceFlow(ctx context.Context, clientID string) (string, error) {
 		return "", err
 	}
 
-	fmt.Printf("Visit %s and enter code: %s\n", start.VerificationURI, start.UserCode)
+	fmt.Fprintf(out, "GitHub device code: %s\n", start.UserCode)
+	fmt.Fprintf(out, "Verification URL: %s\n", start.VerificationURI)
 	openURL := start.VerificationURIComplete
 	if openURL == "" {
 		openURL = start.VerificationURI
 	}
 	if openURL != "" {
-		_ = openBrowser(openURL)
+		if err := promptAndOpenBrowser(in, out, openURL); err != nil {
+			return "", err
+		}
 	}
 	interval := time.Duration(start.Interval) * time.Second
 	deadline := time.Now().Add(time.Duration(start.ExpiresIn) * time.Second)
@@ -246,10 +255,24 @@ func exchangeCredential(ctx context.Context, brokerURL, userToken string, tgt ta
 }
 
 func openBrowser(rawURL string) error {
-	if !isTerminal(os.Stdout) {
+	return exec.Command("open", rawURL).Start()
+}
+
+func promptAndOpenBrowser(in io.Reader, out io.Writer, rawURL string) error {
+	inFile, inputIsFile := in.(*os.File)
+	outFile, outputIsFile := out.(*os.File)
+	if !inputIsFile || !outputIsFile || !isTerminal(inFile) || !isTerminal(outFile) {
 		return nil
 	}
-	return exec.Command("open", rawURL).Start()
+
+	fmt.Fprint(out, "Copy the code, then press Enter to open GitHub in your browser: ")
+	if _, err := bufio.NewReader(in).ReadString('\n'); err != nil && err != io.EOF {
+		return fmt.Errorf("wait for browser confirmation: %w", err)
+	}
+	if err := openBrowser(rawURL); err != nil {
+		return fmt.Errorf("open browser: %w", err)
+	}
+	return nil
 }
 
 func targetPayload(tgt target.Target) map[string]any {

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -195,11 +196,24 @@ func (r *GitHubPATRegistrar) doWithRetry(ctx context.Context, method, path, toke
 }
 
 func isRetryable(err error) bool {
-	apiErr, ok := err.(*apiError)
+	apiErr, ok := asAPIError(err)
 	if !ok {
 		return false
 	}
 	return apiErr.StatusCode == http.StatusTooManyRequests || apiErr.StatusCode >= 500
+}
+
+func IsUnauthorized(err error) bool {
+	apiErr, ok := asAPIError(err)
+	return ok && apiErr.StatusCode == http.StatusUnauthorized
+}
+
+func asAPIError(err error) (*apiError, bool) {
+	var apiErr *apiError
+	if errors.As(err, &apiErr) {
+		return apiErr, true
+	}
+	return nil, false
 }
 
 type apiError struct {

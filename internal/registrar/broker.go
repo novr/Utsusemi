@@ -32,9 +32,19 @@ func NewBrokerRegistrar(store keychain.Store, cfg *config.Config) *BrokerRegistr
 }
 
 func (r *BrokerRegistrar) ValidateCredential(ctx context.Context, service, account string) error {
-	_, err := r.credential()
+	token, err := r.credential()
 	if err != nil {
 		return fmt.Errorf("credential missing from keychain: %w", err)
+	}
+	if strings.TrimSpace(token) == "" || token == "-" {
+		return fmt.Errorf("invalid credential in keychain; run `utsusemi configure app` again")
+	}
+	tgt, err := target.FromConfig(r.cfg.Target)
+	if err != nil {
+		return err
+	}
+	if _, err := r.ListRunners(ctx, tgt, ""); err != nil {
+		return err
 	}
 	return nil
 }

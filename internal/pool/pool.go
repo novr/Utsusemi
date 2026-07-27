@@ -34,6 +34,8 @@ type Pool struct {
 	shutdown     bool
 	drain        bool
 	lowDisk      bool
+	fatalErr     error
+	fatalCh      chan error
 	inFlight     sync.WaitGroup
 	inFlightVMs  map[string]struct{}
 }
@@ -51,6 +53,7 @@ func New(cfg *config.Config, tgt target.Target, vmProvider provider.VMProvider, 
 		leases:      leases,
 		spawner:     spawn.New(spawn.Options{Config: cfg, Target: tgt, Provider: vmProvider, Registrar: reg, Leases: leases, Logger: logger}),
 		logger:      logger,
+		fatalCh:     make(chan error, 1),
 		inFlightVMs: make(map[string]struct{}),
 	}
 }
@@ -64,6 +67,9 @@ func (p *Pool) Run(ctx context.Context) error {
 	p.spawner.SetSession(session)
 
 	if err := p.startupReclaim(ctx); err != nil {
+		if registrar.IsUnauthorized(err) {
+			return err
+		}
 		p.logger.Warn("startup reclaim failed", "error", err)
 	}
 
@@ -88,10 +94,17 @@ func (p *Pool) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return p.drainAndWait()
+		case err := <-p.fatalCh:
+			_ = p.drainAndWait()
+			return err
 		case <-ticker.C:
 			p.tick(ctx)
 		case <-reconcileTicker.C:
 			if err := p.reclaim(ctx, false); err != nil {
+				if registrar.IsUnauthorized(err) {
+					_ = p.drainAndWait()
+					return err
+				}
 				p.logger.Warn("reconciliation failed", "error", err)
 			}
 		}
@@ -156,6 +169,10 @@ func (p *Pool) tick(ctx context.Context) {
 		}()
 
 		if err := p.spawner.Run(ctx, vmName); err != nil {
+			if registrar.IsUnauthorized(err) {
+				p.reportFatal(err)
+				return
+			}
 			p.recordFailure(err)
 			p.logger.Warn("spawn failed", "vm", vmName, "error", err)
 			return
@@ -166,6 +183,24 @@ func (p *Pool) tick(ctx context.Context) {
 		p.backoffUntil = time.Time{}
 		p.mu.Unlock()
 	}()
+}
+
+func (p *Pool) reportFatal(err error) {
+	p.mu.Lock()
+	already := p.fatalErr != nil
+	if !already {
+		p.fatalErr = err
+		p.shutdown = true
+	}
+	p.mu.Unlock()
+	if already {
+		return
+	}
+	p.logger.Error("fatal authorization error; stopping", "error", err)
+	select {
+	case p.fatalCh <- err:
+	default:
+	}
 }
 
 func (p *Pool) recordFailure(err error) {
