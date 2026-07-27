@@ -31,7 +31,6 @@ export async function authenticate(
     throw new Response("unauthorized", { status: 401 });
   }
   return {
-    value: token,
     target: claims.target,
     installationId: claims.installation_id,
   };

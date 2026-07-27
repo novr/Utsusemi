@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/novr/utsusemi/internal/config"
@@ -107,5 +108,32 @@ func TestBrokerRegistrarRetryOnRateLimit(t *testing.T) {
 	}
 	if attempts < 2 {
 		t.Fatalf("expected retry, attempts=%d", attempts)
+	}
+}
+
+func TestBrokerRegistrarUnauthorizedSuggestsReregister(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte("unauthorized"))
+	}))
+	defer server.Close()
+
+	store := keychain.NewMemoryStore()
+	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, "expired-jwt")
+	cfg := &config.Config{
+		Registration: config.Registration{
+			Mode:      config.ModeHostedApp,
+			BrokerURL: server.URL,
+		},
+	}
+	config.ApplyDefaults(cfg)
+
+	reg := NewBrokerRegistrar(store, cfg)
+	_, err := reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "n")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "utsusemi register") {
+		t.Fatalf("error=%v", err)
 	}
 }

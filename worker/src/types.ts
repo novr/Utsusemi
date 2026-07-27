@@ -20,7 +20,6 @@ export interface JITRequest {
 }
 
 export interface HostCredential {
-  value: string;
   target: Target;
   installationId: number;
 }

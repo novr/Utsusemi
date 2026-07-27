@@ -128,8 +128,8 @@ async function verifyUserAccess(
   if (!membership.ok) {
     throw new Response("forbidden", { status: 403 });
   }
-  const role = (await membership.json()) as { role?: string };
-  if (role.role !== "admin") {
+  const info = (await membership.json()) as { role?: string; state?: string };
+  if (info.state !== "active" || info.role !== "admin") {
     throw new Response("forbidden", { status: 403 });
   }
   return match.id;

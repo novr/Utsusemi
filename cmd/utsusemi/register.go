@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"os"
 	"strings"
 	"time"
 
@@ -19,8 +18,8 @@ import (
 )
 
 const (
-	publicAppClientIDEnv     = "UTSUSEMI_GITHUB_APP_CLIENT_ID"
-	defaultPublicAppClientID = "Iv23ctWrJ3Yq0JDLEa85"
+	publicAppClientID  = "Iv23ctWrJ3Yq0JDLEa85"
+	publicAppBrokerURL = "https://utsusemi-broker.novrd.workers.dev"
 )
 
 func newRegisterCmd() *cobra.Command {
@@ -28,20 +27,14 @@ func newRegisterCmd() *cobra.Command {
 		brokerURL   string
 		org         string
 		runnerGroup int64
-		clientID    string
 		outputPath  string
 	)
 
 	cmd := &cobra.Command{
-		Use:   "register",
-		Short: "Register host with Public App broker",
-		Example: `  utsusemi register --broker https://broker.utsusemi.dev \
-    --org my-org \
-    --runner-group-id 1`,
+		Use:     "register",
+		Short:   "Register host with Public App broker",
+		Example: `  utsusemi register --org my-org --runner-group-id 1`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if brokerURL == "" {
-				return fmt.Errorf("--broker is required")
-			}
 			if !strings.HasPrefix(brokerURL, "https://") &&
 				!strings.HasPrefix(brokerURL, "http://127.0.0.1") &&
 				!strings.HasPrefix(brokerURL, "http://localhost") {
@@ -50,19 +43,13 @@ func newRegisterCmd() *cobra.Command {
 			if org == "" {
 				return fmt.Errorf("--org is required")
 			}
-			if clientID == "" {
-				clientID = os.Getenv(publicAppClientIDEnv)
-			}
-			if clientID == "" {
-				clientID = defaultPublicAppClientID
-			}
 
 			tgt, err := target.FromConfig(config.TargetYAML(org, "", runnerGroup))
 			if err != nil {
 				return err
 			}
 
-			userToken, err := deviceFlow(cmd.Context(), clientID)
+			userToken, err := deviceFlow(cmd.Context(), publicAppClientID)
 			if err != nil {
 				return err
 			}
@@ -101,10 +88,9 @@ func newRegisterCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&brokerURL, "broker", "", "broker base URL")
+	cmd.Flags().StringVar(&brokerURL, "broker", publicAppBrokerURL, "broker base URL")
 	cmd.Flags().StringVar(&org, "org", "", "GitHub organization")
 	cmd.Flags().Int64Var(&runnerGroup, "runner-group-id", 1, "runner group id for org target")
-	cmd.Flags().StringVar(&clientID, "client-id", "", "GitHub App client ID (defaults to Public App)")
 	cmd.Flags().StringVar(&outputPath, "output", configPath, "config output path")
 	return cmd
 }

@@ -56,12 +56,12 @@ func (r *GitHubPATRegistrar) CreateJIT(ctx context.Context, tgt target.Target, l
 	case target.TypeOrg:
 		path = fmt.Sprintf("/orgs/%s/actions/runners/generate-jitconfig", tgt.Org)
 		body = map[string]any{
-			"name":              name,
-			"runner_group_id":   tgt.RunnerGroupID,
-			"labels":            labels,
-			"work_folder":       "_work",
-			"ephemeral":         true,
-			"disable_update":    true,
+			"name":            name,
+			"runner_group_id": tgt.RunnerGroupID,
+			"labels":          labels,
+			"work_folder":     "_work",
+			"ephemeral":       true,
+			"disable_update":  true,
 		}
 	case target.TypeRepo:
 		path = fmt.Sprintf("/repos/%s/%s/actions/runners/generate-jitconfig", tgt.Owner, tgt.Repo)
@@ -208,7 +208,7 @@ type apiError struct {
 }
 
 func (e *apiError) Error() string {
-	return fmt.Sprintf("github api %d: %s", e.StatusCode, e.Message)
+	return fmt.Sprintf("api %d: %s", e.StatusCode, e.Message)
 }
 
 func (r *GitHubPATRegistrar) do(ctx context.Context, method, path, token string, body []byte, out any) error {
