@@ -11,8 +11,10 @@ import (
 var (
 	configPath string
 	rootCmd    = &cobra.Command{
-		Use:   "utsusemi",
-		Short: "Ephemeral self-hosted GitHub Actions runners on Apple Silicon Macs",
+		Use:           "utsusemi",
+		Short:         "Ephemeral self-hosted GitHub Actions runners on Apple Silicon Macs",
+		SilenceUsage:  true,
+		SilenceErrors: true,
 	}
 )
 
@@ -25,7 +27,7 @@ func main() {
 	rootCmd.AddCommand(newReclaimCmd())
 
 	if err := rootCmd.Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, err)
+		fmt.Fprintln(os.Stderr, "Error:", err)
 		os.Exit(1)
 	}
 }
