@@ -1,0 +1,8 @@
+name = "utsusemi-broker"
+main = "src/index.ts"
+compatibility_date = "2025-02-01"
+
+[vars]
+JWT_ISSUER = "utsusemi-broker"
+JWT_AUDIENCE = "utsusemi-agent"
+JWT_VERSION = "1"

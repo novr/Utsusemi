@@ -1,0 +1,153 @@
+name: Release Assets
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag (example: v0.1.0)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+      version: ${{ steps.meta.outputs.version }}
+      prerelease: ${{ steps.meta.outputs.prerelease }}
+    steps:
+      - name: Resolve release metadata
+        id: meta
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" ]]; then
+            TAG="${{ inputs.tag }}"
+          else
+            TAG="${GITHUB_REF_NAME}"
+          fi
+
+          if [[ -z "${TAG}" ]]; then
+            echo "Tag is required."
+            exit 1
+          fi
+
+          VERSION="${TAG#v}"
+          if [[ "${VERSION}" == *"-rc."* || "${VERSION}" == *"-test."* || "${VERSION}" == *-* ]]; then
+            PRERELEASE="true"
+          else
+            PRERELEASE="false"
+          fi
+          {
+            echo "tag=${TAG}"
+            echo "version=${VERSION}"
+            echo "prerelease=${PRERELEASE}"
+          } >> "${GITHUB_OUTPUT}"
+
+  release-macos:
+    needs: prepare
+    runs-on: macos-latest
+    outputs:
+      url: ${{ steps.package.outputs.url }}
+      sha256: ${{ steps.package.outputs.sha256 }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: ${{ needs.prepare.outputs.tag }}
+
+      - name: Set up Go
+        uses: actions/setup-go@7a3fe6cf4cb3a834922a1244abfce67bcef6a0c5 # v6.2.0
+        with:
+          go-version-file: go.mod
+
+      - name: Build universal release binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.prepare.outputs.version }}"
+          LDFLAGS="-s -w"
+
+          mkdir -p dist
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "${LDFLAGS}" -o dist/utsusemi-arm64 ./cmd/utsusemi
+          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "${LDFLAGS}" -o dist/utsusemi-amd64 ./cmd/utsusemi
+          lipo -create -output dist/utsusemi dist/utsusemi-arm64 dist/utsusemi-amd64
+          lipo -info dist/utsusemi | grep -q 'Architectures in the fat file:.*arm64'
+          lipo -info dist/utsusemi | grep -q 'Architectures in the fat file:.*x86_64'
+
+      - name: Package release asset
+        id: package
+        shell: bash
+        run: |
+          set -euo pipefail
+          VERSION="${{ needs.prepare.outputs.version }}"
+          TAG="${{ needs.prepare.outputs.tag }}"
+          ASSET="utsusemi_${VERSION}_darwin.tar.gz"
+
+          tar -C dist -czf "${ASSET}" utsusemi
+          SHA256="$(shasum -a 256 "${ASSET}" | cut -d' ' -f1)"
+          echo "${SHA256}  ${ASSET}" > checksums.txt
+          {
+            echo "asset=${ASSET}"
+            echo "sha256=${SHA256}"
+            echo "url=https://github.com/novr/utsusemi/releases/download/${TAG}/${ASSET}"
+          } >> "${GITHUB_OUTPUT}"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: release-assets-macos
+          path: |
+            ${{ steps.package.outputs.asset }}
+            checksums.txt
+
+      - name: Create or update release with macOS assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="${{ needs.prepare.outputs.tag }}"
+          TITLE="${TAG}"
+          ASSET="${{ steps.package.outputs.asset }}"
+
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release upload "${TAG}" "${ASSET}" checksums.txt --clobber
+          else
+            if [[ "${{ needs.prepare.outputs.prerelease }}" == "true" ]]; then
+              PRERELEASE_FLAG="--prerelease"
+            else
+              PRERELEASE_FLAG=""
+            fi
+
+            gh release create "${TAG}" \
+              "${ASSET}" \
+              checksums.txt \
+              --target "${{ github.sha }}" \
+              --generate-notes \
+              --title "${TITLE}" \
+              ${PRERELEASE_FLAG}
+          fi
+
+  dispatch-formula:
+    needs: [prepare, release-macos]
+    if: needs.prepare.outputs.prerelease != 'true'
+    uses: novr/homebrew-taps/.github/workflows/dispatch-formula.yml@6b46878e68492e3ef89184bc86642adb03ddd55d
+    with:
+      formula: utsusemi
+      version: ${{ needs.prepare.outputs.version }}
+      url: ${{ needs.release-macos.outputs.url }}
+      sha256: ${{ needs.release-macos.outputs.sha256 }}
+      desc: "Ephemeral self-hosted GitHub Actions runners on Apple Silicon Macs"
+      binary: utsusemi
+      test_match: "Ephemeral"
+      source_repo: ${{ github.repository }}
+    secrets:
+      NOVRD_BOT_CLIENT_ID: ${{ secrets.NOVRD_BOT_CLIENT_ID }}
+      NOVRD_BOT_KEY: ${{ secrets.NOVRD_BOT_KEY }}

@@ -1,0 +1,9 @@
+target:
+  repo: owner/repo
+labels: [self-hosted, macOS, tart, arm64]
+registration:
+  mode: github_pat
+provider: tart
+base_image: ghcr.io/cirruslabs/macos-sequoia-base:latest
+runner_version: "2.336.0"
+pool_size: 1

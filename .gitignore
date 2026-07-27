@@ -1,0 +1,9 @@
+/utsusemi
+/bin/
+/dist/
+utsusemi_*_darwin.tar.gz
+checksums.txt
+*.test
+.DS_Store
+
+worker/node_modules/
