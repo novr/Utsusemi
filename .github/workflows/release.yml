@@ -143,8 +143,7 @@ jobs:
       desc: "Ephemeral self-hosted GitHub Actions runners on Apple Silicon Macs"
       binary: utsusemi
       test_match: "Ephemeral"
-      service_run_args: run,--config
-      service_config: utsusemi/config.yaml
+      service_run_args: run
       source_repo: ${{ github.repository }}
     secrets:
       NOVRD_BOT_CLIENT_ID: ${{ secrets.NOVRD_BOT_CLIENT_ID }}

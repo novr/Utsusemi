@@ -16,7 +16,7 @@ brew tap novr/taps
 brew install utsusemi
 brew install tart
 
-CONFIG="$(brew --prefix)/etc/utsusemi/config.yaml"
+CONFIG="$HOME/.config/utsusemi/config.yaml"
 ```
 
 Run the setup commands as the same user that runs the Homebrew service.

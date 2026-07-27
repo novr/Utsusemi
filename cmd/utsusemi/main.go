@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
@@ -34,5 +35,9 @@ func defaultConfigPath() string {
 	if path := os.Getenv("UTSUSEMI_CONFIG"); path != "" {
 		return path
 	}
-	return "/etc/utsusemi/config.yaml"
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "/etc/utsusemi/config.yaml"
+	}
+	return filepath.Join(home, ".config", "utsusemi", "config.yaml")
 }
