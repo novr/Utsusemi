@@ -18,7 +18,7 @@ func (p *TartProvider) Capabilities() Capabilities {
 }
 
 func (p *TartProvider) SyncImage(ctx context.Context, ref string) error {
-	return p.exec.Run(ctx, "tart", []string{"pull", ref}, nil, nil)
+	return p.exec.RunStreaming(ctx, "tart", []string{"pull", ref}, nil, nil)
 }
 
 func (p *TartProvider) Clone(ctx context.Context, ref, name string) error {

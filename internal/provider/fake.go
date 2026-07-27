@@ -18,10 +18,10 @@ type FakeExecutor struct {
 }
 
 type Call struct {
-	Name   string
-	Args   []string
-	Stdin  []byte
-	Env    map[string]string
+	Name  string
+	Args  []string
+	Stdin []byte
+	Env   map[string]string
 }
 
 func NewFakeExecutor() *FakeExecutor {
@@ -37,6 +37,14 @@ func (f *FakeExecutor) key(name string, args []string) string {
 }
 
 func (f *FakeExecutor) Run(ctx context.Context, name string, args []string, stdin []byte, env map[string]string) error {
+	return f.runUnlocked(ctx, name, args, stdin, env)
+}
+
+func (f *FakeExecutor) RunStreaming(ctx context.Context, name string, args []string, stdin []byte, env map[string]string) error {
+	return f.runUnlocked(ctx, name, args, stdin, env)
+}
+
+func (f *FakeExecutor) runUnlocked(ctx context.Context, name string, args []string, stdin []byte, env map[string]string) error {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.Calls = append(f.Calls, Call{Name: name, Args: append([]string{}, args...), Stdin: append([]byte{}, stdin...), Env: env})

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -24,7 +25,6 @@ const (
 	DefaultJobTimeout             = 6 * time.Hour
 	DefaultMinFreeDiskGB          = 50
 	DefaultVMNamePrefix           = "utsusemi-"
-	DefaultStateDir               = "/var/run/utsusemi"
 	DefaultReclaimPolicy          = ReclaimSoft
 	DefaultReclaimGrace           = 15 * time.Minute
 	DefaultCredentialService      = "utsusemi-registration"
@@ -117,7 +117,7 @@ func applyDefaults(cfg *Config) {
 		cfg.VMNamePrefix = DefaultVMNamePrefix
 	}
 	if cfg.StateDir == "" {
-		cfg.StateDir = DefaultStateDir
+		cfg.StateDir = defaultStateDir()
 	}
 	if cfg.ReclaimPolicy == "" {
 		cfg.ReclaimPolicy = DefaultReclaimPolicy
@@ -140,6 +140,17 @@ func (c *Config) CredentialAccount() string {
 
 func ApplyDefaults(cfg *Config) {
 	applyDefaults(cfg)
+}
+
+func defaultStateDir() string {
+	if dir := os.Getenv("XDG_STATE_HOME"); dir != "" {
+		return filepath.Join(dir, "utsusemi")
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return filepath.Join(os.TempDir(), "utsusemi")
+	}
+	return filepath.Join(home, ".local", "state", "utsusemi")
 }
 
 func TargetYAML(org, repo string, runnerGroup int64) target.ConfigYAML {

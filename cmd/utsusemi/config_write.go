@@ -60,7 +60,8 @@ func confirmConfigOverwrite(path string, force bool, in io.Reader, out io.Writer
 func printConfigureSuccess(path string) {
 	fmt.Printf("wrote config to %s\n", path)
 	fmt.Println("credential stored in keychain")
-	fmt.Println("next: run `utsusemi validate`, then `brew services start utsusemi`")
+	fmt.Println("next: run `utsusemi validate`, then `utsusemi run`")
+	fmt.Println("or start it in the background with `brew services start utsusemi`")
 }
 
 func isTerminal(f *os.File) bool {

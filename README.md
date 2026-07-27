@@ -18,7 +18,8 @@ brew install tart
 
 Run the setup commands as the same user that runs the Homebrew service.
 Credentials are stored in that user's Keychain. The default config path is
-`~/.config/utsusemi/config.yaml`.
+`~/.config/utsusemi/config.yaml`. Runtime state defaults to
+`~/.local/state/utsusemi`.
 
 ## Utsusemi GitHub App: organization runner
 
@@ -89,10 +90,17 @@ Run `utsusemi configure app --help` or
 See [examples/config.pat.yaml](examples/config.pat.yaml) for a repository
 token configuration example.
 
-## Start the service
+## Start Utsusemi
 
 ```bash
 utsusemi validate
+utsusemi run
+```
+
+`utsusemi run` runs in the foreground and stops with Ctrl+C. To run Utsusemi
+as a background service instead:
+
+```bash
 brew services start utsusemi
 ```
 

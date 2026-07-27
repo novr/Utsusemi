@@ -58,6 +58,7 @@ func (s *Spawner) Run(ctx context.Context, vmName string) error {
 	spawnCtx, cancel := context.WithTimeout(ctx, cfg.SpawnTimeout.Duration())
 	defer cancel()
 
+	log.Info("cloning base image", "image", cfg.BaseImage)
 	if err := s.opts.Provider.Clone(spawnCtx, cfg.BaseImage, vmName); err != nil {
 		return fmt.Errorf("clone: %w", err)
 	}
@@ -65,6 +66,7 @@ func (s *Spawner) Run(ctx context.Context, vmName string) error {
 		_ = s.opts.Provider.Delete(context.Background(), vmName)
 	}()
 
+	log.Info("starting vm")
 	if err := s.opts.Provider.Start(spawnCtx, vmName); err != nil {
 		return fmt.Errorf("start: %w", err)
 	}
@@ -72,6 +74,7 @@ func (s *Spawner) Run(ctx context.Context, vmName string) error {
 		return fmt.Errorf("wait for vm: %w", err)
 	}
 
+	log.Info("registering runner with GitHub")
 	jit, err := s.opts.Registrar.CreateJIT(spawnCtx, s.opts.Target, cfg.Labels, vmName)
 	if err != nil {
 		return fmt.Errorf("create jit: %w", err)
@@ -99,6 +102,7 @@ func (s *Spawner) Run(ctx context.Context, vmName string) error {
 	jobCtx, jobCancel := context.WithTimeout(ctx, cfg.JobTimeout.Duration())
 	defer jobCancel()
 
+	log.Info("waiting for job", "runner_id", runnerID, "runner_version", cfg.RunnerVersion)
 	env := map[string]string{"RUNNER_VERSION": cfg.RunnerVersion}
 	execDone := make(chan error, 1)
 	go func() {

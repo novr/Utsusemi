@@ -67,6 +67,13 @@ func (p *Pool) Run(ctx context.Context) error {
 		p.logger.Warn("startup reclaim failed", "error", err)
 	}
 
+	p.logger.Info("pool loop started",
+		"pool_size", p.cfg.PoolSize,
+		"check_interval", p.cfg.PoolCheckInterval.Duration().String(),
+		"reconciliation_interval", p.cfg.ReconciliationInterval.Duration().String(),
+	)
+	p.tick(ctx)
+
 	ticker := time.NewTicker(p.cfg.PoolCheckInterval.Duration())
 	defer ticker.Stop()
 
@@ -137,6 +144,8 @@ func (p *Pool) tick(ctx context.Context) {
 			return
 		}
 
+		p.logger.Info("spawning runner", "vm", vmName)
+
 		p.mu.Lock()
 		p.inFlightVMs[vmName] = struct{}{}
 		p.mu.Unlock()
@@ -151,6 +160,7 @@ func (p *Pool) tick(ctx context.Context) {
 			p.logger.Warn("spawn failed", "vm", vmName, "error", err)
 			return
 		}
+		p.logger.Info("runner finished", "vm", vmName)
 		p.mu.Lock()
 		p.failures = 0
 		p.backoffUntil = time.Time{}

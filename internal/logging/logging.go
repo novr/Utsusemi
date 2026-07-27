@@ -21,7 +21,22 @@ type redactingHandler struct {
 }
 
 func New() *slog.Logger {
-	return slog.New(redactingHandler{inner: slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})})
+	opts := &slog.HandlerOptions{Level: slog.LevelInfo}
+	var inner slog.Handler
+	if isTerminal(os.Stdout) {
+		inner = slog.NewTextHandler(os.Stdout, opts)
+	} else {
+		inner = slog.NewJSONHandler(os.Stdout, opts)
+	}
+	return slog.New(redactingHandler{inner: inner})
+}
+
+func isTerminal(f *os.File) bool {
+	info, err := f.Stat()
+	if err != nil {
+		return false
+	}
+	return info.Mode()&os.ModeCharDevice != 0
 }
 
 func (h redactingHandler) Enabled(ctx context.Context, level slog.Level) bool {

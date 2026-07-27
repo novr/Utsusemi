@@ -27,6 +27,23 @@ func runCommand(ctx context.Context, name string, args []string, stdin []byte, e
 	return nil
 }
 
+func runCommandStreaming(ctx context.Context, name string, args []string, stdin []byte, env map[string]string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	if len(stdin) > 0 {
+		cmd.Stdin = bytes.NewReader(stdin)
+	}
+	cmd.Env = os.Environ()
+	for k, v := range env {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return fmt.Errorf("%s %v: %w", name, args, err)
+	}
+	return nil
+}
+
 func startDetached(ctx context.Context, name string, args []string, env map[string]string) error {
 	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.Env = os.Environ()
