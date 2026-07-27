@@ -28,6 +28,7 @@ func newRegisterCmd() *cobra.Command {
 		org         string
 		runnerGroup int64
 		outputPath  string
+		opts        runnerOptions
 	)
 
 	cmd := &cobra.Command{
@@ -61,17 +62,16 @@ func newRegisterCmd() *cobra.Command {
 
 			cfg := &config.Config{
 				Target: config.TargetYAML(confirmedTarget.Org, "", confirmedTarget.RunnerGroupID),
-				Labels: []string{"self-hosted", "macOS", "tart", "arm64"},
 				Registration: config.Registration{
 					Mode:      config.ModeHostedApp,
 					BrokerURL: brokerURL,
 				},
-				Provider:      "tart",
-				BaseImage:     "ghcr.io/cirruslabs/macos-sequoia-base:latest",
-				RunnerVersion: "2.336.0",
-				PoolSize:      1,
 			}
+			opts.apply(cfg)
 			config.ApplyDefaults(cfg)
+			if _, err := config.Validate(cfg, 2); err != nil {
+				return err
+			}
 
 			store := keychain.New()
 			if err := store.Set(cfg.CredentialService(), cfg.CredentialAccount(), credential); err != nil {
@@ -92,6 +92,7 @@ func newRegisterCmd() *cobra.Command {
 	cmd.Flags().StringVar(&org, "org", "", "GitHub organization")
 	cmd.Flags().Int64Var(&runnerGroup, "runner-group-id", 1, "runner group id for org target")
 	cmd.Flags().StringVar(&outputPath, "output", configPath, "config output path")
+	addRunnerFlags(cmd, &opts)
 	return cmd
 }
 

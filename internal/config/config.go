@@ -37,16 +37,26 @@ func (d Duration) Duration() time.Duration {
 	return time.Duration(d)
 }
 
+func (d Duration) MarshalYAML() (any, error) {
+	return time.Duration(d).String(), nil
+}
+
 func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 	if value.Kind != yaml.ScalarNode {
 		return fmt.Errorf("duration must be a scalar")
 	}
 	parsed, err := time.ParseDuration(value.Value)
-	if err != nil {
-		return err
+	if err == nil {
+		*d = Duration(parsed)
+		return nil
 	}
-	*d = Duration(parsed)
-	return nil
+	// Older writers emitted raw nanoseconds without a unit.
+	var ns int64
+	if _, scanErr := fmt.Sscan(value.Value, &ns); scanErr == nil {
+		*d = Duration(ns)
+		return nil
+	}
+	return err
 }
 
 type Registration struct {
