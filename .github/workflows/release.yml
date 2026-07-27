@@ -134,7 +134,7 @@ jobs:
   dispatch-formula:
     needs: [prepare, release-macos]
     if: needs.prepare.outputs.prerelease != 'true'
-    uses: novr/homebrew-taps/.github/workflows/dispatch-formula.yml@1d033c02a6c554324faf4e8db12835a73c5756ea
+    uses: novr/homebrew-taps/.github/workflows/dispatch-formula.yml@e3891938391b6cdaa8b7669d7e4ef444d988865c
     with:
       formula: utsusemi
       version: ${{ needs.prepare.outputs.version }}
