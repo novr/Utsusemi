@@ -7,13 +7,14 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"os/exec"
 	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
 
 	"github.com/novr/utsusemi/internal/config"
-	"github.com/novr/utsusemi/internal/keychain"
 	"github.com/novr/utsusemi/internal/target"
 )
 
@@ -28,6 +29,7 @@ func newConfigureAppCmd() *cobra.Command {
 		org         string
 		runnerGroup int64
 		outputPath  string
+		force       bool
 		opts        runnerOptions
 	)
 
@@ -43,6 +45,9 @@ func newConfigureAppCmd() *cobra.Command {
 			}
 			if org == "" {
 				return fmt.Errorf("--org is required")
+			}
+			if err := confirmConfigOverwrite(outputPath, force, cmd.InOrStdin(), cmd.OutOrStdout()); err != nil {
+				return err
 			}
 
 			tgt, err := target.FromConfig(config.TargetYAML(org, "", runnerGroup))
@@ -69,21 +74,17 @@ func newConfigureAppCmd() *cobra.Command {
 			}
 			opts.apply(cfg)
 			config.ApplyDefaults(cfg)
-			if _, err := config.Validate(cfg, 2); err != nil {
+			if _, err := config.Validate(cfg, providerMaxConcurrent()); err != nil {
 				return err
 			}
 
-			store := keychain.New()
-			if err := store.Set(cfg.CredentialService(), cfg.CredentialAccount(), credential); err != nil {
+			if err := saveCredential(cfg, credential); err != nil {
 				return err
 			}
-			if outputPath != "" {
-				if err := writeConfig(outputPath, cfg); err != nil {
-					return err
-				}
-				fmt.Printf("wrote config to %s\n", outputPath)
+			if err := writeConfig(outputPath, cfg); err != nil {
+				return err
 			}
-			fmt.Println("configuration complete; credential stored in keychain")
+			printConfigureSuccess(outputPath)
 			return nil
 		},
 	}
@@ -92,6 +93,7 @@ func newConfigureAppCmd() *cobra.Command {
 	cmd.Flags().StringVar(&org, "org", "", "GitHub organization")
 	cmd.Flags().Int64Var(&runnerGroup, "runner-group-id", 1, "runner group id for org target")
 	cmd.Flags().StringVar(&outputPath, "output", configPath, "config output path")
+	cmd.Flags().BoolVar(&force, "force", false, "overwrite existing config without prompting")
 	addRunnerFlags(cmd, &opts)
 	return cmd
 }
@@ -122,17 +124,25 @@ func deviceFlow(ctx context.Context, clientID string) (string, error) {
 	}
 
 	var start struct {
-		DeviceCode      string `json:"device_code"`
-		UserCode        string `json:"user_code"`
-		VerificationURI string `json:"verification_uri"`
-		ExpiresIn       int    `json:"expires_in"`
-		Interval        int    `json:"interval"`
+		DeviceCode              string `json:"device_code"`
+		UserCode                string `json:"user_code"`
+		VerificationURI         string `json:"verification_uri"`
+		VerificationURIComplete string `json:"verification_uri_complete"`
+		ExpiresIn               int    `json:"expires_in"`
+		Interval                int    `json:"interval"`
 	}
 	if err := json.Unmarshal(body, &start); err != nil {
 		return "", err
 	}
 
 	fmt.Printf("Visit %s and enter code: %s\n", start.VerificationURI, start.UserCode)
+	openURL := start.VerificationURIComplete
+	if openURL == "" {
+		openURL = start.VerificationURI
+	}
+	if openURL != "" {
+		_ = openBrowser(openURL)
+	}
 	interval := time.Duration(start.Interval) * time.Second
 	deadline := time.Now().Add(time.Duration(start.ExpiresIn) * time.Second)
 
@@ -233,6 +243,13 @@ func exchangeCredential(ctx context.Context, brokerURL, userToken string, tgt ta
 		return "", target.Target{}, err
 	}
 	return result.Credential, confirmed, nil
+}
+
+func openBrowser(rawURL string) error {
+	if !isTerminal(os.Stdout) {
+		return nil
+	}
+	return exec.Command("open", rawURL).Start()
 }
 
 func targetPayload(tgt target.Target) map[string]any {

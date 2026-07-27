@@ -74,3 +74,7 @@ func saveCredential(cfg *config.Config, secret string) error {
 	store := keychain.New()
 	return store.Set(mustCredentialService(cfg), cfg.CredentialAccount(), secret)
 }
+
+func providerMaxConcurrent() int {
+	return provider.NewTartProvider(provider.RealExecutor{}).Capabilities().MaxConcurrent
+}
