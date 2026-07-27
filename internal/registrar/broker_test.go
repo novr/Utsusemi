@@ -25,17 +25,17 @@ func TestBrokerRegistrarJIT(t *testing.T) {
 	defer server.Close()
 
 	store := keychain.NewMemoryStore()
-	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, "api-key")
+	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, "host-jwt")
 	cfg := &config.Config{
 		Registration: config.Registration{
-			Mode:      config.ModeOwnApp,
+			Mode:      config.ModeHostedApp,
 			BrokerURL: server.URL,
 		},
 	}
 	config.ApplyDefaults(cfg)
 
 	reg := NewBrokerRegistrar(store, cfg)
-	jit, err := reg.CreateJIT(context.Background(), target.Target{Type: target.TypeRepo, Owner: "a", Repo: "b"}, []string{"self-hosted"}, "utsusemi-x")
+	jit, err := reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "utsusemi-x")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -56,17 +56,17 @@ func TestBrokerRegistrarListRunners(t *testing.T) {
 	defer server.Close()
 
 	store := keychain.NewMemoryStore()
-	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, "api-key")
+	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, "host-jwt")
 	cfg := &config.Config{
 		Registration: config.Registration{
-			Mode:      config.ModeOwnApp,
+			Mode:      config.ModeHostedApp,
 			BrokerURL: server.URL,
 		},
 	}
 	config.ApplyDefaults(cfg)
 
 	reg := NewBrokerRegistrar(store, cfg)
-	runners, err := reg.ListRunners(context.Background(), target.Target{Type: target.TypeRepo, Owner: "a", Repo: "b"}, "utsusemi-")
+	runners, err := reg.ListRunners(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, "utsusemi-")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -91,17 +91,17 @@ func TestBrokerRegistrarRetryOnRateLimit(t *testing.T) {
 	defer server.Close()
 
 	store := keychain.NewMemoryStore()
-	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, "api-key")
+	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, "host-jwt")
 	cfg := &config.Config{
 		Registration: config.Registration{
-			Mode:      config.ModeOwnApp,
+			Mode:      config.ModeHostedApp,
 			BrokerURL: server.URL,
 		},
 	}
 	config.ApplyDefaults(cfg)
 
 	reg := NewBrokerRegistrar(store, cfg)
-	_, err := reg.CreateJIT(context.Background(), target.Target{Type: target.TypeRepo, Owner: "a", Repo: "b"}, []string{"self-hosted"}, "n")
+	_, err := reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "n")
 	if err != nil {
 		t.Fatal(err)
 	}

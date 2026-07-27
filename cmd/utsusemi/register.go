@@ -18,13 +18,15 @@ import (
 	"github.com/novr/utsusemi/internal/target"
 )
 
-const publicAppClientIDEnv = "UTSUSEMI_GITHUB_APP_CLIENT_ID"
+const (
+	publicAppClientIDEnv     = "UTSUSEMI_GITHUB_APP_CLIENT_ID"
+	defaultPublicAppClientID = "Iv23ctWrJ3Yq0JDLEa85"
+)
 
 func newRegisterCmd() *cobra.Command {
 	var (
 		brokerURL   string
 		org         string
-		repo        string
 		runnerGroup int64
 		clientID    string
 		outputPath  string
@@ -34,7 +36,6 @@ func newRegisterCmd() *cobra.Command {
 		Use:   "register",
 		Short: "Register host with Public App broker",
 		Example: `  utsusemi register --broker https://broker.utsusemi.dev \
-    --client-id Iv1.YOUR_APP_CLIENT_ID \
     --org my-org \
     --runner-group-id 1`,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -46,17 +47,17 @@ func newRegisterCmd() *cobra.Command {
 				!strings.HasPrefix(brokerURL, "http://localhost") {
 				return fmt.Errorf("--broker must use https")
 			}
-			if org == "" && repo == "" {
-				return fmt.Errorf("either --org or --repo is required")
+			if org == "" {
+				return fmt.Errorf("--org is required")
 			}
 			if clientID == "" {
 				clientID = os.Getenv(publicAppClientIDEnv)
 			}
 			if clientID == "" {
-				return fmt.Errorf("--client-id is required (or set %s)", publicAppClientIDEnv)
+				clientID = defaultPublicAppClientID
 			}
 
-			tgt, err := target.FromConfig(config.TargetYAML(org, repo, runnerGroup))
+			tgt, err := target.FromConfig(config.TargetYAML(org, "", runnerGroup))
 			if err != nil {
 				return err
 			}
@@ -72,7 +73,7 @@ func newRegisterCmd() *cobra.Command {
 			}
 
 			cfg := &config.Config{
-				Target: config.TargetYAML(confirmedTarget.Org, formatRepo(confirmedTarget), confirmedTarget.RunnerGroupID),
+				Target: config.TargetYAML(confirmedTarget.Org, "", confirmedTarget.RunnerGroupID),
 				Labels: []string{"self-hosted", "macOS", "tart", "arm64"},
 				Registration: config.Registration{
 					Mode:      config.ModeHostedApp,
@@ -102,18 +103,10 @@ func newRegisterCmd() *cobra.Command {
 
 	cmd.Flags().StringVar(&brokerURL, "broker", "", "broker base URL")
 	cmd.Flags().StringVar(&org, "org", "", "GitHub organization")
-	cmd.Flags().StringVar(&repo, "repo", "", "GitHub repository (owner/repo)")
 	cmd.Flags().Int64Var(&runnerGroup, "runner-group-id", 1, "runner group id for org target")
-	cmd.Flags().StringVar(&clientID, "client-id", "", "GitHub App client ID")
+	cmd.Flags().StringVar(&clientID, "client-id", "", "GitHub App client ID (defaults to Public App)")
 	cmd.Flags().StringVar(&outputPath, "output", configPath, "config output path")
 	return cmd
-}
-
-func formatRepo(tgt target.Target) string {
-	if tgt.Type != target.TypeRepo {
-		return ""
-	}
-	return tgt.Owner + "/" + tgt.Repo
 }
 
 func deviceFlow(ctx context.Context, clientID string) (string, error) {
@@ -252,36 +245,22 @@ func exchangeCredential(ctx context.Context, brokerURL, userToken string, tgt ta
 }
 
 func targetPayload(tgt target.Target) map[string]any {
-	switch tgt.Type {
-	case target.TypeOrg:
-		return map[string]any{
-			"type":            "org",
-			"org":             tgt.Org,
-			"runner_group_id": tgt.RunnerGroupID,
-		}
-	case target.TypeRepo:
-		return map[string]any{
-			"type":  "repo",
-			"owner": tgt.Owner,
-			"repo":  tgt.Repo,
-		}
-	default:
+	if tgt.Type != target.TypeOrg {
 		return map[string]any{}
+	}
+	return map[string]any{
+		"type":            "org",
+		"org":             tgt.Org,
+		"runner_group_id": tgt.RunnerGroupID,
 	}
 }
 
 func parseTargetMap(raw map[string]any) (target.Target, error) {
 	typ, _ := raw["type"].(string)
-	switch typ {
-	case "org":
-		org, _ := raw["org"].(string)
-		group, _ := raw["runner_group_id"].(float64)
-		return target.Target{Type: target.TypeOrg, Org: org, RunnerGroupID: int64(group)}, nil
-	case "repo":
-		owner, _ := raw["owner"].(string)
-		repo, _ := raw["repo"].(string)
-		return target.Target{Type: target.TypeRepo, Owner: owner, Repo: repo}, nil
-	default:
+	if typ != "org" {
 		return target.Target{}, fmt.Errorf("invalid target in response")
 	}
+	org, _ := raw["org"].(string)
+	group, _ := raw["runner_group_id"].(float64)
+	return target.Target{Type: target.TypeOrg, Org: org, RunnerGroupID: int64(group)}, nil
 }

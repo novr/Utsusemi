@@ -44,6 +44,9 @@ func (r *BrokerRegistrar) credential() (string, error) {
 }
 
 func (r *BrokerRegistrar) CreateJIT(ctx context.Context, tgt target.Target, labels []string, name string) (JITConfig, error) {
+	if tgt.Type != target.TypeOrg {
+		return JITConfig{}, fmt.Errorf("broker supports organization targets only")
+	}
 	token, err := r.credential()
 	if err != nil {
 		return JITConfig{}, err
@@ -67,6 +70,9 @@ func (r *BrokerRegistrar) CreateJIT(ctx context.Context, tgt target.Target, labe
 }
 
 func (r *BrokerRegistrar) DeleteRunner(ctx context.Context, tgt target.Target, runnerID int64) error {
+	if tgt.Type != target.TypeOrg {
+		return fmt.Errorf("broker supports organization targets only")
+	}
 	token, err := r.credential()
 	if err != nil {
 		return err
@@ -77,6 +83,9 @@ func (r *BrokerRegistrar) DeleteRunner(ctx context.Context, tgt target.Target, r
 }
 
 func (r *BrokerRegistrar) ListRunners(ctx context.Context, tgt target.Target, prefix string) ([]Runner, error) {
+	if tgt.Type != target.TypeOrg {
+		return nil, fmt.Errorf("broker supports organization targets only")
+	}
 	token, err := r.credential()
 	if err != nil {
 		return nil, err
@@ -95,21 +104,10 @@ func (r *BrokerRegistrar) ListRunners(ctx context.Context, tgt target.Target, pr
 }
 
 func targetPayload(tgt target.Target) map[string]any {
-	switch tgt.Type {
-	case target.TypeOrg:
-		return map[string]any{
-			"type":              "org",
-			"org":               tgt.Org,
-			"runner_group_id":   tgt.RunnerGroupID,
-		}
-	case target.TypeRepo:
-		return map[string]any{
-			"type":  "repo",
-			"owner": tgt.Owner,
-			"repo":  tgt.Repo,
-		}
-	default:
-		return map[string]any{}
+	return map[string]any{
+		"type":            "org",
+		"org":             tgt.Org,
+		"runner_group_id": tgt.RunnerGroupID,
 	}
 }
 

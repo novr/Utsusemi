@@ -67,19 +67,14 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build universal release binary
+      - name: Build arm64 release binary
         shell: bash
         run: |
           set -euo pipefail
-          VERSION="${{ needs.prepare.outputs.version }}"
           LDFLAGS="-s -w"
 
           mkdir -p dist
-          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "${LDFLAGS}" -o dist/utsusemi-arm64 ./cmd/utsusemi
-          GOOS=darwin GOARCH=amd64 CGO_ENABLED=0 go build -ldflags "${LDFLAGS}" -o dist/utsusemi-amd64 ./cmd/utsusemi
-          lipo -create -output dist/utsusemi dist/utsusemi-arm64 dist/utsusemi-amd64
-          lipo -info dist/utsusemi | grep -q 'Architectures in the fat file:.*arm64'
-          lipo -info dist/utsusemi | grep -q 'Architectures in the fat file:.*x86_64'
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "${LDFLAGS}" -o dist/utsusemi ./cmd/utsusemi
 
       - name: Package release asset
         id: package

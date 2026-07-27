@@ -8,6 +8,20 @@ import (
 	"github.com/novr/utsusemi/internal/target"
 )
 
+func validateRegistration(reg Registration) error {
+	switch reg.Mode {
+	case ModeGitHubPAT:
+		return nil
+	case ModeHostedApp:
+		if strings.TrimSpace(reg.BrokerURL) == "" {
+			return fmt.Errorf("registration.broker_url is required for %s", reg.Mode)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported registration.mode %q", reg.Mode)
+	}
+}
+
 func Validate(cfg *Config, maxConcurrent int) (target.Target, error) {
 	if cfg == nil {
 		return target.Target{}, fmt.Errorf("config is nil")
@@ -55,19 +69,11 @@ func Validate(cfg *Config, maxConcurrent int) (target.Target, error) {
 	if err != nil {
 		return target.Target{}, err
 	}
-	return tgt, tgt.Validate()
-}
-
-func validateRegistration(reg Registration) error {
-	switch reg.Mode {
-	case ModeGitHubPAT:
-		return nil
-	case ModeOwnApp, ModeHostedApp:
-		if strings.TrimSpace(reg.BrokerURL) == "" {
-			return fmt.Errorf("registration.broker_url is required for %s", reg.Mode)
-		}
-		return nil
-	default:
-		return fmt.Errorf("unsupported registration.mode %q", reg.Mode)
+	if err := tgt.Validate(); err != nil {
+		return target.Target{}, err
 	}
+	if cfg.Registration.Mode == ModeHostedApp && tgt.Type != target.TypeOrg {
+		return target.Target{}, fmt.Errorf("hosted_app requires an organization target")
+	}
+	return tgt, nil
 }

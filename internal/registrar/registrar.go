@@ -30,7 +30,7 @@ func NewFromConfig(cfg *config.Config, store keychain.Store) (RunnerRegistrar, e
 	switch cfg.Registration.Mode {
 	case config.ModeGitHubPAT:
 		return NewGitHubPATRegistrar(store, cfg.CredentialService(), cfg.CredentialAccount()), nil
-	case config.ModeOwnApp, config.ModeHostedApp:
+	case config.ModeHostedApp:
 		return NewBrokerRegistrar(store, cfg), nil
 	default:
 		return nil, fmt.Errorf("unsupported registration.mode %q", cfg.Registration.Mode)

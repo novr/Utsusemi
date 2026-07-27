@@ -12,7 +12,6 @@ import (
 
 const (
 	ModeGitHubPAT = "github_pat"
-	ModeOwnApp    = "own_app"
 	ModeHostedApp = "hosted_app"
 
 	ReclaimSoft = "soft"

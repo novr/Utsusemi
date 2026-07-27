@@ -1,10 +1,5 @@
 import type { Env, HostCredential, Target } from "./types";
-import {
-  constantTimeEqual,
-  parseAllowedTargets,
-  parseTarget,
-  targetKey,
-} from "./github";
+import { parseTarget, targetKey } from "./github";
 
 interface JWTClaims {
   iss: string;
@@ -31,35 +26,22 @@ export async function authenticate(
     throw new Response("unauthorized", { status: 401 });
   }
 
-  if (env.BROKER_API_KEY) {
-    const ok = await constantTimeEqual(token, env.BROKER_API_KEY);
-    if (ok) {
-      return { mode: "api_key", value: token };
-    }
+  const claims = await verifyHostJWT(env, token);
+  if (!Number.isInteger(claims.installation_id) || claims.installation_id <= 0) {
+    throw new Response("unauthorized", { status: 401 });
   }
-
-  if (env.CREDENTIAL_SIGNING_PRIVATE_KEY) {
-    const claims = await verifyHostJWT(env, token);
-    return { mode: "jwt", value: token, target: claims.target };
-  }
-
-  throw new Response("unauthorized", { status: 401 });
+  return {
+    value: token,
+    target: claims.target,
+    installationId: claims.installation_id,
+  };
 }
 
 export function authorizeTarget(
-  env: Env,
   credential: HostCredential,
   requested: Target,
 ): void {
-  if (credential.mode === "jwt") {
-    if (!credential.target || targetKey(credential.target) !== targetKey(requested)) {
-      throw new Response("forbidden", { status: 403 });
-    }
-    return;
-  }
-
-  const allowed = parseAllowedTargets(env.ALLOWED_TARGETS);
-  if (!allowed.has(targetKey(requested))) {
+  if (targetKey(credential.target) !== targetKey(requested)) {
     throw new Response("forbidden", { status: 403 });
   }
 }
@@ -69,10 +51,6 @@ export async function issueHostJWT(
   installationId: number,
   target: Target,
 ): Promise<string> {
-  const privateKey = env.CREDENTIAL_SIGNING_PRIVATE_KEY;
-  if (!privateKey) {
-    throw new Error("CREDENTIAL_SIGNING_PRIVATE_KEY is not configured");
-  }
   const now = Math.floor(Date.now() / 1000);
   const claims: JWTClaims = {
     iss: env.JWT_ISSUER,
@@ -86,7 +64,7 @@ export async function issueHostJWT(
     jti: crypto.randomUUID(),
     ver: env.JWT_VERSION,
   };
-  return signEd25519JWT(privateKey, claims);
+  return signEd25519JWT(env.CREDENTIAL_SIGNING_PRIVATE_KEY, claims);
 }
 
 async function verifyHostJWT(env: Env, token: string): Promise<JWTClaims> {
@@ -98,6 +76,18 @@ async function verifyHostJWT(env: Env, token: string): Promise<JWTClaims> {
   if (header.alg !== "EdDSA") {
     throw new Response("unauthorized", { status: 401 });
   }
+
+  const publicKey = await importEd25519PublicKey(env.CREDENTIAL_SIGNING_PRIVATE_KEY);
+  const valid = await crypto.subtle.verify(
+    "Ed25519",
+    publicKey,
+    Uint8Array.from(atobUrlBytes(signatureB64), (c) => c.charCodeAt(0)),
+    new TextEncoder().encode(`${headerB64}.${payloadB64}`),
+  );
+  if (!valid) {
+    throw new Response("unauthorized", { status: 401 });
+  }
+
   const claims = JSON.parse(atobUrl(payloadB64)) as JWTClaims;
   if (
     claims.iss !== env.JWT_ISSUER ||
@@ -108,17 +98,6 @@ async function verifyHostJWT(env: Env, token: string): Promise<JWTClaims> {
   }
   const now = Math.floor(Date.now() / 1000);
   if (claims.nbf > now || claims.exp <= now) {
-    throw new Response("unauthorized", { status: 401 });
-  }
-
-  const publicKey = await importEd25519PublicKey(env.CREDENTIAL_SIGNING_PRIVATE_KEY!);
-  const valid = await crypto.subtle.verify(
-    "Ed25519",
-    publicKey,
-    Uint8Array.from(atobUrlBytes(signatureB64), (c) => c.charCodeAt(0)),
-    new TextEncoder().encode(`${headerB64}.${payloadB64}`),
-  );
-  if (!valid) {
     throw new Response("unauthorized", { status: 401 });
   }
   claims.target = parseTarget(claims.target);
@@ -145,7 +124,7 @@ async function importEd25519PrivateKey(pem: string): Promise<CryptoKey> {
     .replace("-----END PRIVATE KEY-----", "")
     .replace(/\s+/g, "");
   const raw = Uint8Array.from(atob(body), (c) => c.charCodeAt(0));
-  return crypto.subtle.importKey("pkcs8", raw, { name: "Ed25519" }, false, ["sign"]);
+  return crypto.subtle.importKey("pkcs8", raw, { name: "Ed25519" }, true, ["sign"]);
 }
 
 async function importEd25519PublicKey(privateKeyPem: string): Promise<CryptoKey> {

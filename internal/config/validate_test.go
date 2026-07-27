@@ -73,3 +73,19 @@ func TestValidateSpawnTimeoutMustNotExceedJobTimeout(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestValidateHostedAppRequiresOrg(t *testing.T) {
+	cfg := &Config{
+		Target:        target.ConfigYAML{Repo: "alice/app"},
+		Labels:        []string{"self-hosted", "macOS"},
+		Registration:  Registration{Mode: ModeHostedApp, BrokerURL: "https://broker.example"},
+		Provider:      "tart",
+		BaseImage:     "ghcr.io/example/image:1",
+		RunnerVersion: "2.336.0",
+		PoolSize:      1,
+	}
+	_, err := Validate(cfg, 2)
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}

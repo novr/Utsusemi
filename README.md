@@ -39,7 +39,6 @@ utsusemi configure --pat \
 
 ```bash
 utsusemi register --broker https://broker.utsusemi.dev \
-  --client-id Iv1.YOUR_APP_CLIENT_ID \
   --org my-org \
   --runner-group-id 1
 brew services start utsusemi

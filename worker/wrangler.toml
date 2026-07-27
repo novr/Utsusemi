@@ -3,6 +3,7 @@ main = "src/index.ts"
 compatibility_date = "2025-02-01"
 
 [vars]
+GITHUB_APP_ID = "4404914"
 JWT_ISSUER = "utsusemi-broker"
 JWT_AUDIENCE = "utsusemi-agent"
 JWT_VERSION = "1"
