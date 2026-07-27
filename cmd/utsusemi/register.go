@@ -18,7 +18,7 @@ import (
 	"github.com/novr/utsusemi/internal/target"
 )
 
-const publicAppClientID = "Iv1.CHANGE_ME"
+const publicAppClientIDEnv = "UTSUSEMI_GITHUB_APP_CLIENT_ID"
 
 func newRegisterCmd() *cobra.Command {
 	var (
@@ -37,11 +37,19 @@ func newRegisterCmd() *cobra.Command {
 			if brokerURL == "" {
 				return fmt.Errorf("--broker is required")
 			}
+			if !strings.HasPrefix(brokerURL, "https://") &&
+				!strings.HasPrefix(brokerURL, "http://127.0.0.1") &&
+				!strings.HasPrefix(brokerURL, "http://localhost") {
+				return fmt.Errorf("--broker must use https")
+			}
 			if org == "" && repo == "" {
 				return fmt.Errorf("either --org or --repo is required")
 			}
 			if clientID == "" {
-				clientID = publicAppClientID
+				clientID = os.Getenv(publicAppClientIDEnv)
+			}
+			if clientID == "" {
+				return fmt.Errorf("--client-id is required (or set %s)", publicAppClientIDEnv)
 			}
 
 			tgt, err := target.FromConfig(config.TargetYAML(org, repo, runnerGroup))
@@ -53,7 +61,6 @@ func newRegisterCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			defer func() { userToken = "" }()
 
 			credential, confirmedTarget, err := exchangeCredential(cmd.Context(), brokerURL, userToken, tgt)
 			if err != nil {
@@ -273,8 +280,4 @@ func parseTargetMap(raw map[string]any) (target.Target, error) {
 	default:
 		return target.Target{}, fmt.Errorf("invalid target in response")
 	}
-}
-
-func init() {
-	_ = os.Getenv
 }

@@ -1,8 +1,6 @@
 package main
 
 import (
-	"context"
-
 	"github.com/spf13/cobra"
 )
 
@@ -15,7 +13,7 @@ func newRunCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return ag.Run(context.Background())
+			return ag.Run(cmd.Context())
 		},
 	}
 }

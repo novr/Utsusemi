@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/novr/utsusemi/internal/config"
+	"github.com/novr/utsusemi/internal/lease"
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/registrar"
 	"github.com/novr/utsusemi/internal/spawn"
@@ -22,15 +23,17 @@ type Pool struct {
 	provider  provider.VMProvider
 	registrar registrar.RunnerRegistrar
 	spawner   *spawn.Spawner
+	leases    *lease.Registry
+	session   *lease.AgentSession
 	logger    *slog.Logger
 
 	mu           sync.Mutex
 	active       int
-	spawning     bool
 	failures     int
 	backoffUntil time.Time
 	shutdown     bool
 	drain        bool
+	lowDisk      bool
 	inFlight     sync.WaitGroup
 	inFlightVMs  map[string]struct{}
 }
@@ -39,18 +42,31 @@ func New(cfg *config.Config, tgt target.Target, vmProvider provider.VMProvider, 
 	if logger == nil {
 		logger = slog.Default()
 	}
+	leases := lease.NewRegistry(cfg.StateDir)
 	return &Pool{
 		cfg:         cfg,
 		tgt:         tgt,
 		provider:    vmProvider,
 		registrar:   reg,
-		spawner:     spawn.New(spawn.Options{Config: cfg, Target: tgt, Provider: vmProvider, Registrar: reg, Logger: logger}),
+		leases:      leases,
+		spawner:     spawn.New(spawn.Options{Config: cfg, Target: tgt, Provider: vmProvider, Registrar: reg, Leases: leases, Logger: logger}),
 		logger:      logger,
 		inFlightVMs: make(map[string]struct{}),
 	}
 }
 
 func (p *Pool) Run(ctx context.Context) error {
+	session, err := p.leases.BeginAgentSession()
+	if err != nil {
+		return fmt.Errorf("begin agent session: %w", err)
+	}
+	p.session = session
+	p.spawner.SetSession(session)
+
+	if err := p.startupReclaim(ctx); err != nil {
+		p.logger.Warn("startup reclaim failed", "error", err)
+	}
+
 	ticker := time.NewTicker(p.cfg.PoolCheckInterval.Duration())
 	defer ticker.Stop()
 
@@ -61,10 +77,6 @@ func (p *Pool) Run(ctx context.Context) error {
 	reconcileTicker := time.NewTicker(reconcileEvery)
 	defer reconcileTicker.Stop()
 
-	if err := p.reconcile(ctx, true); err != nil {
-		p.logger.Warn("initial reconciliation failed", "error", err)
-	}
-
 	for {
 		select {
 		case <-ctx.Done():
@@ -72,7 +84,7 @@ func (p *Pool) Run(ctx context.Context) error {
 		case <-ticker.C:
 			p.tick(ctx)
 		case <-reconcileTicker.C:
-			if err := p.reconcile(ctx, false); err != nil {
+			if err := p.reclaim(ctx, false); err != nil {
 				p.logger.Warn("reconciliation failed", "error", err)
 			}
 		}
@@ -95,11 +107,7 @@ func (p *Pool) drainAndWait() error {
 
 func (p *Pool) tick(ctx context.Context) {
 	p.mu.Lock()
-	if p.shutdown || p.drain {
-		p.mu.Unlock()
-		return
-	}
-	if p.spawning {
+	if p.shutdown || p.drain || p.lowDisk {
 		p.mu.Unlock()
 		return
 	}
@@ -111,7 +119,6 @@ func (p *Pool) tick(ctx context.Context) {
 		p.mu.Unlock()
 		return
 	}
-	p.spawning = true
 	p.active++
 	p.mu.Unlock()
 
@@ -120,7 +127,6 @@ func (p *Pool) tick(ctx context.Context) {
 		defer p.inFlight.Done()
 		defer func() {
 			p.mu.Lock()
-			p.spawning = false
 			p.active--
 			p.mu.Unlock()
 		}()
@@ -172,56 +178,6 @@ func (p *Pool) newVMName() (string, error) {
 	return fmt.Sprintf("%s%s", p.cfg.VMNamePrefix, hex.EncodeToString(buf)), nil
 }
 
-func (p *Pool) reconcile(ctx context.Context, startup bool) error {
-	freeGB, err := p.provider.FreeDiskGB(ctx)
-	if err != nil {
-		return err
-	}
-	if freeGB < float64(p.cfg.MinFreeDiskGB) {
-		p.logger.Warn("low disk space", "free_gb", freeGB)
-	}
-
-	vms, err := p.provider.ListManaged(ctx, p.cfg.VMNamePrefix)
-	if err != nil {
-		return err
-	}
-
-	p.mu.Lock()
-	inFlight := make(map[string]struct{}, len(p.inFlightVMs))
-	for name := range p.inFlightVMs {
-		inFlight[name] = struct{}{}
-	}
-	p.mu.Unlock()
-
-	known := make(map[string]struct{}, len(vms))
-	for _, vm := range vms {
-		known[vm.Name] = struct{}{}
-		if !startup {
-			if _, ok := inFlight[vm.Name]; ok {
-				continue
-			}
-		}
-		if err := p.provider.Delete(ctx, vm.Name); err != nil {
-			p.logger.Warn("delete managed vm failed", "vm", vm.Name, "error", err)
-		}
-	}
-
-	runners, err := p.registrar.ListRunners(ctx, p.tgt, p.cfg.VMNamePrefix)
-	if err != nil {
-		p.logger.Warn("list runners failed", "error", err)
-		return nil
-	}
-	for _, runner := range runners {
-		if _, ok := known[runner.Name]; ok {
-			if !startup {
-				if _, active := inFlight[runner.Name]; active {
-					continue
-				}
-			}
-		}
-		if err := p.registrar.DeleteRunner(ctx, p.tgt, runner.ID); err != nil {
-			p.logger.Warn("delete orphan runner failed", "runner", runner.Name, "error", err)
-		}
-	}
-	return nil
+func (p *Pool) ReclaimAll(ctx context.Context, dryRun bool) ([]provider.VM, []int64, error) {
+	return p.deleteAllManaged(ctx, dryRun)
 }

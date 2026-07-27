@@ -29,7 +29,8 @@ func (DarwinStore) Get(service, account string) (string, error) {
 
 func (DarwinStore) Set(service, account, secret string) (err error) {
 	_ = exec.Command("security", "delete-generic-password", "-s", service, "-a", account).Run()
-	cmd := exec.Command("security", "add-generic-password", "-U", "-s", service, "-a", account, "-w", secret)
+	cmd := exec.Command("security", "add-generic-password", "-U", "-s", service, "-a", account, "-w", "-")
+	cmd.Stdin = strings.NewReader(secret)
 	var stderr bytes.Buffer
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {

@@ -12,6 +12,7 @@ func Validate(cfg *Config, maxConcurrent int) (target.Target, error) {
 	if cfg == nil {
 		return target.Target{}, fmt.Errorf("config is nil")
 	}
+	applyDefaults(cfg)
 	if cfg.Provider != "tart" {
 		return target.Target{}, fmt.Errorf("unsupported provider %q", cfg.Provider)
 	}
@@ -32,6 +33,23 @@ func Validate(cfg *Config, maxConcurrent int) (target.Target, error) {
 	}
 	if err := validateRegistration(cfg.Registration); err != nil {
 		return target.Target{}, err
+	}
+	if cfg.SpawnTimeout.Duration() > cfg.JobTimeout.Duration() {
+		return target.Target{}, fmt.Errorf("spawn_timeout must not exceed job_timeout")
+	}
+	if cfg.PoolCheckInterval.Duration() <= 0 {
+		return target.Target{}, fmt.Errorf("pool_check_interval must be positive")
+	}
+	if cfg.ReconciliationInterval.Duration() <= 0 {
+		return target.Target{}, fmt.Errorf("reconciliation_interval must be positive")
+	}
+	switch cfg.ReclaimPolicy {
+	case ReclaimSoft, ReclaimGrace, ReclaimHard:
+	default:
+		return target.Target{}, fmt.Errorf("unsupported reclaim_policy %q", cfg.ReclaimPolicy)
+	}
+	if cfg.ReclaimGrace.Duration() <= 0 {
+		return target.Target{}, fmt.Errorf("reclaim_grace must be positive")
 	}
 	tgt, err := target.FromConfig(cfg.Target)
 	if err != nil {

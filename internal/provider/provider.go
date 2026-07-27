@@ -29,6 +29,7 @@ type VMProvider interface {
 
 type CommandExecutor interface {
 	Run(ctx context.Context, name string, args []string, stdin []byte, env map[string]string) error
+	StartDetached(ctx context.Context, name string, args []string, env map[string]string) error
 	Output(ctx context.Context, name string, args []string) ([]byte, error)
 }
 
@@ -36,6 +37,10 @@ type RealExecutor struct{}
 
 func (RealExecutor) Run(ctx context.Context, name string, args []string, stdin []byte, env map[string]string) error {
 	return runCommand(ctx, name, args, stdin, env)
+}
+
+func (RealExecutor) StartDetached(ctx context.Context, name string, args []string, env map[string]string) error {
+	return startDetached(ctx, name, args, env)
 }
 
 func (RealExecutor) Output(ctx context.Context, name string, args []string) ([]byte, error) {

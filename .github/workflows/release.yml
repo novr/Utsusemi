@@ -116,6 +116,7 @@ jobs:
           TAG="${{ needs.prepare.outputs.tag }}"
           TITLE="${TAG}"
           ASSET="${{ steps.package.outputs.asset }}"
+          TARGET_SHA="$(git rev-parse HEAD)"
 
           if gh release view "${TAG}" >/dev/null 2>&1; then
             gh release upload "${TAG}" "${ASSET}" checksums.txt --clobber
@@ -129,7 +130,7 @@ jobs:
             gh release create "${TAG}" \
               "${ASSET}" \
               checksums.txt \
-              --target "${{ github.sha }}" \
+              --target "${TARGET_SHA}" \
               --generate-notes \
               --title "${TITLE}" \
               ${PRERELEASE_FLAG}
@@ -138,7 +139,7 @@ jobs:
   dispatch-formula:
     needs: [prepare, release-macos]
     if: needs.prepare.outputs.prerelease != 'true'
-    uses: novr/homebrew-taps/.github/workflows/dispatch-formula.yml@6b46878e68492e3ef89184bc86642adb03ddd55d
+    uses: novr/homebrew-taps/.github/workflows/dispatch-formula.yml@1d033c02a6c554324faf4e8db12835a73c5756ea
     with:
       formula: utsusemi
       version: ${{ needs.prepare.outputs.version }}
@@ -147,6 +148,8 @@ jobs:
       desc: "Ephemeral self-hosted GitHub Actions runners on Apple Silicon Macs"
       binary: utsusemi
       test_match: "Ephemeral"
+      service_run_args: run,--config
+      service_config: utsusemi/config.yaml
       source_repo: ${{ github.repository }}
     secrets:
       NOVRD_BOT_CLIENT_ID: ${{ secrets.NOVRD_BOT_CLIENT_ID }}

@@ -10,8 +10,8 @@ import {
   deleteRunner,
   listInstallations,
   listInstallationRepos,
+  listRunners,
   parseTarget,
-  signAppJWT,
 } from "./github";
 
 export default {
@@ -23,6 +23,9 @@ export default {
       }
       if (request.method === "DELETE" && url.pathname.startsWith("/v1/runners/")) {
         return handleDelete(request, env, url);
+      }
+      if (request.method === "POST" && url.pathname === "/v1/runners/list") {
+        return handleListRunners(request, env);
       }
       if (request.method === "POST" && url.pathname === "/v1/register/exchange") {
         return handleRegisterExchange(request, env);
@@ -60,6 +63,9 @@ async function handleDelete(
 ): Promise<Response> {
   const credential = await authenticate(env, request.headers.get("Authorization"));
   const runnerId = Number(url.pathname.split("/").pop());
+  if (!Number.isInteger(runnerId) || runnerId <= 0) {
+    return new Response("bad request", { status: 400 });
+  }
   const body = (await request.json()) as { target: Target };
   const target = parseTarget(body.target);
   authorizeTarget(env, credential, target);
@@ -71,6 +77,21 @@ async function handleDelete(
   const token = await createInstallationToken(env, installationId);
   await deleteRunner(env, token, target, runnerId);
   return new Response(null, { status: 204 });
+}
+
+async function handleListRunners(request: Request, env: Env): Promise<Response> {
+  const credential = await authenticate(env, request.headers.get("Authorization"));
+  const body = (await request.json()) as { target: Target; prefix?: string };
+  const target = parseTarget(body.target);
+  authorizeTarget(env, credential, target);
+
+  const installationId = await resolveInstallationId(env, credential, target);
+  if (!installationId) {
+    return new Response("installation not found", { status: 404 });
+  }
+  const token = await createInstallationToken(env, installationId);
+  const runners = await listRunners(token, target, body.prefix ?? "");
+  return Response.json({ runners });
 }
 
 async function handleRegisterExchange(request: Request, env: Env): Promise<Response> {
@@ -137,14 +158,18 @@ async function verifyUserAccess(
     }>;
   };
 
-  const match = body.installations.find(
+  const appInstallations = body.installations.filter(
     (item) => item.app_id === Number(env.GITHUB_APP_ID),
   );
-  if (!match) {
+  if (appInstallations.length === 0) {
     throw new Response("installation not found", { status: 404 });
   }
 
   if (target.type === "org") {
+    const match = appInstallations.find((item) => item.account?.login === target.org);
+    if (!match) {
+      throw new Response("installation not found", { status: 404 });
+    }
     const membership = await fetch(
       `https://api.github.com/user/memberships/orgs/${target.org}`,
       { headers: githubUserHeaders(userToken) },
@@ -153,29 +178,34 @@ async function verifyUserAccess(
       throw new Response("forbidden", { status: 403 });
     }
     const role = (await membership.json()) as { role?: string };
-    if (role.role !== "admin" || match.account?.login !== target.org) {
+    if (role.role !== "admin") {
       throw new Response("forbidden", { status: 403 });
     }
     return match.id;
   }
 
-  const repos = await fetch(
-    `https://api.github.com/user/installations/${match.id}/repositories`,
-    { headers: githubUserHeaders(userToken) },
-  );
-  if (!repos.ok) {
-    throw new Response("forbidden", { status: 403 });
+  for (const installation of appInstallations) {
+    if (installation.account?.login !== target.owner) {
+      continue;
+    }
+    const repos = await fetch(
+      `https://api.github.com/user/installations/${installation.id}/repositories`,
+      { headers: githubUserHeaders(userToken) },
+    );
+    if (!repos.ok) {
+      continue;
+    }
+    const repoBody = (await repos.json()) as {
+      repositories: Array<{ full_name: string; permissions?: { admin?: boolean } }>;
+    };
+    const repo = repoBody.repositories.find(
+      (item) => item.full_name === `${target.owner}/${target.repo}`,
+    );
+    if (repo?.permissions?.admin) {
+      return installation.id;
+    }
   }
-  const repoBody = (await repos.json()) as {
-    repositories: Array<{ full_name: string; permissions?: { admin?: boolean } }>;
-  };
-  const repo = repoBody.repositories.find(
-    (item) => item.full_name === `${target.owner}/${target.repo}`,
-  );
-  if (!repo?.permissions?.admin) {
-    throw new Response("forbidden", { status: 403 });
-  }
-  return match.id;
+  throw new Response("forbidden", { status: 403 });
 }
 
 function githubUserHeaders(userToken: string): HeadersInit {

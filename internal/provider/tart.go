@@ -3,7 +3,6 @@ package provider
 import (
 	"context"
 	"fmt"
-	"strings"
 )
 
 type TartProvider struct {
@@ -27,7 +26,7 @@ func (p *TartProvider) Clone(ctx context.Context, ref, name string) error {
 }
 
 func (p *TartProvider) Start(ctx context.Context, name string) error {
-	return p.exec.Run(ctx, "tart", []string{"run", name, "--no-graphics"}, nil, nil)
+	return p.exec.StartDetached(ctx, "tart", []string{"run", name, "--no-graphics"}, nil)
 }
 
 func (p *TartProvider) ExecStdin(ctx context.Context, name, cmd string, args []string, stdin []byte, env map[string]string) error {
@@ -44,11 +43,11 @@ func (p *TartProvider) Delete(ctx context.Context, name string) error {
 }
 
 func (p *TartProvider) ListManaged(ctx context.Context, prefix string) ([]VM, error) {
-	out, err := p.exec.Output(ctx, "tart", []string{"list"})
+	out, err := p.exec.Output(ctx, "tart", []string{"list", "--source", "local", "--format", "json"})
 	if err != nil {
 		return nil, err
 	}
-	return parseTartList(out, prefix), nil
+	return parseTartLocalList(out, prefix)
 }
 
 func (p *TartProvider) HealthCheck(ctx context.Context, name string) error {
@@ -77,12 +76,4 @@ func (p *TartProvider) IsRunning(ctx context.Context, name string) (bool, error)
 
 func (p *TartProvider) FreeDiskGB(ctx context.Context) (float64, error) {
 	return freeDiskGB("/")
-}
-
-func (p *TartProvider) VMStateLine(name string, running bool) string {
-	state := "stopped"
-	if running {
-		state = "running"
-	}
-	return strings.Join([]string{name, state}, " ")
 }

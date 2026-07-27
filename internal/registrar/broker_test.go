@@ -43,3 +43,69 @@ func TestBrokerRegistrarJIT(t *testing.T) {
 		t.Fatalf("jit=%q", jit.Encoded)
 	}
 }
+
+func TestBrokerRegistrarListRunners(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/runners/list" {
+			t.Fatalf("path %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"runners": []map[string]any{{"id": 3, "name": "utsusemi-abc"}},
+		})
+	}))
+	defer server.Close()
+
+	store := keychain.NewMemoryStore()
+	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, "api-key")
+	cfg := &config.Config{
+		Registration: config.Registration{
+			Mode:      config.ModeOwnApp,
+			BrokerURL: server.URL,
+		},
+	}
+	config.ApplyDefaults(cfg)
+
+	reg := NewBrokerRegistrar(store, cfg)
+	runners, err := reg.ListRunners(context.Background(), target.Target{Type: target.TypeRepo, Owner: "a", Repo: "b"}, "utsusemi-")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(runners) != 1 || runners[0].ID != 3 {
+		t.Fatalf("runners=%+v", runners)
+	}
+}
+
+func TestBrokerRegistrarRetryOnRateLimit(t *testing.T) {
+	attempts := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		attempts++
+		if attempts < 2 {
+			w.WriteHeader(http.StatusTooManyRequests)
+			return
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"encoded_jit_config": "jit",
+			"runner":             map[string]any{"id": 1, "name": "n"},
+		})
+	}))
+	defer server.Close()
+
+	store := keychain.NewMemoryStore()
+	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, "api-key")
+	cfg := &config.Config{
+		Registration: config.Registration{
+			Mode:      config.ModeOwnApp,
+			BrokerURL: server.URL,
+		},
+	}
+	config.ApplyDefaults(cfg)
+
+	reg := NewBrokerRegistrar(store, cfg)
+	_, err := reg.CreateJIT(context.Background(), target.Target{Type: target.TypeRepo, Owner: "a", Repo: "b"}, []string{"self-hosted"}, "n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if attempts < 2 {
+		t.Fatalf("expected retry, attempts=%d", attempts)
+	}
+}

@@ -93,6 +93,46 @@ export async function deleteRunner(
   }
 }
 
+export async function listRunners(
+  installationToken: string,
+  target: Target,
+  prefix: string,
+): Promise<Array<{ id: number; name: string }>> {
+  const path = listRunnersPath(target);
+  const runners: Array<{ id: number; name: string }> = [];
+  let page = 1;
+  for (;;) {
+    const resp = await githubFetch(`${GITHUB_API}${path}?per_page=100&page=${page}`, {
+      headers: {
+        Authorization: `Bearer ${installationToken}`,
+        Accept: "application/vnd.github+json",
+      },
+    });
+    if (!resp.ok) {
+      throw new Error(`list runners failed: ${resp.status}`);
+    }
+    const body = (await resp.json()) as {
+      runners: Array<{ id: number; name: string }>;
+    };
+    for (const runner of body.runners) {
+      if (!prefix || runner.name.startsWith(prefix)) {
+        runners.push(runner);
+      }
+    }
+    if (body.runners.length < 100) {
+      break;
+    }
+    page++;
+  }
+  return runners;
+}
+
+function listRunnersPath(target: Target): string {
+  return target.type === "org"
+    ? `/orgs/${target.org}/actions/runners`
+    : `/repos/${target.owner}/${target.repo}/actions/runners`;
+}
+
 export async function signAppJWT(env: Env): Promise<string> {
   const now = Math.floor(Date.now() / 1000);
   const header = base64url(JSON.stringify({ alg: "RS256", typ: "JWT" }));

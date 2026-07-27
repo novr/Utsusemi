@@ -5,9 +5,11 @@ import (
 	"fmt"
 	"log/slog"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 
 	"github.com/novr/utsusemi/internal/config"
+	"github.com/novr/utsusemi/internal/instancelock"
 	"github.com/novr/utsusemi/internal/logging"
 	"github.com/novr/utsusemi/internal/pool"
 	"github.com/novr/utsusemi/internal/provider"
@@ -52,6 +54,12 @@ func New(opts Options) (*Agent, error) {
 }
 
 func (a *Agent) Run(ctx context.Context) error {
+	lock, err := instancelock.Acquire(filepath.Join(a.cfg.StateDir, "utsusemi.lock"))
+	if err != nil {
+		return err
+	}
+	defer lock.Release()
+
 	if err := a.provider.SyncImage(ctx, a.cfg.BaseImage); err != nil {
 		a.logger.Warn("image sync failed", "error", err)
 	}
@@ -67,4 +75,8 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	a.logger.Info("agent started", "target", a.tgt.String(), "pool_size", a.cfg.PoolSize)
 	return a.pool.Run(ctx)
+}
+
+func (a *Agent) ReclaimAll(ctx context.Context, dryRun bool) ([]provider.VM, []int64, error) {
+	return a.pool.ReclaimAll(ctx, dryRun)
 }

@@ -28,13 +28,7 @@ func TestGitHubPATRegistrarCreateJITOrg(t *testing.T) {
 
 	store := keychain.NewMemoryStore()
 	_ = store.Set("svc", "acct", "pat")
-	reg := NewGitHubPATRegistrar(store, "svc", "acct")
-	reg.client = server.Client()
-	// override API base by patching do - easier to use custom transport
-	orig := githubAPI
-	t.Cleanup(func() { /* can't easily restore const */ _ = orig })
-	// Use a wrapper approach - patch via test helper
-	reg = &GitHubPATRegistrar{
+	reg := &GitHubPATRegistrar{
 		client:  server.Client(),
 		store:   store,
 		service: "svc",

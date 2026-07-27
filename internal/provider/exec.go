@@ -3,11 +3,10 @@ package provider
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
-	"strconv"
-	"strings"
 	"syscall"
 )
 
@@ -25,6 +24,23 @@ func runCommand(ctx context.Context, name string, args []string, stdin []byte, e
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%s %v: %w: %s", name, args, err, stderr.String())
 	}
+	return nil
+}
+
+func startDetached(ctx context.Context, name string, args []string, env map[string]string) error {
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = os.Environ()
+	for k, v := range env {
+		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
+	}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("%s %v: %w: %s", name, args, err, stderr.String())
+	}
+	go func() {
+		_ = cmd.Wait()
+	}()
 	return nil
 }
 
@@ -48,30 +64,29 @@ func freeDiskGB(path string) (float64, error) {
 	return free / (1024 * 1024 * 1024), nil
 }
 
-func parseTartList(output []byte, prefix string) []VM {
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	var vms []VM
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" {
-			continue
-		}
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			continue
-		}
-		name := fields[0]
-		if prefix != "" && !strings.HasPrefix(name, prefix) {
-			continue
-		}
-		running := len(fields) > 1 && strings.EqualFold(fields[1], "running")
-		vms = append(vms, VM{Name: name, Running: running})
-	}
-	return vms
+type tartVMRecord struct {
+	Name  string `json:"Name"`
+	State string `json:"State"`
 }
 
-func parseTartListJSON(output []byte, prefix string) []VM {
-	// tart list may output plain text; fallback parser above is primary.
-	_ = strconv.Itoa
-	return parseTartList(output, prefix)
+func parseTartLocalList(output []byte, prefix string) ([]VM, error) {
+	var records []tartVMRecord
+	if err := json.Unmarshal(output, &records); err != nil {
+		return nil, fmt.Errorf("parse tart list json: %w", err)
+	}
+	vms := make([]VM, 0, len(records))
+	for _, record := range records {
+		if prefix != "" && !hasPrefix(record.Name, prefix) {
+			continue
+		}
+		vms = append(vms, VM{
+			Name:    record.Name,
+			Running: record.State == "running",
+		})
+	}
+	return vms, nil
+}
+
+func hasPrefix(name, prefix string) bool {
+	return len(name) >= len(prefix) && name[:len(prefix)] == prefix
 }

@@ -54,6 +54,9 @@ func newConfigureCmd() *cobra.Command {
 				PoolSize:      poolSize,
 			}
 			config.ApplyDefaults(cfg)
+			if _, err := config.Validate(cfg, 2); err != nil {
+				return err
+			}
 
 			if err := os.MkdirAll(filepath.Dir(outputPath), 0o755); err != nil {
 				return err

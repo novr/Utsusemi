@@ -2,17 +2,18 @@ package provider
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"sync"
 )
 
 type FakeExecutor struct {
-	mu       sync.Mutex
-	Calls    []Call
-	Outputs  map[string][]byte
-	VMs      map[string]bool
-	FailNext map[string]error
+	mu        sync.Mutex
+	Calls     []Call
+	Outputs   map[string][]byte
+	VMs       map[string]bool
+	FailNext  map[string]error
 	FailClone error
 }
 
@@ -52,9 +53,6 @@ func (f *FakeExecutor) Run(ctx context.Context, name string, args []string, stdi
 		}
 		f.VMs[args[2]] = false
 	}
-	if len(args) >= 2 && args[0] == "run" {
-		f.VMs[args[1]] = true
-	}
 	if len(args) >= 2 && args[0] == "stop" {
 		f.VMs[args[1]] = false
 	}
@@ -70,6 +68,16 @@ func (f *FakeExecutor) Run(ctx context.Context, name string, args []string, stdi
 	return nil
 }
 
+func (f *FakeExecutor) StartDetached(ctx context.Context, name string, args []string, env map[string]string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.Calls = append(f.Calls, Call{Name: name, Args: append([]string{}, args...), Env: env})
+	if len(args) >= 2 && args[0] == "run" {
+		f.VMs[args[1]] = true
+	}
+	return nil
+}
+
 func (f *FakeExecutor) Output(ctx context.Context, name string, args []string) ([]byte, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -78,19 +86,24 @@ func (f *FakeExecutor) Output(ctx context.Context, name string, args []string) (
 		return out, nil
 	}
 	if len(args) > 0 && args[0] == "list" {
-		var lines []string
-		for vm, running := range f.VMs {
-			state := "stopped"
-			if running {
-				state = "running"
-			}
-			lines = append(lines, vm+" "+state)
-		}
-		return []byte(strings.Join(lines, "\n")), nil
+		return f.listJSONLocked(), nil
 	}
 	return nil, fmt.Errorf("unexpected output call: %s %v", name, args)
 }
 
+func (f *FakeExecutor) listJSONLocked() []byte {
+	records := make([]tartVMRecord, 0, len(f.VMs))
+	for vm, running := range f.VMs {
+		state := "stopped"
+		if running {
+			state = "running"
+		}
+		records = append(records, tartVMRecord{Name: vm, State: state})
+	}
+	out, _ := json.Marshal(records)
+	return out
+}
+
 func (f *FakeExecutor) SetListOutput(output string) {
-	f.Outputs[f.key("tart", []string{"list"})] = []byte(output)
+	f.Outputs[f.key("tart", []string{"list", "--source", "local", "--format", "json"})] = []byte(output)
 }

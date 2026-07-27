@@ -2,6 +2,9 @@
   "name": "utsusemi-broker",
   "private": true,
   "type": "module",
+  "engines": {
+    "node": ">=22 <25"
+  },
   "scripts": {
     "test": "vitest run",
     "typecheck": "tsc --noEmit",

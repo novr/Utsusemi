@@ -15,12 +15,19 @@ const (
 	ModeOwnApp    = "own_app"
 	ModeHostedApp = "hosted_app"
 
+	ReclaimSoft = "soft"
+	ReclaimGrace = "grace"
+	ReclaimHard = "hard"
+
 	DefaultPoolCheckInterval      = 30 * time.Second
 	DefaultReconciliationInterval = 5 * time.Minute
 	DefaultSpawnTimeout           = 10 * time.Minute
 	DefaultJobTimeout             = 6 * time.Hour
 	DefaultMinFreeDiskGB          = 50
 	DefaultVMNamePrefix           = "utsusemi-"
+	DefaultStateDir               = "/var/run/utsusemi"
+	DefaultReclaimPolicy          = ReclaimSoft
+	DefaultReclaimGrace           = 15 * time.Minute
 	DefaultCredentialService      = "utsusemi-registration"
 	DefaultCredentialAccount      = "utsusemi"
 )
@@ -63,6 +70,9 @@ type Config struct {
 	JobTimeout             Duration          `yaml:"job_timeout"`
 	MinFreeDiskGB          int               `yaml:"min_free_disk_gb"`
 	VMNamePrefix           string            `yaml:"vm_name_prefix"`
+	StateDir               string            `yaml:"state_dir,omitempty"`
+	ReclaimPolicy          string            `yaml:"reclaim_policy,omitempty"`
+	ReclaimGrace           Duration          `yaml:"reclaim_grace,omitempty"`
 }
 
 func Load(path string) (*Config, error) {
@@ -96,6 +106,15 @@ func applyDefaults(cfg *Config) {
 	}
 	if cfg.VMNamePrefix == "" {
 		cfg.VMNamePrefix = DefaultVMNamePrefix
+	}
+	if cfg.StateDir == "" {
+		cfg.StateDir = DefaultStateDir
+	}
+	if cfg.ReclaimPolicy == "" {
+		cfg.ReclaimPolicy = DefaultReclaimPolicy
+	}
+	if cfg.ReclaimGrace == 0 {
+		cfg.ReclaimGrace = Duration(DefaultReclaimGrace)
 	}
 	if cfg.Registration.CredentialKeychainService == "" {
 		cfg.Registration.CredentialKeychainService = DefaultCredentialService

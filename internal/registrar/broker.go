@@ -77,7 +77,21 @@ func (r *BrokerRegistrar) DeleteRunner(ctx context.Context, tgt target.Target, r
 }
 
 func (r *BrokerRegistrar) ListRunners(ctx context.Context, tgt target.Target, prefix string) ([]Runner, error) {
-	return nil, fmt.Errorf("broker registrar does not support list runners")
+	token, err := r.credential()
+	if err != nil {
+		return nil, err
+	}
+	reqBody := map[string]any{
+		"target": targetPayload(tgt),
+		"prefix": prefix,
+	}
+	var resp struct {
+		Runners []Runner `json:"runners"`
+	}
+	if err := r.post(ctx, "/v1/runners/list", token, reqBody, &resp); err != nil {
+		return nil, err
+	}
+	return resp.Runners, nil
 }
 
 func targetPayload(tgt target.Target) map[string]any {
@@ -104,13 +118,7 @@ func (r *BrokerRegistrar) post(ctx context.Context, path, token string, body any
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, r.baseURL+path, bytes.NewReader(payload))
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-	return r.do(req, out)
+	return r.doWithRetry(ctx, http.MethodPost, path, token, payload, out)
 }
 
 func (r *BrokerRegistrar) delete(ctx context.Context, path, token string, body any) error {
@@ -118,30 +126,57 @@ func (r *BrokerRegistrar) delete(ctx context.Context, path, token string, body a
 	if err != nil {
 		return err
 	}
-	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, r.baseURL+path, bytes.NewReader(payload))
+	return r.doWithRetry(ctx, http.MethodDelete, path, token, payload, nil)
+}
+
+func (r *BrokerRegistrar) doWithRetry(ctx context.Context, method, path, token string, body []byte, out any) error {
+	backoff := time.Second
+	for attempt := 0; attempt < 5; attempt++ {
+		err := r.do(ctx, method, path, token, body, out)
+		if err == nil {
+			return nil
+		}
+		if !isRetryable(err) || attempt == 4 {
+			return err
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(backoff):
+		}
+		backoff *= 2
+	}
+	return fmt.Errorf("request failed after retries")
+}
+
+func (r *BrokerRegistrar) do(ctx context.Context, method, path, token string, body []byte, out any) error {
+	var reader io.Reader
+	if body != nil {
+		reader = bytes.NewReader(body)
+	}
+	req, err := http.NewRequestWithContext(ctx, method, r.baseURL+path, reader)
 	if err != nil {
 		return err
 	}
 	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Content-Type", "application/json")
-	return r.do(req, nil)
-}
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
 
-func (r *BrokerRegistrar) do(req *http.Request, out any) error {
 	resp, err := r.client.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	respBody, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("broker api %d: %s", resp.StatusCode, strings.TrimSpace(string(body)))
+		return &apiError{StatusCode: resp.StatusCode, Message: strings.TrimSpace(string(respBody))}
 	}
-	if out == nil || len(body) == 0 {
+	if out == nil || len(respBody) == 0 {
 		return nil
 	}
-	return json.Unmarshal(body, out)
+	return json.Unmarshal(respBody, out)
 }
