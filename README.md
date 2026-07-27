@@ -19,7 +19,8 @@ brew install tart
 Run the setup commands as the same user that runs the Homebrew service.
 Credentials are stored in that user's Keychain. The default config path is
 `~/.config/utsusemi/config.yaml`. Runtime state defaults to
-`~/.local/state/utsusemi`.
+`~/.local/state/utsusemi`. Tart stores VM images under `~/.tart/` (or
+`TART_HOME`).
 
 ## Utsusemi GitHub App: organization runner
 
@@ -102,6 +103,39 @@ as a background service instead:
 
 ```bash
 brew services start utsusemi
+```
+
+## FAQ
+
+### Tart VMs do not start on a headless host
+
+macOS 15+ requires an unlocked `login.keychain` before Tart can start a VM. Log
+in once via Screen Sharing (and optionally enable automatic login), or unlock
+the keychain before starting Utsusemi:
+
+```bash
+security unlock-keychain login.keychain
+```
+
+### The host creates more than 253 VMs per day
+
+With the built-in NAT network, macOS hands out one-day DHCP leases, which can be
+exhausted under high VM churn. Shorten the lease time once per host (see the
+[Tart FAQ](https://tart.run/faq/)):
+
+```bash
+sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.InternetSharing.default.plist bootpd -dict DHCPLeaseTimeSecs -int 600
+```
+
+Alternatively, set `softnet: true` in the config to run VMs with
+[Softnet](https://github.com/cirruslabs/softnet), which manages leases
+automatically and isolates VM networking. Softnet must be installed and granted
+root (SUID bit or passwordless sudo):
+
+```bash
+brew install cirruslabs/cli/softnet
+sudo chown root "$(which softnet)"
+sudo chmod +s "$(which softnet)"
 ```
 
 ## Development

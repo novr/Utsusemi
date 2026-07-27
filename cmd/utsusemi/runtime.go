@@ -25,7 +25,7 @@ func loadValidatedRuntime(ctx context.Context) (*runtime, error) {
 		return nil, err
 	}
 
-	vmProvider := provider.NewTartProvider(provider.RealExecutor{})
+	vmProvider := provider.NewTartProvider(provider.RealExecutor{}, cfg.Softnet)
 	if err := vmProvider.Available(); err != nil {
 		return nil, err
 	}
@@ -79,5 +79,5 @@ func saveCredential(cfg *config.Config, secret string) error {
 }
 
 func providerMaxConcurrent() int {
-	return provider.NewTartProvider(provider.RealExecutor{}).Capabilities().MaxConcurrent
+	return provider.NewTartProvider(provider.RealExecutor{}, false).Capabilities().MaxConcurrent
 }

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"syscall"
 )
 
@@ -73,12 +74,19 @@ func outputCommand(ctx context.Context, name string, args []string) ([]byte, err
 }
 
 func freeDiskGB(path string) (float64, error) {
-	var stat syscall.Statfs_t
-	if err := syscall.Statfs(path, &stat); err != nil {
-		return 0, err
+	current := path
+	for {
+		var stat syscall.Statfs_t
+		if err := syscall.Statfs(current, &stat); err == nil {
+			free := float64(stat.Bavail) * float64(stat.Bsize)
+			return free / (1024 * 1024 * 1024), nil
+		}
+		parent := filepath.Dir(current)
+		if parent == current {
+			return 0, fmt.Errorf("statfs %s: path not found", path)
+		}
+		current = parent
 	}
-	free := float64(stat.Bavail) * float64(stat.Bsize)
-	return free / (1024 * 1024 * 1024), nil
 }
 
 type tartVMRecord struct {

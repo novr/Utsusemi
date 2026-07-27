@@ -7,3 +7,6 @@ provider: tart
 base_image: ghcr.io/cirruslabs/macos-sequoia-base:latest
 runner_version: "2.336.0"
 pool_size: 1
+# softnet defaults to false (macOS NAT); set true for network isolation
+# (requires the softnet binary with root; see README)
+# softnet: true

@@ -87,7 +87,7 @@ func TestPoolBackoffOnFailure(t *testing.T) {
 	exec := provider.NewFakeExecutor()
 	exec.FailClone = context.Canceled
 
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec), noopRegistrar{})
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true), noopRegistrar{})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -111,7 +111,7 @@ func TestReconcileSkipsRunningVMs(t *testing.T) {
 			{ID: 2, Name: "utsusemi-live"},
 		},
 	}
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec), reg)
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true), reg)
 
 	if err := p.reclaim(context.Background(), false); err != nil {
 		t.Fatal(err)
@@ -138,7 +138,7 @@ func TestReconcileSkipsInFlightVMs(t *testing.T) {
 	reg := &trackingRegistrar{
 		runners: []registrar.Runner{{ID: 9, Name: "utsusemi-busy"}},
 	}
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec), reg)
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true), reg)
 	p.inFlightVMs["utsusemi-busy"] = struct{}{}
 
 	if err := p.reclaim(context.Background(), false); err != nil {
@@ -160,7 +160,7 @@ func TestStartupHardReclaimDeletesStaleRunningVM(t *testing.T) {
 
 	cfg := testPoolConfig(t)
 	cfg.ReclaimPolicy = config.ReclaimHard
-	p := newTestPool(t, cfg, provider.NewTartProvider(exec), noopRegistrar{})
+	p := newTestPool(t, cfg, provider.NewTartProvider(exec, true), noopRegistrar{})
 
 	staleSession := &lease.AgentSession{ID: "old-agent", PID: 1, StartedAt: time.Now().UTC().Add(-time.Hour)}
 	if err := p.leases.WriteLease(staleSession, lease.Lease{VMName: "utsusemi-old", RunnerID: 1}); err != nil {

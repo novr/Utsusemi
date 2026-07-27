@@ -80,6 +80,7 @@ type Config struct {
 	MinFreeDiskGB          int               `yaml:"min_free_disk_gb"`
 	VMNamePrefix           string            `yaml:"vm_name_prefix"`
 	StateDir               string            `yaml:"state_dir,omitempty"`
+	Softnet                bool              `yaml:"softnet,omitempty"`
 	ReclaimPolicy          string            `yaml:"reclaim_policy,omitempty"`
 	ReclaimGrace           Duration          `yaml:"reclaim_grace,omitempty"`
 }

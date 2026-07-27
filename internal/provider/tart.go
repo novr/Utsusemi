@@ -3,15 +3,18 @@ package provider
 import (
 	"context"
 	"fmt"
+	"os"
 	"os/exec"
+	"path/filepath"
 )
 
 type TartProvider struct {
-	exec CommandExecutor
+	exec    CommandExecutor
+	softnet bool
 }
 
-func NewTartProvider(exec CommandExecutor) *TartProvider {
-	return &TartProvider{exec: exec}
+func NewTartProvider(exec CommandExecutor, softnet bool) *TartProvider {
+	return &TartProvider{exec: exec, softnet: softnet}
 }
 
 func (p *TartProvider) Capabilities() Capabilities {
@@ -21,6 +24,11 @@ func (p *TartProvider) Capabilities() Capabilities {
 func (p *TartProvider) Available() error {
 	if _, err := exec.LookPath("tart"); err != nil {
 		return fmt.Errorf("tart not found in PATH; install with `brew install tart`")
+	}
+	if p.softnet {
+		if _, err := exec.LookPath("softnet"); err != nil {
+			return fmt.Errorf("softnet not found in PATH; install with `brew install cirruslabs/cli/softnet` and grant it root (SUID or passwordless sudo), or remove softnet from the config")
+		}
 	}
 	return nil
 }
@@ -34,7 +42,11 @@ func (p *TartProvider) Clone(ctx context.Context, ref, name string) error {
 }
 
 func (p *TartProvider) Start(ctx context.Context, name string) error {
-	return p.exec.StartDetached(ctx, "tart", []string{"run", name, "--no-graphics"}, nil)
+	args := []string{"run", name, "--no-graphics"}
+	if p.softnet {
+		args = append(args, "--net-softnet")
+	}
+	return p.exec.StartDetached(ctx, "tart", args, nil)
 }
 
 func (p *TartProvider) ExecStdin(ctx context.Context, name, cmd string, args []string, stdin []byte, env map[string]string) error {
@@ -83,5 +95,16 @@ func (p *TartProvider) IsRunning(ctx context.Context, name string) (bool, error)
 }
 
 func (p *TartProvider) FreeDiskGB(ctx context.Context) (float64, error) {
-	return freeDiskGB("/")
+	return freeDiskGB(tartHome())
+}
+
+func tartHome() string {
+	if dir := os.Getenv("TART_HOME"); dir != "" {
+		return dir
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ".tart"
+	}
+	return filepath.Join(home, ".tart")
 }
