@@ -1,11 +1,18 @@
 import type { Env, Target } from "./types";
+import { HttpError } from "./http";
 
 const GITHUB_API = "https://api.github.com";
+const USER_AGENT = "utsusemi-broker";
+const MAX_INSTALLATION_PAGES = 10;
+const MAX_RUNNER_PAGES = 20;
 
 export async function createInstallationToken(
   env: Env,
   installationId: number,
 ): Promise<string> {
+  if (!env.GITHUB_APP_PRIVATE_KEY) {
+    throw new HttpError(500, "github app private key is not configured");
+  }
   const appJWT = await signAppJWT(env);
   const resp = await githubFetch(
     `${GITHUB_API}/app/installations/${installationId}/access_tokens`,
@@ -19,7 +26,8 @@ export async function createInstallationToken(
   );
   const body = (await resp.json()) as { token?: string };
   if (!resp.ok || !body.token) {
-    throw new Error(`installation token failed: ${resp.status}`);
+    console.error("installation token failed", resp.status);
+    throw new HttpError(502, "github api error");
   }
   return body.token;
 }
@@ -50,7 +58,8 @@ export async function createJIT(
   );
   const body = await resp.json();
   if (!resp.ok) {
-    throw new Error(`jit failed: ${resp.status} ${JSON.stringify(body)}`);
+    console.error("jit failed", resp.status, body);
+    throw new HttpError(502, "github api error");
   }
   return body as {
     encoded_jit_config: string;
@@ -74,7 +83,8 @@ export async function deleteRunner(
     },
   );
   if (!resp.ok && resp.status !== 404) {
-    throw new Error(`delete runner failed: ${resp.status}`);
+    console.error("delete runner failed", resp.status);
+    throw new HttpError(502, "github api error");
   }
 }
 
@@ -84,8 +94,7 @@ export async function listRunners(
   prefix: string,
 ): Promise<Array<{ id: number; name: string }>> {
   const runners: Array<{ id: number; name: string }> = [];
-  let page = 1;
-  for (;;) {
+  for (let page = 1; page <= MAX_RUNNER_PAGES; page++) {
     const resp = await githubFetch(
       `${GITHUB_API}/orgs/${target.org}/actions/runners?per_page=100&page=${page}`,
       {
@@ -96,7 +105,8 @@ export async function listRunners(
       },
     );
     if (!resp.ok) {
-      throw new Error(`list runners failed: ${resp.status}`);
+      console.error("list runners failed", resp.status);
+      throw new HttpError(502, "github api error");
     }
     const body = (await resp.json()) as {
       runners: Array<{ id: number; name: string }>;
@@ -107,11 +117,55 @@ export async function listRunners(
       }
     }
     if (body.runners.length < 100) {
-      break;
+      return runners;
     }
-    page++;
   }
-  return runners;
+  console.error("list runners exceeded page limit");
+  throw new HttpError(502, "github api error");
+}
+
+export async function findAppInstallation(
+  env: Env,
+  userToken: string,
+  org: string,
+): Promise<number | null> {
+  const appId = Number(env.GITHUB_APP_ID);
+  const wanted = org.toLowerCase();
+
+  for (let page = 1; page <= MAX_INSTALLATION_PAGES; page++) {
+    const resp = await githubFetch(
+      `${GITHUB_API}/user/installations?per_page=100&page=${page}`,
+      {
+        headers: {
+          Authorization: `Bearer ${userToken}`,
+          Accept: "application/vnd.github+json",
+        },
+      },
+    );
+    if (!resp.ok) {
+      throw new HttpError(401, "unauthorized");
+    }
+    const body = (await resp.json()) as {
+      installations: Array<{
+        id: number;
+        app_id: number;
+        account?: { login: string };
+      }>;
+      total_count?: number;
+    };
+
+    const match = body.installations.find(
+      (item) =>
+        item.app_id === appId && item.account?.login?.toLowerCase() === wanted,
+    );
+    if (match) {
+      return match.id;
+    }
+    if (body.installations.length < 100) {
+      return null;
+    }
+  }
+  return null;
 }
 
 export async function signAppJWT(env: Env): Promise<string> {
@@ -125,7 +179,7 @@ export async function signAppJWT(env: Env): Promise<string> {
     }),
   );
   const data = `${header}.${payload}`;
-  const key = await importPKCS8(env.GITHUB_APP_PRIVATE_KEY, "RS256");
+  const key = await importPKCS8(env.GITHUB_APP_PRIVATE_KEY);
   const signature = await crypto.subtle.sign(
     "RSASSA-PKCS1-v1_5",
     key,
@@ -134,7 +188,7 @@ export async function signAppJWT(env: Env): Promise<string> {
   return `${data}.${base64url(signature)}`;
 }
 
-async function importPKCS8(pem: string, alg: string): Promise<CryptoKey> {
+async function importPKCS8(pem: string): Promise<CryptoKey> {
   const normalized = pem.replace(/\\n/g, "\n");
   const body = normalized
     .replace("-----BEGIN PRIVATE KEY-----", "")
@@ -164,6 +218,7 @@ async function githubFetch(url: string, init: RequestInit): Promise<Response> {
   return fetch(url, {
     ...init,
     headers: {
+      "User-Agent": USER_AGENT,
       "X-GitHub-Api-Version": "2022-11-28",
       ...(init.headers ?? {}),
     },
@@ -171,14 +226,24 @@ async function githubFetch(url: string, init: RequestInit): Promise<Response> {
 }
 
 export function parseTarget(raw: unknown): Target {
+  if (!raw || typeof raw !== "object") {
+    throw new HttpError(400, "invalid target");
+  }
   const value = raw as Record<string, unknown>;
   if (value.type !== "org") {
-    throw new Error("invalid target");
+    throw new HttpError(400, "invalid target");
+  }
+  const org = String(value.org ?? "")
+    .trim()
+    .toLowerCase();
+  const runnerGroupID = Number(value.runner_group_id);
+  if (!org || !Number.isInteger(runnerGroupID) || runnerGroupID <= 0) {
+    throw new HttpError(400, "invalid target");
   }
   return {
     type: "org",
-    org: String(value.org),
-    runner_group_id: Number(value.runner_group_id),
+    org,
+    runner_group_id: runnerGroupID,
   };
 }
 

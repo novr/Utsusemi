@@ -1,9 +1,9 @@
 import type { Env, HostCredential, Target } from "./types";
 import { parseTarget, targetKey } from "./github";
+import { HttpError } from "./http";
 
 interface JWTClaims {
   iss: string;
-  aud: string;
   sub: string;
   installation_id: number;
   target: Target;
@@ -19,16 +19,16 @@ export async function authenticate(
   authorization: string | null,
 ): Promise<HostCredential> {
   if (!authorization?.startsWith("Bearer ")) {
-    throw new Response("unauthorized", { status: 401 });
+    throw new HttpError(401, "unauthorized");
   }
   const token = authorization.slice("Bearer ".length).trim();
   if (!token) {
-    throw new Response("unauthorized", { status: 401 });
+    throw new HttpError(401, "unauthorized");
   }
 
   const claims = await verifyHostJWT(env, token);
   if (!Number.isInteger(claims.installation_id) || claims.installation_id <= 0) {
-    throw new Response("unauthorized", { status: 401 });
+    throw new HttpError(401, "unauthorized");
   }
   return {
     target: claims.target,
@@ -41,7 +41,7 @@ export function authorizeTarget(
   requested: Target,
 ): void {
   if (targetKey(credential.target) !== targetKey(requested)) {
-    throw new Response("forbidden", { status: 403 });
+    throw new HttpError(403, "forbidden");
   }
 }
 
@@ -53,7 +53,6 @@ export async function issueHostJWT(
   const now = Math.floor(Date.now() / 1000);
   const claims: JWTClaims = {
     iss: env.JWT_ISSUER,
-    aud: env.JWT_AUDIENCE,
     sub: crypto.randomUUID(),
     installation_id: installationId,
     target,
@@ -67,40 +66,46 @@ export async function issueHostJWT(
 }
 
 async function verifyHostJWT(env: Env, token: string): Promise<JWTClaims> {
-  const [headerB64, payloadB64, signatureB64] = token.split(".");
-  if (!headerB64 || !payloadB64 || !signatureB64) {
-    throw new Response("unauthorized", { status: 401 });
-  }
-  const header = JSON.parse(atobUrl(headerB64)) as { alg?: string };
-  if (header.alg !== "EdDSA") {
-    throw new Response("unauthorized", { status: 401 });
-  }
+  try {
+    const [headerB64, payloadB64, signatureB64] = token.split(".");
+    if (!headerB64 || !payloadB64 || !signatureB64) {
+      throw new HttpError(401, "unauthorized");
+    }
+    const header = JSON.parse(atobUrl(headerB64)) as { alg?: string };
+    if (header.alg !== "EdDSA") {
+      throw new HttpError(401, "unauthorized");
+    }
 
-  const publicKey = await importEd25519PublicKey(env.CREDENTIAL_SIGNING_PRIVATE_KEY);
-  const valid = await crypto.subtle.verify(
-    "Ed25519",
-    publicKey,
-    Uint8Array.from(atobUrlBytes(signatureB64), (c) => c.charCodeAt(0)),
-    new TextEncoder().encode(`${headerB64}.${payloadB64}`),
-  );
-  if (!valid) {
-    throw new Response("unauthorized", { status: 401 });
-  }
+    const publicKey = await importEd25519PublicKey(env.CREDENTIAL_SIGNING_PRIVATE_KEY);
+    const valid = await crypto.subtle.verify(
+      "Ed25519",
+      publicKey,
+      decodeBase64Url(signatureB64),
+      new TextEncoder().encode(`${headerB64}.${payloadB64}`),
+    );
+    if (!valid) {
+      throw new HttpError(401, "unauthorized");
+    }
 
-  const claims = JSON.parse(atobUrl(payloadB64)) as JWTClaims;
-  if (
-    claims.iss !== env.JWT_ISSUER ||
-    claims.aud !== env.JWT_AUDIENCE ||
-    claims.ver !== env.JWT_VERSION
-  ) {
-    throw new Response("unauthorized", { status: 401 });
+    const claims = JSON.parse(atobUrl(payloadB64)) as JWTClaims;
+    if (
+      claims.iss !== env.JWT_ISSUER ||
+      claims.ver !== env.JWT_VERSION
+    ) {
+      throw new HttpError(401, "unauthorized");
+    }
+    const now = Math.floor(Date.now() / 1000);
+    if (claims.nbf > now || claims.exp <= now) {
+      throw new HttpError(401, "unauthorized");
+    }
+    claims.target = parseTarget(claims.target);
+    return claims;
+  } catch (err) {
+    if (err instanceof HttpError) {
+      throw err;
+    }
+    throw new HttpError(401, "unauthorized");
   }
-  const now = Math.floor(Date.now() / 1000);
-  if (claims.nbf > now || claims.exp <= now) {
-    throw new Response("unauthorized", { status: 401 });
-  }
-  claims.target = parseTarget(claims.target);
-  return claims;
 }
 
 async function signEd25519JWT(privateKeyPem: string, claims: JWTClaims): Promise<string> {
@@ -117,6 +122,9 @@ async function signEd25519JWT(privateKeyPem: string, claims: JWTClaims): Promise
 }
 
 async function importEd25519PrivateKey(pem: string): Promise<CryptoKey> {
+  if (!pem) {
+    throw new HttpError(500, "credential signing key is not configured");
+  }
   const normalized = pem.replace(/\\n/g, "\n");
   const body = normalized
     .replace("-----BEGIN PRIVATE KEY-----", "")
@@ -145,10 +153,19 @@ function base64url(input: string | ArrayBuffer): string {
 }
 
 function atobUrl(value: string): string {
-  const padded = value + "=".repeat((4 - (value.length % 4)) % 4);
-  return atob(padded.replace(/-/g, "+").replace(/_/g, "/"));
+  return atob(padBase64Url(value));
 }
 
-function atobUrlBytes(value: string): string {
-  return atobUrl(value);
+function decodeBase64Url(value: string): Uint8Array {
+  const binary = atob(padBase64Url(value));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) {
+    bytes[i] = binary.charCodeAt(i);
+  }
+  return bytes;
+}
+
+function padBase64Url(value: string): string {
+  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
+  return normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
 }

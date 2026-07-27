@@ -8,37 +8,54 @@ import {
   createInstallationToken,
   createJIT,
   deleteRunner,
+  findAppInstallation,
   listRunners,
   parseTarget,
 } from "./github";
+import { HttpError, toErrorResponse } from "./http";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     try {
-      const url = new URL(request.url);
-      if (request.method === "POST" && url.pathname === "/v1/jitconfig") {
-        return handleJIT(request, env);
-      }
-      if (request.method === "DELETE" && url.pathname.startsWith("/v1/runners/")) {
-        return handleDelete(request, env, url);
-      }
-      if (request.method === "POST" && url.pathname === "/v1/runners/list") {
-        return handleListRunners(request, env);
-      }
-      if (request.method === "POST" && url.pathname === "/v1/register/exchange") {
-        return handleRegisterExchange(request, env);
-      }
-      return new Response("not found", { status: 404 });
+      return await route(request, env);
     } catch (err) {
-      if (err instanceof Response) return err;
-      return new Response("internal error", { status: 500 });
+      return toErrorResponse(err);
     }
   },
-};
+} satisfies ExportedHandler<Env>;
+
+async function route(request: Request, env: Env): Promise<Response> {
+  const url = new URL(request.url);
+  if (request.method === "POST" && url.pathname === "/v1/jitconfig") {
+    return handleJIT(request, env);
+  }
+  if (request.method === "DELETE" && url.pathname.startsWith("/v1/runners/")) {
+    return handleDelete(request, env, url);
+  }
+  if (request.method === "POST" && url.pathname === "/v1/runners/list") {
+    return handleListRunners(request, env);
+  }
+  if (request.method === "POST" && url.pathname === "/v1/register/exchange") {
+    return handleRegisterExchange(request, env);
+  }
+  return new Response("not found", { status: 404 });
+}
+
+async function readJSON<T>(request: Request): Promise<T> {
+  const text = await request.text();
+  if (!text) {
+    throw new HttpError(400, "invalid json");
+  }
+  try {
+    return JSON.parse(text) as T;
+  } catch {
+    throw new HttpError(400, "invalid json");
+  }
+}
 
 async function handleJIT(request: Request, env: Env): Promise<Response> {
   const credential = await authenticate(env, request.headers.get("Authorization"));
-  const body = (await request.json()) as JITRequest;
+  const body = await readJSON<JITRequest>(request);
   const target = parseTarget(body.target);
   authorizeTarget(credential, target);
 
@@ -58,9 +75,9 @@ async function handleDelete(
   const credential = await authenticate(env, request.headers.get("Authorization"));
   const runnerId = Number(url.pathname.split("/").pop());
   if (!Number.isInteger(runnerId) || runnerId <= 0) {
-    return new Response("bad request", { status: 400 });
+    throw new HttpError(400, "bad request");
   }
-  const body = (await request.json()) as { target: Target };
+  const body = await readJSON<{ target: Target }>(request);
   const target = parseTarget(body.target);
   authorizeTarget(credential, target);
 
@@ -71,7 +88,7 @@ async function handleDelete(
 
 async function handleListRunners(request: Request, env: Env): Promise<Response> {
   const credential = await authenticate(env, request.headers.get("Authorization"));
-  const body = (await request.json()) as { target: Target; prefix?: string };
+  const body = await readJSON<{ target: Target; prefix?: string }>(request);
   const target = parseTarget(body.target);
   authorizeTarget(credential, target);
 
@@ -83,62 +100,15 @@ async function handleListRunners(request: Request, env: Env): Promise<Response> 
 async function handleRegisterExchange(request: Request, env: Env): Promise<Response> {
   const userToken = request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
   if (!userToken) {
-    return new Response("unauthorized", { status: 401 });
+    throw new HttpError(401, "unauthorized");
   }
-  const body = (await request.json()) as { target: Target };
+  const body = await readJSON<{ target: Target }>(request);
   const target = parseTarget(body.target);
 
-  const installationId = await verifyUserAccess(env, userToken, target);
+  const installationId = await findAppInstallation(env, userToken, target.org);
+  if (installationId === null) {
+    throw new HttpError(404, "installation not found");
+  }
   const credential = await issueHostJWT(env, installationId, target);
   return Response.json({ credential, target });
-}
-
-async function verifyUserAccess(
-  env: Env,
-  userToken: string,
-  target: Target,
-): Promise<number> {
-  const installations = await fetch("https://api.github.com/user/installations", {
-    headers: githubUserHeaders(userToken),
-  });
-  if (!installations.ok) {
-    throw new Response("unauthorized", { status: 401 });
-  }
-  const body = (await installations.json()) as {
-    installations: Array<{
-      id: number;
-      app_id: number;
-      account?: { login: string };
-    }>;
-  };
-
-  const match = body.installations.find(
-    (item) =>
-      item.app_id === Number(env.GITHUB_APP_ID) &&
-      item.account?.login === target.org,
-  );
-  if (!match) {
-    throw new Response("installation not found", { status: 404 });
-  }
-
-  const membership = await fetch(
-    `https://api.github.com/user/memberships/orgs/${target.org}`,
-    { headers: githubUserHeaders(userToken) },
-  );
-  if (!membership.ok) {
-    throw new Response("forbidden", { status: 403 });
-  }
-  const info = (await membership.json()) as { role?: string; state?: string };
-  if (info.state !== "active" || info.role !== "admin") {
-    throw new Response("forbidden", { status: 403 });
-  }
-  return match.id;
-}
-
-function githubUserHeaders(userToken: string): HeadersInit {
-  return {
-    Authorization: `Bearer ${userToken}`,
-    Accept: "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
-  };
 }

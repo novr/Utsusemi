@@ -3,7 +3,6 @@ export interface Env {
   GITHUB_APP_PRIVATE_KEY: string;
   CREDENTIAL_SIGNING_PRIVATE_KEY: string;
   JWT_ISSUER: string;
-  JWT_AUDIENCE: string;
   JWT_VERSION: string;
 }
 

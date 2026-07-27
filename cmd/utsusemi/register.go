@@ -33,7 +33,7 @@ func newRegisterCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:     "register",
 		Short:   "Register host with Public App broker",
-		Example: `  utsusemi register --org my-org --runner-group-id 1`,
+		Example: `  utsusemi register --org my-org`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if !strings.HasPrefix(brokerURL, "https://") &&
 				!strings.HasPrefix(brokerURL, "http://127.0.0.1") &&
@@ -183,6 +183,10 @@ func deviceFlow(ctx context.Context, clientID string) (string, error) {
 		case "slow_down":
 			interval += 5 * time.Second
 			continue
+		case "access_denied":
+			return "", fmt.Errorf("device authorization was denied or cancelled; run register again and approve the GitHub App")
+		case "expired_token":
+			return "", fmt.Errorf("device code expired; run register again")
 		default:
 			return "", fmt.Errorf("device flow failed: %s", tokenResult.Error)
 		}

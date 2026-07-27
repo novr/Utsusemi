@@ -7,7 +7,6 @@ discards the Tart VM after each job completes.
 
 - Apple Silicon Mac running macOS 15 or later
 - [Tart](https://tart.run/)
-- Admin access to the target GitHub organization or repository
 
 ## Installation
 
@@ -15,22 +14,18 @@ discards the Tart VM after each job completes.
 brew tap novr/taps
 brew install utsusemi
 brew install tart
-
-CONFIG="$HOME/.config/utsusemi/config.yaml"
 ```
 
 Run the setup commands as the same user that runs the Homebrew service.
-Credentials are stored in that user's Keychain.
+Credentials are stored in that user's Keychain. The default config path is
+`~/.config/utsusemi/config.yaml`.
 
 ## Public App: organization runner
 
 Install the Utsusemi GitHub App in the organization, then authorize the host:
 
 ```bash
-utsusemi register \
-  --org my-org \
-  --runner-group-id 1 \
-  --output "$CONFIG"
+utsusemi register --org my-org
 ```
 
 The Public App supports organization runners only. It does not request the
@@ -44,8 +39,7 @@ permission and expose it as `GITHUB_PAT`:
 ```bash
 utsusemi configure \
   --pat "$GITHUB_PAT" \
-  --repo owner/repo \
-  --output "$CONFIG"
+  --repo owner/repo
 ```
 
 ## Fine-grained PAT: organization runner
@@ -56,15 +50,17 @@ write` permission and expose it as `GITHUB_PAT`:
 ```bash
 utsusemi configure \
   --pat "$GITHUB_PAT" \
-  --org my-org \
-  --runner-group-id 1 \
-  --output "$CONFIG"
+  --org my-org
 ```
+
+For either PAT target, `configure` writes the runner configuration and stores
+the token in the current user's Keychain. The token is not written to the
+configuration file.
 
 ## Start the service
 
 ```bash
-utsusemi validate --config "$CONFIG"
+utsusemi validate
 brew services start utsusemi
 ```
 
