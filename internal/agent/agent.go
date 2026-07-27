@@ -62,10 +62,9 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	a.logger.Info("syncing base image", "image", a.cfg.BaseImage, "note", "first download can take several minutes")
 	if err := a.provider.SyncImage(ctx, a.cfg.BaseImage); err != nil {
-		a.logger.Warn("image sync failed", "error", err)
-	} else {
-		a.logger.Info("base image ready", "image", a.cfg.BaseImage)
+		return fmt.Errorf("sync base image: %w", err)
 	}
+	a.logger.Info("base image ready", "image", a.cfg.BaseImage)
 
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

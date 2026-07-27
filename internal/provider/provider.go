@@ -14,6 +14,7 @@ type VM struct {
 }
 
 type VMProvider interface {
+	Available() error
 	SyncImage(ctx context.Context, ref string) error
 	Clone(ctx context.Context, ref, name string) error
 	Start(ctx context.Context, name string) error

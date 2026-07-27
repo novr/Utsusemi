@@ -26,6 +26,9 @@ func loadValidatedRuntime(ctx context.Context) (*runtime, error) {
 	}
 
 	vmProvider := provider.NewTartProvider(provider.RealExecutor{})
+	if err := vmProvider.Available(); err != nil {
+		return nil, err
+	}
 	tgt, err := config.Validate(cfg, vmProvider.Capabilities().MaxConcurrent)
 	if err != nil {
 		return nil, err

@@ -3,6 +3,7 @@ package provider
 import (
 	"context"
 	"fmt"
+	"os/exec"
 )
 
 type TartProvider struct {
@@ -15,6 +16,13 @@ func NewTartProvider(exec CommandExecutor) *TartProvider {
 
 func (p *TartProvider) Capabilities() Capabilities {
 	return Capabilities{MaxConcurrent: 2}
+}
+
+func (p *TartProvider) Available() error {
+	if _, err := exec.LookPath("tart"); err != nil {
+		return fmt.Errorf("tart not found in PATH; install with `brew install tart`")
+	}
+	return nil
 }
 
 func (p *TartProvider) SyncImage(ctx context.Context, ref string) error {
