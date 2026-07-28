@@ -2,10 +2,9 @@ package main
 
 import (
 	"fmt"
-	"time"
 
 	"github.com/novr/utsusemi/internal/config"
-	"github.com/novr/utsusemi/internal/hostcredential"
+	"github.com/novr/utsusemi/internal/credentialview"
 	"github.com/novr/utsusemi/internal/keychain"
 )
 
@@ -13,23 +12,14 @@ func printHostedCredentialStatus(cfg *config.Config) error {
 	if cfg.Registration.Mode != config.ModeHostedApp {
 		return nil
 	}
-	store := keychain.New()
-	raw, err := store.Get(cfg.CredentialService(), cfg.CredentialAccount())
+	info, err := credentialview.Load(cfg, keychain.New())
 	if err != nil {
 		return err
 	}
-	status, err := hostcredential.Describe(raw)
-	if err != nil {
-		return err
+	if !info.Present {
+		return fmt.Errorf("hosted app credential not configured")
 	}
-	fmt.Printf("GitHub authorized user: %s\n", status.GitHubUser)
-	fmt.Printf("Host credential expires in: %s\n", formatRemaining(status.HostJWTExpiresIn))
+	fmt.Printf("GitHub authorized user: %s\n", info.GitHubUser)
+	fmt.Printf("Host credential expires in: %s\n", info.ExpiresIn)
 	return nil
-}
-
-func formatRemaining(remaining time.Duration) string {
-	if remaining < 0 {
-		return "expired"
-	}
-	return remaining.Round(time.Minute).String()
 }

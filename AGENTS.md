@@ -16,7 +16,7 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 
 | Area | Package / path | Owns |
 |------|----------------|------|
-| CLI | `cmd/utsusemi` | Cobra commands, prompts, `loadValidatedRuntime` / `buildAgentFromRuntime`, configure flows, `validate` status output |
+| CLI | `cmd/utsusemi` | Cobra commands, prompts, `loadConfigRuntime` / `loadValidatedRuntime` / `buildAgentFromRuntime`, configure flows |
 | Agent | `internal/agent` | `utsusemi.lock` for `run`, signal drain, delegates to pool |
 | Pool | `internal/pool` | Spawn loop, backoff, in-flight tracking, **reclaim**, **purge** (`clean`) |
 | Spawn | `internal/spawn` | One job lifecycle: clone → register → bootstrap → wait → teardown |
@@ -28,6 +28,9 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 | Targets | `internal/target` | Org/repo target types, parsing, `RequireOrg`, lowercase org |
 | Config | `internal/config` | YAML model, defaults, `Validate`, `ValidateBrokerURL` |
 | Leases | `internal/lease` | On-disk VM ↔ runner ↔ agent session |
+| Status | `internal/status` | Read-only aggregation + text format for `utsusemi status` |
+| Listing | `internal/listing` | VM/runner rows for `utsusemi list` |
+| Credential view | `internal/credentialview` | Keychain credential summary (no refresh) |
 | Keychain | `internal/keychain` | Platform secret store |
 | Locks | `internal/instancelock` | `utsusemi.lock` (agent/clean), used with blocking flock for credential refresh |
 | Broker (cloud) | `worker/` | Host JWT issue/verify, GitHub App calls, JIT/list/delete proxy |
@@ -58,6 +61,9 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 - Wire dependencies only; no pool logic, Tart commands, or OAuth/device-flow implementation.
 - `configure app` → `hostcredential.DeviceFlowClient`.
 - `configure token` → raw PAT in Keychain via `saveCredential`.
+- **`validate`** — config + credential API check (`loadValidatedRuntime`).
+- **`status`** — local ops summary via `internal/status.Collect` (`loadConfigRuntime`, no network).
+- **`list [vms|runners]`** — VM and/or runner rows via `internal/listing.Collect` (`loadValidatedRuntime`, network).
 
 ### Credentials
 

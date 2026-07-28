@@ -24,6 +24,8 @@ func main() {
 	rootCmd.AddCommand(newRunCmd())
 	rootCmd.AddCommand(newConfigureCmd())
 	rootCmd.AddCommand(newValidateCmd())
+	rootCmd.AddCommand(newStatusCmd())
+	rootCmd.AddCommand(newListCmd())
 	rootCmd.AddCommand(newCleanCmd())
 
 	if err := rootCmd.Execute(); err != nil {

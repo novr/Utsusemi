@@ -48,3 +48,13 @@ func (l *Lock) Release() error {
 	_ = syscall.Flock(int(l.file.Fd()), syscall.LOCK_UN)
 	return l.file.Close()
 }
+
+// Held reports whether another process holds an exclusive lock on path.
+func Held(path string) bool {
+	lock, err := Acquire(path)
+	if err != nil {
+		return true
+	}
+	_ = lock.Release()
+	return false
+}
