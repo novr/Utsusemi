@@ -131,6 +131,7 @@ cd worker && npm install && npm run deploy
 ```
 
 - Tag `v*` → `.github/workflows/release.yml`.
+- Release binaries embed the tag version (`v0.1.0` → `0.1.0`) via `-ldflags -X github.com/novr/utsusemi/internal/version.Version=...`.
 - Formula dispatch must pass `desc`, `test_match`, and `service_run_args: run` so the first release can create `utsusemi.rb` in `novr/homebrew-taps` (upsert when `desc` is set).
 - `release-macos` uses workspace-local `GOMODCACHE` / `GOCACHE`.
 

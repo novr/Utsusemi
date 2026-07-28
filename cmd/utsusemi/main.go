@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/novr/utsusemi/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -13,6 +14,7 @@ var (
 	rootCmd    = &cobra.Command{
 		Use:           "utsusemi",
 		Short:         "Ephemeral self-hosted GitHub Actions runners",
+		Version:       version.String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
