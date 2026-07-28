@@ -76,6 +76,13 @@ func (t Target) String() string {
 	}
 }
 
+func (t Target) DisplayString() string {
+	if t.Type == TypeOrg && t.RunnerGroupID > 0 {
+		return fmt.Sprintf("%s (group %d)", t.String(), t.RunnerGroupID)
+	}
+	return t.String()
+}
+
 func (t Target) Validate() error {
 	switch t.Type {
 	case TypeOrg:

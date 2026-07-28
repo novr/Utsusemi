@@ -52,6 +52,21 @@ func (r *Registry) EnsureDirs() error {
 	return os.MkdirAll(r.leaseDir(), 0o755)
 }
 
+func (r *Registry) LoadAgentSession() (*AgentSession, error) {
+	data, err := os.ReadFile(r.agentPath())
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var session AgentSession
+	if err := json.Unmarshal(data, &session); err != nil {
+		return nil, err
+	}
+	return &session, nil
+}
+
 func (r *Registry) BeginAgentSession() (*AgentSession, error) {
 	if err := r.EnsureDirs(); err != nil {
 		return nil, err
@@ -182,6 +197,10 @@ func ShouldReclaimRunning(lease *Lease, session *AgentSession, policy string, gr
 	default:
 		return false
 	}
+}
+
+func PidAlive(pid int) bool {
+	return pidAlive(pid)
 }
 
 func pidAlive(pid int) bool {

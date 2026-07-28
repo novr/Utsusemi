@@ -114,9 +114,13 @@ arguments may be visible to other processes.
 
 ```bash
 utsusemi validate          # check config and credentials
+utsusemi status            # local operational summary (no network)
+utsusemi list              # list managed VMs and GitHub runners
 utsusemi run               # foreground agent (Ctrl+C to stop)
 brew services start utsusemi # background service
 ```
+
+Service logs (Homebrew): `$(brew --prefix)/var/log/utsusemi.log`
 
 ### Clean up
 

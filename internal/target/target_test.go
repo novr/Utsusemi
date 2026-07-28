@@ -39,6 +39,13 @@ func TestFromConfigMutuallyExclusive(t *testing.T) {
 	}
 }
 
+func TestDisplayStringOrgGroup(t *testing.T) {
+	tgt := Target{Type: TypeOrg, Org: "my-org", RunnerGroupID: 1}
+	if got, want := tgt.DisplayString(), "org:my-org (group 1)"; got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
 func TestFromConfigOrgRequiresRunnerGroup(t *testing.T) {
 	_, err := FromConfig(ConfigYAML{Org: "my-org"})
 	if err == nil {

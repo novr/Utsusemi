@@ -32,6 +32,17 @@ func TestShouldReclaimRunningGrace(t *testing.T) {
 	}
 }
 
+func TestLoadAgentSessionMissing(t *testing.T) {
+	reg := NewRegistry(t.TempDir())
+	session, err := reg.LoadAgentSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if session != nil {
+		t.Fatalf("session=%+v", session)
+	}
+}
+
 func TestRegistryWriteRemoveLease(t *testing.T) {
 	dir := t.TempDir()
 	reg := NewRegistry(dir)

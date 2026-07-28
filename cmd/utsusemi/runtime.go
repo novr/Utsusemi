@@ -7,9 +7,11 @@ import (
 	"github.com/novr/utsusemi/internal/agent"
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/keychain"
+	"github.com/novr/utsusemi/internal/listing"
 	"github.com/novr/utsusemi/internal/logging"
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/registrar"
+	"github.com/novr/utsusemi/internal/status"
 	"github.com/novr/utsusemi/internal/target"
 )
 
@@ -21,7 +23,7 @@ type runtime struct {
 	logger    *slog.Logger
 }
 
-func loadValidatedRuntime(ctx context.Context) (*runtime, error) {
+func loadConfigRuntime(ctx context.Context) (*runtime, error) {
 	cfg, err := config.Load(configPath)
 	if err != nil {
 		return nil, err
@@ -42,9 +44,6 @@ func loadValidatedRuntime(ctx context.Context) (*runtime, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := reg.ValidateCredential(ctx, cfg.CredentialService(), cfg.CredentialAccount()); err != nil {
-		return nil, err
-	}
 
 	return &runtime{
 		cfg:       cfg,
@@ -53,6 +52,36 @@ func loadValidatedRuntime(ctx context.Context) (*runtime, error) {
 		registrar: reg,
 		logger:    log,
 	}, nil
+}
+
+func loadValidatedRuntime(ctx context.Context) (*runtime, error) {
+	rt, err := loadConfigRuntime(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if err := rt.registrar.ValidateCredential(ctx, rt.cfg.CredentialService(), rt.cfg.CredentialAccount()); err != nil {
+		return nil, err
+	}
+	return rt, nil
+}
+
+func (rt *runtime) statusInput(store keychain.Store) status.Input {
+	return status.Input{
+		Cfg:      rt.cfg,
+		Target:   rt.tgt,
+		Provider: rt.provider,
+		Store:    store,
+	}
+}
+
+func (rt *runtime) listingInput(scope string) listing.Input {
+	return listing.Input{
+		Cfg:       rt.cfg,
+		Target:    rt.tgt,
+		Provider:  rt.provider,
+		Registrar: rt.registrar,
+		Scope:     scope,
+	}
 }
 
 func buildAgentFromRuntime(rt *runtime) (*agent.Agent, error) {
