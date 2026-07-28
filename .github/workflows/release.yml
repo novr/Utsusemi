@@ -134,17 +134,11 @@ jobs:
   dispatch-formula:
     needs: [prepare, release-macos]
     if: needs.prepare.outputs.prerelease != 'true'
-    uses: novr/homebrew-taps/.github/workflows/dispatch-formula.yml@e3891938391b6cdaa8b7669d7e4ef444d988865c
+    uses: novr/homebrew-taps/.github/workflows/dispatch-formula.yml@3c774dfd3408b2bf7ecd66ea045d9f85ac3e6ac4
     with:
       formula: utsusemi
       version: ${{ needs.prepare.outputs.version }}
-      url: ${{ needs.release-macos.outputs.url }}
       sha256: ${{ needs.release-macos.outputs.sha256 }}
-      desc: "Ephemeral self-hosted GitHub Actions runners on Apple Silicon Macs"
-      binary: utsusemi
-      test_match: "Ephemeral"
-      service_run_args: run
-      source_repo: ${{ github.repository }}
     secrets:
       NOVRD_BOT_CLIENT_ID: ${{ secrets.NOVRD_BOT_CLIENT_ID }}
       NOVRD_BOT_KEY: ${{ secrets.NOVRD_BOT_KEY }}
