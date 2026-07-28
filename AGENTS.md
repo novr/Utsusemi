@@ -65,6 +65,12 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 - **`status`** — local ops summary via `internal/status.Collect` (`loadConfigRuntime`, no network).
 - **`list [vms|runners]`** — VM and/or runner rows via `internal/listing.Collect` (`loadValidatedRuntime`, network).
 
+### Shell completion
+
+- Cobra の `completion` で zsh/bash/fish を生成。Homebrew Formula は `generate_completions_from_executable(..., shell_parameter_format: :cobra)` でインストール時に配置する。
+- **コマンドの追加・削除・改名、サブコマンドや位置引数の変更時**は [README.md](README.md) の Operations / Configuration と同様に `cmd/utsusemi/completion.go`（`registerListCompletions` など）と `completion_test.go` を更新し、補完候補をドキュメントに追従させる。
+- トップレベルや `configure app|token` など Cobra が自動補完するものも、README から外れたらテストと登録の見直し対象とする。
+
 ### Credentials
 
 | Mode | Keychain contents |
@@ -133,6 +139,7 @@ cd worker && npm install && npm run deploy
 - Tag `v*` → `.github/workflows/release.yml`.
 - Release binaries embed the tag version (`v0.1.0` → `0.1.0`) via `-ldflags -X github.com/novr/utsusemi/internal/version.Version=...`.
 - Formula dispatch must pass `desc`, `test_match`, and `service_run_args: run` so the first release can create `utsusemi.rb` in `novr/homebrew-taps` (upsert when `desc` is set).
+- `Formula/utsusemi.rb` の `install` に `generate_completions_from_executable(bin/"utsusemi", shell_parameter_format: :cobra)` を含める（`brew install` / `brew reinstall` で zsh 補完を配置）。
 - `release-macos` uses workspace-local `GOMODCACHE` / `GOCACHE`.
 
 ### Removed / no migration

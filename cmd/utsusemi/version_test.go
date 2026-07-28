@@ -24,15 +24,22 @@ func testVersionOutput(t *testing.T, args []string) {
 	t.Cleanup(func() { version.Version = old })
 
 	var out bytes.Buffer
-	cmd := *rootCmd
-	cmd.Version = version.String()
-	cmd.SetVersionTemplate(version.Line() + "\n")
-	cmd.SetOut(&out)
-	cmd.SetErr(&bytes.Buffer{})
-	cmd.AddCommand(newVersionCmd())
-	cmd.SetArgs(args)
+	oldRootVersion := rootCmd.Version
+	oldVersionTemplate := rootCmd.VersionTemplate()
+	rootCmd.Version = version.String()
+	rootCmd.SetVersionTemplate(version.Line() + "\n")
+	rootCmd.SetOut(&out)
+	rootCmd.SetErr(&bytes.Buffer{})
+	rootCmd.SetArgs(args)
+	t.Cleanup(func() {
+		rootCmd.SetOut(nil)
+		rootCmd.SetErr(nil)
+		rootCmd.SetArgs(nil)
+		rootCmd.Version = oldRootVersion
+		rootCmd.SetVersionTemplate(oldVersionTemplate)
+	})
 
-	if err := cmd.Execute(); err != nil {
+	if err := rootCmd.Execute(); err != nil {
 		t.Fatal(err)
 	}
 	got := strings.TrimSpace(out.String())
