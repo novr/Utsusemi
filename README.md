@@ -123,6 +123,28 @@ brew services start utsusemi # background service
 
 Service logs (Homebrew): `$(brew --prefix)/var/log/utsusemi.log`
 
+### Shell completion (zsh)
+
+The Homebrew formula installs completion files to
+`$(brew --prefix)/share/zsh/site-functions` on `brew install` / `brew reinstall`.
+zsh must load that directory via `brew shellenv` (not just `brew` on `PATH`). Add
+to `~/.zshrc` before `compinit`:
+
+```bash
+eval "$(brew shellenv)"
+autoload -Uz compinit
+compinit
+```
+
+Restart the shell or run `exec zsh`. Tab-complete subcommands (`configure app`,
+`list vms`, and so on) after the space.
+
+Without changing `fpath`, you can source completions directly:
+
+```bash
+source <(utsusemi completion zsh)
+```
+
 ### Clean up
 
 Stop Utsusemi, then remove every managed VM and runner for the current config:

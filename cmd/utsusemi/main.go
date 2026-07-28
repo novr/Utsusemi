@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"github.com/novr/utsusemi/internal/version"
 	"github.com/spf13/cobra"
@@ -11,6 +12,7 @@ import (
 
 var (
 	configPath string
+	initRoot   sync.Once
 	rootCmd    = &cobra.Command{
 		Use:           "utsusemi",
 		Short:         "Ephemeral self-hosted GitHub Actions runners",
@@ -19,19 +21,29 @@ var (
 	}
 )
 
+func initRootCmd() {
+	initRoot.Do(func() {
+		rootCmd.PersistentFlags().StringVar(&configPath, "config", defaultConfigPath(), "path to config file")
+
+		rootCmd.AddCommand(newVersionCmd())
+		rootCmd.AddCommand(newRunCmd())
+		rootCmd.AddCommand(newConfigureCmd())
+		rootCmd.AddCommand(newValidateCmd())
+		rootCmd.AddCommand(newStatusCmd())
+
+		listCmd := newListCmd()
+		registerListCompletions(listCmd)
+		rootCmd.AddCommand(listCmd)
+
+		rootCmd.AddCommand(newCleanCmd())
+	})
+}
+
 func main() {
 	rootCmd.Version = version.String()
 	rootCmd.SetVersionTemplate(version.Line() + "\n")
 
-	rootCmd.PersistentFlags().StringVar(&configPath, "config", defaultConfigPath(), "path to config file")
-
-	rootCmd.AddCommand(newVersionCmd())
-	rootCmd.AddCommand(newRunCmd())
-	rootCmd.AddCommand(newConfigureCmd())
-	rootCmd.AddCommand(newValidateCmd())
-	rootCmd.AddCommand(newStatusCmd())
-	rootCmd.AddCommand(newListCmd())
-	rootCmd.AddCommand(newCleanCmd())
+	initRootCmd()
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintln(os.Stderr, "Error:", err)

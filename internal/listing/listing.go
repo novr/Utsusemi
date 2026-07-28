@@ -17,6 +17,11 @@ const (
 	ScopeRunners = "runners"
 )
 
+// TargetChoices are valid non-empty arguments for `utsusemi list`.
+func TargetChoices() []string {
+	return []string{ScopeVMs, ScopeRunners}
+}
+
 type VM struct {
 	Name    string `json:"name"`
 	Running bool   `json:"running"`

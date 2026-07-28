@@ -16,10 +16,15 @@ func newListCmd() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			scope := listing.ScopeAll
 			if len(args) > 0 {
-				switch args[0] {
-				case listing.ScopeVMs, listing.ScopeRunners:
-					scope = args[0]
-				default:
+				scope = args[0]
+				valid := false
+				for _, choice := range listing.TargetChoices() {
+					if scope == choice {
+						valid = true
+						break
+					}
+				}
+				if !valid {
 					return fmt.Errorf("unknown list target %q (expected vms or runners)", args[0])
 				}
 			}
