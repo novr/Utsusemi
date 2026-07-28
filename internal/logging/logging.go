@@ -26,11 +26,13 @@ func New() *slog.Logger {
 	opts := &slog.HandlerOptions{Level: slog.LevelInfo}
 	var inner slog.Handler
 	if isTerminal(os.Stdout) {
-		inner = slog.NewTextHandler(os.Stdout, opts)
+		inner = newHumanHandler(os.Stdout, slog.LevelInfo)
 	} else {
 		inner = slog.NewJSONHandler(os.Stdout, opts)
 	}
-	return slog.New(redactingHandler{inner: inner})
+	logger := slog.New(redactingHandler{inner: inner})
+	subprocessLogger = logger
+	return logger
 }
 
 func isTerminal(f *os.File) bool {

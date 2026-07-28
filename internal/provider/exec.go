@@ -9,6 +9,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"syscall"
+
+	"github.com/novr/utsusemi/internal/logging"
 )
 
 func runCommand(ctx context.Context, name string, args []string, stdin []byte, env map[string]string) error {
@@ -37,8 +39,12 @@ func runCommandStreaming(ctx context.Context, name string, args []string, stdin 
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
+	out := logging.SubprocessWriter(os.Stdout)
+	errOut := logging.SubprocessWriter(os.Stderr)
+	defer logging.FlushWriter(out)
+	defer logging.FlushWriter(errOut)
+	cmd.Stdout = out
+	cmd.Stderr = errOut
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("%s %v: %w", name, args, err)
 	}
