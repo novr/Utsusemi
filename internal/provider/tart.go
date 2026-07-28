@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"sort"
 )
 
 type TartProvider struct {
@@ -49,9 +50,32 @@ func (p *TartProvider) Start(ctx context.Context, name string) error {
 	return p.exec.StartDetached(ctx, "tart", args, nil)
 }
 
+// tart exec neither attaches stdin by default nor forwards the host
+// environment, so -i is added on demand and env is applied by the guest's env(1).
 func (p *TartProvider) ExecStdin(ctx context.Context, name, cmd string, args []string, stdin []byte, env map[string]string) error {
-	execArgs := append([]string{"exec", name, "--", cmd}, args...)
-	return p.exec.Run(ctx, "tart", execArgs, stdin, env)
+	execArgs := []string{"exec"}
+	if len(stdin) > 0 {
+		execArgs = append(execArgs, "-i")
+	}
+	execArgs = append(execArgs, name)
+	if len(env) > 0 {
+		execArgs = append(execArgs, "env")
+		for _, key := range sortedKeys(env) {
+			execArgs = append(execArgs, fmt.Sprintf("%s=%s", key, env[key]))
+		}
+	}
+	execArgs = append(execArgs, cmd)
+	execArgs = append(execArgs, args...)
+	return p.exec.Run(ctx, "tart", execArgs, stdin, nil)
+}
+
+func sortedKeys(env map[string]string) []string {
+	keys := make([]string, 0, len(env))
+	for key := range env {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	return keys
 }
 
 func (p *TartProvider) Stop(ctx context.Context, name string) error {
@@ -59,7 +83,7 @@ func (p *TartProvider) Stop(ctx context.Context, name string) error {
 }
 
 func (p *TartProvider) Delete(ctx context.Context, name string) error {
-	return p.exec.Run(ctx, "tart", []string{"delete", name, "--force"}, nil, nil)
+	return p.exec.Run(ctx, "tart", []string{"delete", name}, nil, nil)
 }
 
 func (p *TartProvider) ListManaged(ctx context.Context, prefix string) ([]VM, error) {

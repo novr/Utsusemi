@@ -6,7 +6,7 @@ discards the Tart VM after each job completes.
 ## Requirements
 
 - Apple Silicon Mac running macOS 15 or later
-- [Tart](https://tart.run/)
+- [Tart](https://tart.run/) 2.34 or later
 
 ## Installation
 
@@ -103,6 +103,21 @@ as a background service instead:
 
 ```bash
 brew services start utsusemi
+```
+
+## Clean up
+
+Stop Utsusemi, then delete every managed Tart VM and GitHub runner for the
+current config:
+
+```bash
+utsusemi clean
+```
+
+Preview what would be removed:
+
+```bash
+utsusemi clean --dry-run
 ```
 
 ## FAQ

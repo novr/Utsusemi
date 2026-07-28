@@ -2,6 +2,10 @@ package spawn
 
 import (
 	"context"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -82,4 +86,38 @@ func TestSpawnPassesJITOnStdin(t *testing.T) {
 
 func TestSpawnUsesKeychainRegistrarInterface(_ *testing.T) {
 	_ = keychain.NewMemoryStore()
+}
+
+func TestBootstrapForwardsStdinJITToRunner(t *testing.T) {
+	home := t.TempDir()
+	recorded := filepath.Join(home, "args.txt")
+	stub := "#!/bin/bash\nprintf '%s\\n' \"$@\" > " + recorded + "\n"
+	if err := os.WriteFile(filepath.Join(home, "run.sh"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("bash", "-c", bootstrapScript)
+	cmd.Env = append(os.Environ(), "RUNNER_VERSION=2.336.0", "RUNNER_HOME="+home)
+	cmd.Stdin = strings.NewReader("encoded-jit")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("bootstrap failed: %v: %s", err, out)
+	}
+
+	got, err := os.ReadFile(recorded)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "--jitconfig\nencoded-jit\n"; string(got) != want {
+		t.Fatalf("run.sh args = %q, want %q", string(got), want)
+	}
+}
+
+func TestBootstrapRequiresJITOnStdin(t *testing.T) {
+	home := t.TempDir()
+	cmd := exec.Command("bash", "-c", bootstrapScript)
+	cmd.Env = append(os.Environ(), "RUNNER_VERSION=2.336.0", "RUNNER_HOME="+home)
+	cmd.Stdin = strings.NewReader("")
+	if err := cmd.Run(); err == nil {
+		t.Fatal("expected failure when stdin is empty")
+	}
 }

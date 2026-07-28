@@ -11,11 +11,11 @@ import (
 	"github.com/novr/utsusemi/internal/logging"
 )
 
-func newReclaimCmd() *cobra.Command {
+func newCleanCmd() *cobra.Command {
 	var dryRun bool
 
 	cmd := &cobra.Command{
-		Use:   "reclaim",
+		Use:   "clean",
 		Short: "Delete all managed VMs and runners for this config",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			rt, err := loadValidatedRuntime(cmd.Context())
@@ -25,7 +25,7 @@ func newReclaimCmd() *cobra.Command {
 
 			lock, err := instancelock.Acquire(filepath.Join(rt.cfg.StateDir, "utsusemi.lock"))
 			if err != nil {
-				return fmt.Errorf("stop utsusemi before reclaim: %w", err)
+				return fmt.Errorf("stop utsusemi before clean: %w", err)
 			}
 			defer lock.Release()
 
