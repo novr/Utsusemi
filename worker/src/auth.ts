@@ -1,6 +1,7 @@
 import type { Env, HostCredential, Target } from "./types";
 import { parseTarget, targetKey } from "./github";
 import { HttpError } from "./http";
+import { pemToPkcs8 } from "./pem";
 
 interface JWTClaims {
   iss: string;
@@ -125,13 +126,18 @@ async function importEd25519PrivateKey(pem: string): Promise<CryptoKey> {
   if (!pem) {
     throw new HttpError(500, "credential signing key is not configured");
   }
-  const normalized = pem.replace(/\\n/g, "\n");
-  const body = normalized
-    .replace("-----BEGIN PRIVATE KEY-----", "")
-    .replace("-----END PRIVATE KEY-----", "")
-    .replace(/\s+/g, "");
-  const raw = Uint8Array.from(atob(body), (c) => c.charCodeAt(0));
-  return crypto.subtle.importKey("pkcs8", raw, { name: "Ed25519" }, true, ["sign"]);
+  try {
+    return await crypto.subtle.importKey(
+      "pkcs8",
+      pemToPkcs8(pem),
+      { name: "Ed25519" },
+      true,
+      ["sign"],
+    );
+  } catch (err) {
+    console.error("credential signing key import failed", err);
+    throw new HttpError(500, "credential signing key is invalid");
+  }
 }
 
 async function importEd25519PublicKey(privateKeyPem: string): Promise<CryptoKey> {

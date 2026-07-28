@@ -1,5 +1,6 @@
 import type { Env, Target } from "./types";
 import { HttpError } from "./http";
+import { pemToPkcs8 } from "./pem";
 
 const GITHUB_API = "https://api.github.com";
 const USER_AGENT = "utsusemi-broker";
@@ -189,19 +190,18 @@ export async function signAppJWT(env: Env): Promise<string> {
 }
 
 async function importPKCS8(pem: string): Promise<CryptoKey> {
-  const normalized = pem.replace(/\\n/g, "\n");
-  const body = normalized
-    .replace("-----BEGIN PRIVATE KEY-----", "")
-    .replace("-----END PRIVATE KEY-----", "")
-    .replace(/\s+/g, "");
-  const raw = Uint8Array.from(atob(body), (c) => c.charCodeAt(0));
-  return crypto.subtle.importKey(
-    "pkcs8",
-    raw,
-    { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
+  try {
+    return await crypto.subtle.importKey(
+      "pkcs8",
+      pemToPkcs8(pem),
+      { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" },
+      false,
+      ["sign"],
+    );
+  } catch (err) {
+    console.error("github app private key import failed", err);
+    throw new HttpError(500, "github app private key is invalid");
+  }
 }
 
 function base64url(input: string | ArrayBuffer): string {
