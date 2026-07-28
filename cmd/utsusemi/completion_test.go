@@ -30,7 +30,7 @@ func completionNames(t *testing.T, output string) []string {
 	t.Helper()
 
 	var names []string
-	for line := range strings.SplitSeq(strings.TrimSpace(output), "\n") {
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
 		if strings.HasPrefix(line, ":") || strings.HasPrefix(line, "Completion ended") {
 			continue
 		}
