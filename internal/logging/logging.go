@@ -14,6 +14,8 @@ var sensitivePatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(gho_[A-Za-z0-9_]+)`),
 	regexp.MustCompile(`(?i)(github_pat_[A-Za-z0-9_]+)`),
 	regexp.MustCompile(`(?i)(eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+)`),
+	regexp.MustCompile(`(?i)("refresh_token"\s*:\s*")[^"]+`),
+	regexp.MustCompile(`(?i)("host_jwt"\s*:\s*")[^"]+`),
 }
 
 type redactingHandler struct {
@@ -72,7 +74,7 @@ func redact(value string) string {
 	for _, pattern := range sensitivePatterns {
 		out = pattern.ReplaceAllString(out, "${1}[REDACTED]")
 	}
-	if strings.Contains(out, "ghp_") || strings.Contains(out, "github_pat_") || strings.Contains(out, "eyJ") {
+	if strings.Contains(out, "ghp_") || strings.Contains(out, "github_pat_") || strings.Contains(out, "eyJ") || strings.Contains(out, "refresh_token") {
 		return "[REDACTED]"
 	}
 	return out

@@ -8,18 +8,22 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/novr/utsusemi/internal/config"
+	"github.com/novr/utsusemi/internal/hostcredential"
 	"github.com/novr/utsusemi/internal/keychain"
 	"github.com/novr/utsusemi/internal/target"
 )
 
 type BrokerRegistrar struct {
-	client  *http.Client
-	store   keychain.Store
-	cfg     *config.Config
-	baseURL string
+	client    *http.Client
+	store     keychain.Store
+	cfg       *config.Config
+	baseURL   string
+	refreshMu sync.Mutex
+	oauth     *hostcredential.OAuthClient
 }
 
 func NewBrokerRegistrar(store keychain.Store, cfg *config.Config) *BrokerRegistrar {
@@ -32,34 +36,24 @@ func NewBrokerRegistrar(store keychain.Store, cfg *config.Config) *BrokerRegistr
 }
 
 func (r *BrokerRegistrar) ValidateCredential(ctx context.Context, service, account string) error {
-	token, err := r.credential()
-	if err != nil {
-		return fmt.Errorf("credential missing from keychain: %w", err)
-	}
-	if strings.TrimSpace(token) == "" || token == "-" {
-		return fmt.Errorf("invalid credential in keychain; run `utsusemi configure app` again")
-	}
 	tgt, err := target.FromConfig(r.cfg.Target)
 	if err != nil {
 		return err
 	}
-	if _, err := r.ListRunners(ctx, tgt, ""); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (r *BrokerRegistrar) credential() (string, error) {
-	return r.store.Get(r.cfg.CredentialService(), r.cfg.CredentialAccount())
+	return r.requestWithCredential(ctx, tgt, func(token string) error {
+		reqBody := map[string]any{
+			"target": targetPayload(tgt),
+			"prefix": "",
+		}
+		return r.post(ctx, "/v1/runners/list", token, reqBody, &struct {
+			Runners []Runner `json:"runners"`
+		}{})
+	})
 }
 
 func (r *BrokerRegistrar) CreateJIT(ctx context.Context, tgt target.Target, labels []string, name string) (JITConfig, error) {
 	if tgt.Type != target.TypeOrg {
 		return JITConfig{}, fmt.Errorf("broker supports organization targets only")
-	}
-	token, err := r.credential()
-	if err != nil {
-		return JITConfig{}, err
 	}
 	reqBody := map[string]any{
 		"target": targetPayload(tgt),
@@ -67,7 +61,10 @@ func (r *BrokerRegistrar) CreateJIT(ctx context.Context, tgt target.Target, labe
 		"name":   name,
 	}
 	var resp jitResponse
-	if err := r.post(ctx, "/v1/jitconfig", token, reqBody, &resp); err != nil {
+	err := r.requestWithCredential(ctx, tgt, func(token string) error {
+		return r.post(ctx, "/v1/jitconfig", token, reqBody, &resp)
+	})
+	if err != nil {
 		return JITConfig{}, err
 	}
 	return JITConfig{
@@ -83,22 +80,16 @@ func (r *BrokerRegistrar) DeleteRunner(ctx context.Context, tgt target.Target, r
 	if tgt.Type != target.TypeOrg {
 		return fmt.Errorf("broker supports organization targets only")
 	}
-	token, err := r.credential()
-	if err != nil {
-		return err
-	}
 	path := fmt.Sprintf("/v1/runners/%d", runnerID)
 	reqBody := map[string]any{"target": targetPayload(tgt)}
-	return r.delete(ctx, path, token, reqBody)
+	return r.requestWithCredential(ctx, tgt, func(token string) error {
+		return r.delete(ctx, path, token, reqBody)
+	})
 }
 
 func (r *BrokerRegistrar) ListRunners(ctx context.Context, tgt target.Target, prefix string) ([]Runner, error) {
 	if tgt.Type != target.TypeOrg {
 		return nil, fmt.Errorf("broker supports organization targets only")
-	}
-	token, err := r.credential()
-	if err != nil {
-		return nil, err
 	}
 	reqBody := map[string]any{
 		"target": targetPayload(tgt),
@@ -107,18 +98,17 @@ func (r *BrokerRegistrar) ListRunners(ctx context.Context, tgt target.Target, pr
 	var resp struct {
 		Runners []Runner `json:"runners"`
 	}
-	if err := r.post(ctx, "/v1/runners/list", token, reqBody, &resp); err != nil {
+	err := r.requestWithCredential(ctx, tgt, func(token string) error {
+		return r.post(ctx, "/v1/runners/list", token, reqBody, &resp)
+	})
+	if err != nil {
 		return nil, err
 	}
 	return resp.Runners, nil
 }
 
 func targetPayload(tgt target.Target) map[string]any {
-	return map[string]any{
-		"type":            "org",
-		"org":             tgt.Org,
-		"runner_group_id": tgt.RunnerGroupID,
-	}
+	return hostcredential.TargetPayload(tgt)
 }
 
 func (r *BrokerRegistrar) post(ctx context.Context, path, token string, body any, out any) error {
@@ -181,14 +171,15 @@ func (r *BrokerRegistrar) do(ctx context.Context, method, path, token string, bo
 		return err
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		err := &apiError{StatusCode: resp.StatusCode, Message: strings.TrimSpace(string(respBody))}
-		if resp.StatusCode == http.StatusUnauthorized {
-			return fmt.Errorf("%w; run `utsusemi configure app` again", err)
-		}
-		return err
+		return &apiError{StatusCode: resp.StatusCode, Message: strings.TrimSpace(string(respBody))}
 	}
 	if out == nil || len(respBody) == 0 {
 		return nil
 	}
 	return json.Unmarshal(respBody, out)
+}
+
+func isUnauthorized(err error) bool {
+	apiErr, ok := err.(*apiError)
+	return ok && apiErr.StatusCode == http.StatusUnauthorized
 }

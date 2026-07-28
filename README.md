@@ -35,6 +35,15 @@ utsusemi configure app --org my-org
 configuration. The App supports organization runners only and does not request
 the repository `Administration` permission.
 
+Hosted app credentials refresh automatically before the broker-issued host JWT
+expires (within seven days of expiry, on startup validation, or after a broker
+401). Re-authorization requires the GitHub App **User-to-server token
+expiration** optional feature (Opt-in). The host stores a GitHub refresh token
+in Keychain alongside the host JWT so it can renew without repeating device flow.
+If the host is offline for more than six months or refresh fails, run
+`utsusemi configure app` again. Stop the background service before re-running
+`configure app` (`brew services stop utsusemi`).
+
 ## Fine-grained PAT: repository runner
 
 Create a fine-grained personal access token with repository
