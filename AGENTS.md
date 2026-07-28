@@ -146,3 +146,5 @@ cd worker && npm install && npm run deploy
 ### Removed / no migration
 
 Legacy paths (`register`, bare JWT, `api_key`, `own_app`) are gone. Product is unreleased; breaking credential or storage changes are acceptable when noted here or in release notes.
+
+**Release note (pending):** default `reclaim_policy` changed from `soft` to `grace`. Configs without an explicit policy now reclaim stale VMs after `reclaim_grace`. Set `reclaim_policy: soft` for prior behavior.

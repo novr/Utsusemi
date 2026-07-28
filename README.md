@@ -8,10 +8,7 @@ brew install utsusemi
 utsusemi configure app --org my-org
 utsusemi validate
 utsusemi run
-```
-
-```bash
-brew services start utsusemi
+# brew services start utsusemi   # background
 ```
 
 ## Requirements
@@ -52,7 +49,7 @@ Example: [examples/config.pat.yaml](examples/config.pat.yaml).
 
 ### GitHub App
 
-Install the [Utsusemi GitHub App](https://github.com/apps/utsusemiapp). Enable **User-to-server token expiration** (Opt-in).
+Organization runners only. Install the [Utsusemi GitHub App](https://github.com/apps/utsusemiapp). Enable **User-to-server token expiration** (Opt-in).
 
 ```bash
 utsusemi configure app --org my-org
@@ -92,6 +89,8 @@ printf '%s' "$TOKEN" | utsusemi configure token --org my-org
 
 ### Runtime options
 
+Edit `config.yaml` after `configure` (not written by `configure`).
+
 | Key | Default | Notes |
 |-----|---------|-------|
 | `reclaim_policy` | `grace` | `soft` — local dev; `hard` — immediate |
@@ -106,11 +105,7 @@ printf '%s' "$TOKEN" | utsusemi configure token --org my-org
 
 - **base_image** / `--base-image` — pull on agent start ([Tart](https://tart.run/))
 - **min_free_disk_gb** — default `50`
-- **Keychain**:
-  ```bash
-  security unlock-keychain login.keychain
-  security set-keychain-settings -t 0 ~/Library/Keychains/login.keychain-db
-  ```
+- **Keychain** — unlock: `security unlock-keychain login.keychain`; headless: `security set-keychain-settings -t 0 ~/Library/Keychains/login.keychain-db`
 - **Networking** — [Tart FAQ](https://tart.run/faq/); `softnet: true` → [Softnet](https://github.com/cirruslabs/softnet)
 
 ## Operations
@@ -124,12 +119,12 @@ utsusemi run
 brew services start utsusemi
 ```
 
+Reclaim (automatic during `run`, per Runtime options) vs `clean` (manual purge; stop agent first):
+
 ```bash
 utsusemi clean
 utsusemi clean --dry-run
 ```
-
-Stop the agent before `clean`.
 
 ### Service logs
 
@@ -138,14 +133,11 @@ Stop the agent before `clean`.
 
 ```bash
 BREW_PREFIX="$(brew --prefix)"
-sudo tee /etc/newsyslog.d/utsusemi.conf <<EOF
-${BREW_PREFIX}/var/log/utsusemi.log       644  7  10240  *  J
-${BREW_PREFIX}/var/log/utsusemi.error.log 644  7  10240  *  J
-EOF
+curl -fsSL https://raw.githubusercontent.com/novr/Utsusemi/main/examples/utsusemi.newsyslog.conf \
+  | sed "s|@HOMEBREW_PREFIX@|${BREW_PREFIX}|g" \
+  | sudo tee /etc/newsyslog.d/utsusemi.conf
 sudo newsyslog -nv
 ```
-
-Template: [examples/utsusemi.newsyslog.conf](examples/utsusemi.newsyslog.conf).
 
 ## License
 
