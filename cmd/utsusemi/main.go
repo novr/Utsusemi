@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/novr/utsusemi/internal/version"
 	"github.com/spf13/cobra"
 )
 
@@ -19,8 +20,12 @@ var (
 )
 
 func main() {
+	rootCmd.Version = version.String()
+	rootCmd.SetVersionTemplate(version.Line() + "\n")
+
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", defaultConfigPath(), "path to config file")
 
+	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newRunCmd())
 	rootCmd.AddCommand(newConfigureCmd())
 	rootCmd.AddCommand(newValidateCmd())
