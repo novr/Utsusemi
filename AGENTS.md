@@ -1,0 +1,133 @@
+# AGENTS.md
+
+Maintainer and agent reference. User-facing docs live in [README.md](README.md) only.
+
+## 関心 (Concerns)
+
+- **Ephemeral job VMs** — each `spawn.Run` clones a VM, runs one Actions job, then deletes the VM and GitHub runner. The pool only keeps up to `pool_size` such cycles in flight; it does not retain long-lived runner VMs.
+- **Pool availability** — maintain warm capacity without leaking VMs, runners, disk, or leases.
+- **Single agent process** — at most one `utsusemi run` / `brew services` instance per config (`StateDir/utsusemi.lock`).
+- **Credential safety** — secrets in Keychain only; `config.yaml` is non-secret.
+- **Hosted app renewability** — device flow once; OAuth refresh + broker exchange thereafter while the host runs.
+- **Registration modes** — `hosted_app` (organization + broker) and `github_pat` (organization or repository, direct GitHub API). Keep code paths separate.
+- **macOS / Tart** — Keychain, NAT lease limits, optional Softnet; Tart CLI stays behind `internal/provider`.
+
+## 責務 (Responsibilities)
+
+| Area | Package / path | Owns |
+|------|----------------|------|
+| CLI | `cmd/utsusemi` | Cobra commands, prompts, `loadValidatedRuntime` / `buildAgentFromRuntime`, configure flows, `validate` status output |
+| Agent | `internal/agent` | `utsusemi.lock` for `run`, signal drain, delegates to pool |
+| Pool | `internal/pool` | Spawn loop, backoff, in-flight tracking, **reclaim**, **purge** (`clean`) |
+| Spawn | `internal/spawn` | One job lifecycle: clone → register → bootstrap → wait → teardown |
+| VMs | `internal/provider` | Tart / executor abstraction |
+| Runners | `internal/registrar` | `RunnerRegistrar` interface |
+| PAT mode | `internal/registrar/pat.go` | GitHub REST with PAT from Keychain |
+| Broker mode | `internal/registrar/broker.go` | Broker HTTP; `requestWithCredential` + `hostcredential.Manager` |
+| Host credentials | `internal/hostcredential` | Bundle (hosted app), device flow, OAuth refresh, exchange, `EnsureFresh` |
+| Targets | `internal/target` | Org/repo target types, parsing, `RequireOrg`, lowercase org |
+| Config | `internal/config` | YAML model, defaults, `Validate`, `ValidateBrokerURL` |
+| Leases | `internal/lease` | On-disk VM ↔ runner ↔ agent session |
+| Keychain | `internal/keychain` | Platform secret store |
+| Locks | `internal/instancelock` | `utsusemi.lock` (agent/clean), used with blocking flock for credential refresh |
+| Broker (cloud) | `worker/` | Host JWT issue/verify, GitHub App calls, JIT/list/delete proxy |
+| Release | `.github/workflows` | macOS binary, GitHub release, Homebrew formula dispatch |
+| Homebrew formula | `novr/homebrew-taps` | `Formula/utsusemi.rb` (separate repo) |
+
+## 境界 (Boundaries)
+
+### README vs this file
+
+| README | AGENTS.md |
+|--------|-----------|
+| Install, configure, run, clean, FAQ | Architecture, invariants, contributor workflow |
+| No broker API or build internals | Broker routes, deploy, test constraints |
+
+### Process and locks
+
+| Lock | Path | Purpose |
+|------|------|---------|
+| Agent | `{StateDir}/utsusemi.lock` | Non-blocking exclusive flock; held for entire `agent.Run` |
+| Credential refresh | `{StateDir}/credential.refresh.lock` | Blocking flock inside `Manager.EnsureFresh` |
+
+- `clean` must acquire `utsusemi.lock` (agent stopped) before `PurgeAll`.
+- `validate` and `run` can call `EnsureFresh` concurrently; credential refresh serializes on `credential.refresh.lock`, not `utsusemi.lock`.
+
+### CLI (`cmd/utsusemi`)
+
+- Wire dependencies only; no pool logic, Tart commands, or OAuth/device-flow implementation.
+- `configure app` → `hostcredential.DeviceFlowClient`.
+- `configure token` → raw PAT in Keychain via `saveCredential`.
+
+### Credentials
+
+| Mode | Keychain contents |
+|------|-------------------|
+| `hosted_app` | JSON bundle (`hostcredential.Bundle` v1): host JWT, refresh token, GitHub user |
+| `github_pat` | Raw PAT string |
+
+Hosted app rules:
+
+- `Load` accepts bundle JSON only; legacy bare JWT is rejected.
+- **`hostcredential.Manager`** owns refresh → exchange → Keychain update.
+- After OAuth refresh, persist bundle with the **new refresh token** before exchange (refresh tokens are single-use). The partial write may still carry the previous host JWT until exchange succeeds.
+- **`BrokerRegistrar`** uses `Manager.EnsureFresh` via `requestWithCredential`; do not duplicate store/oauth/lock logic there.
+- Broker **401** → `EnsureFresh(..., force=true)` and one retry; other HTTP errors do not force refresh.
+
+### Registration modes
+
+- `hosted_app` requires an **organization** target (`config.Validate`).
+- `github_pat` supports organization or repository targets.
+- New backends: implement `RunnerRegistrar`; do not branch on `registration.mode` in `pool` or `spawn`.
+
+### Pool: reclaim vs purge
+
+| | reclaim | purge (`utsusemi clean`) |
+|--|---------|--------------------------|
+| When | Startup + periodic during `run` | Manual; agent must be stopped |
+| Scope | Stale/orphan per `reclaim_policy` | All prefix-matched VMs and runners |
+| In-flight VMs | Skipped | Not skipped |
+| Leases | `RemoveLease` per VM | `ClearLeases` |
+
+Shared teardown: `stopAndDeleteManagedVM` (`managed_vm.go`).
+
+### Broker HTTP paths
+
+Keep aligned across:
+
+- `hostcredential.CredentialExchangePath`
+- `internal/registrar/paths.go`
+- `worker/src/routes.ts`
+
+Worker:
+
+- Stateless; no host Keychain or pool state.
+- `withBrokerAuth` for JIT, list, delete.
+- `POST /v1/credentials/exchange` uses the GitHub **user** access token, not the host JWT.
+
+Deploy broker separately from CLI. After JWT signing or route changes, operators may need `utsusemi configure app`.
+
+### Config
+
+- Never put tokens, PATs, or bundles in `config.yaml`.
+- Default broker: `config.DefaultHostedAppBrokerURL`; validate with `config.ValidateBrokerURL` before device flow.
+
+### Tests and toolchain
+
+- **Go 1.23** (`go.mod`). Do not use `testing.T.Context()` (Go 1.24+).
+- Tests: `provider.FakeExecutor`, `trackingRegistrar`, `keychain.MemoryStore`.
+
+### Release and Homebrew
+
+```bash
+make test && make build && make worker-test
+cd worker && npm install && npm run deploy
+```
+
+- Tag `v*` → `.github/workflows/release.yml`.
+- Formula dispatch must pass `desc`, `test_match`, and `service_run_args: run` so the first release can create `utsusemi.rb` in `novr/homebrew-taps` (upsert when `desc` is set).
+- `release-macos` uses workspace-local `GOMODCACHE` / `GOCACHE`.
+
+### Removed / no migration
+
+Legacy paths (`register`, bare JWT, `api_key`, `own_app`) are gone. Product is unreleased; breaking credential or storage changes are acceptable when noted here or in release notes.

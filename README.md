@@ -1,162 +1,144 @@
 # Utsusemi
 
-Ephemeral self-hosted GitHub Actions runners for Apple Silicon Macs. Utsusemi
-discards the Tart VM after each job completes.
+Ephemeral self-hosted GitHub Actions runners for Apple Silicon Macs. Each job
+runs in a fresh Tart VM that is discarded when the job finishes.
+
+## Quick start
+
+```bash
+brew tap novr/taps
+brew install utsusemi tart
+utsusemi configure app --org my-org
+utsusemi validate
+utsusemi run
+```
+
+For a background service, use `brew services start utsusemi` instead of
+`utsusemi run`.
 
 ## Requirements
 
 - Apple Silicon Mac running macOS 15 or later
 - [Tart](https://tart.run/) 2.34 or later
 
-## Installation
+## Paths and credentials
 
-```bash
-brew tap novr/taps
-brew install utsusemi
-brew install tart
+Run setup and the service as the same macOS user. Credentials live in that
+user's Keychain and are not written to the config file.
+
+| Path | Default |
+|------|---------|
+| Config | `~/.config/utsusemi/config.yaml` |
+| State | `~/.local/state/utsusemi` |
+| Tart images | `~/.tart/` (or `TART_HOME`) |
+
+## Configuration
+
+```text
+utsusemi configure app [flags]    # Utsusemi GitHub App (organization runners)
+utsusemi configure token [flags]  # fine-grained PAT (organization or repository)
 ```
 
-Run the setup commands as the same user that runs the Homebrew service.
-Credentials are stored in that user's Keychain. The default config path is
-`~/.config/utsusemi/config.yaml`. Runtime state defaults to
-`~/.local/state/utsusemi`. Tart stores VM images under `~/.tart/` (or
-`TART_HOME`).
+| | `configure app` | `configure token` |
+|--|-----------------|-------------------|
+| Auth | GitHub device flow | fine-grained PAT on stdin or `--token` |
+| Targets | organization | organization or repository |
+| Credential refresh | automatic (see below) | manual (re-run when the PAT expires) |
 
-## Utsusemi GitHub App: organization runner
+Shared runner options:
+
+- `--base-image`, `--pool-size`, `--labels`, `--runner-version`
+- `--output` (config path), `--force` (overwrite without prompting)
+
+Organization targets also accept `--runner-group-id` (default `1`).
+
+If the output file already exists, `configure` prompts on an interactive
+terminal. Non-interactive runs require `--force`.
+
+Run `utsusemi configure app --help` or `utsusemi configure token --help` for
+all flags. See [examples/config.pat.yaml](examples/config.pat.yaml) for a PAT
+configuration example.
+
+### GitHub App (organization)
 
 Install the [Utsusemi GitHub App](https://github.com/apps/utsusemiapp) in the
-organization, then authorize the host:
+organization, then:
 
 ```bash
 utsusemi configure app --org my-org
 ```
 
-`configure app` authorizes the host with the App and writes the runner
-configuration. The App supports organization runners only and does not request
-the repository `Administration` permission.
+The App supports organization runners only and does not request repository
+`Administration` permission.
 
-Hosted app credentials refresh automatically before the broker-issued host JWT
-expires. Re-authorization requires the GitHub App **User-to-server token
-expiration** optional feature (Opt-in). The host stores a GitHub refresh token
-in Keychain alongside the host JWT so it can renew without repeating device flow.
-`configure app` records which GitHub user authorized the host. If that user
-leaves the organization or revokes the App, run `utsusemi configure app` again
-as another org member. Stop the background service before re-running
-`configure app` (`brew services stop utsusemi`).
+Enable the App optional feature **User-to-server token expiration** (Opt-in).
+The host stores a GitHub refresh token in Keychain so credentials can renew
+without repeating device flow. `configure app` records which GitHub user
+authorized the host.
 
-### Hosted app credential lifecycle
+Re-run `utsusemi configure app` when:
+
+- that user leaves the organization or revokes the App
+- the host was offline for more than six months
+- automatic refresh fails (check logs; `utsusemi validate` shows the authorized
+  user and how long the current credential remains valid)
+
+Stop the service before re-configuring: `brew services stop utsusemi`.
+
+#### Credential lifecycle
 
 | Item | Lifetime | When it renews |
 |------|----------|----------------|
-| Host JWT (broker) | 30 days | Automatically when ≤7 days remain, on `validate`/`run` startup, or after a broker 401 |
-| GitHub refresh token | 6 months of inactivity | Rotates on each automatic refresh (about every 23 days while the host is running) |
+| Host credential | 30 days | ≤7 days remain, on `validate`/`run` startup, or after an auth error from the service |
+| GitHub refresh token | 6 months of inactivity | Rotates on each automatic refresh (~23 days while running) |
 | GitHub user access token | 8 hours | Not stored; used only during refresh |
 
-While the host is running, credentials stay current without user action. If the
-host is offline for more than six months, or refresh fails, run
-`utsusemi configure app` again. `utsusemi validate` prints the authorized
-GitHub user and how long the current host credential remains valid.
+### Fine-grained PAT
 
-Failed automatic refresh is logged at error level with the GitHub user and
-suggests re-running `configure app` or restoring that user's App authorization.
-
-## Fine-grained PAT: repository runner
-
-Create a fine-grained personal access token with repository
-`Administration: Read and write` permission:
+**Repository runner** — token needs repository `Administration: Read and write`:
 
 ```bash
 printf '%s' "$TOKEN" | utsusemi configure token --repo owner/repo
 ```
 
-## Fine-grained PAT: organization runner
-
-Create a fine-grained personal access token with organization
-`Self-hosted runners: Read and write` permission:
+**Organization runner** — token needs organization `Self-hosted runners: Read and write`:
 
 ```bash
 printf '%s' "$TOKEN" | utsusemi configure token --org my-org
 ```
 
-## Configure
+Prefer stdin for scripts. `--token` is available when stdin is not; command-line
+arguments may be visible to other processes.
 
-Both configure commands write the runner configuration and store credentials in
-the current user's Keychain:
-
-```text
-utsusemi configure app [flags]
-utsusemi configure token [flags]
-```
-
-`app` uses the GitHub device flow and supports organization runners. `token`
-accepts a fine-grained personal access token and supports organization and
-repository runners. Tokens and App credentials are not written to the
-configuration file.
-
-`configure token` reads the token from stdin. For scripts where stdin is not
-available, pass it with `--token`; command-line arguments may be visible to
-other processes.
-
-Runner options shared by both commands:
-
-- `--base-image`: Base image used to create runner VMs
-- `--pool-size`: Number of runner VMs maintained in the pool
-- `--labels`: Comma-separated runner labels
-- `--runner-version`: GitHub Actions runner version
-- `--output`: Configuration output path
-- `--force`: Overwrite an existing config without prompting
-
-If the output path already exists, `configure` asks for confirmation on an
-interactive terminal. Non-interactive runs require `--force`.
-
-Organization targets also accept `--runner-group-id`; its default is `1`.
-Run `utsusemi configure app --help` or
-`utsusemi configure token --help` for all options.
-
-See [examples/config.pat.yaml](examples/config.pat.yaml) for a repository
-token configuration example.
-
-## Start Utsusemi
+## Operations
 
 ```bash
-utsusemi validate
-utsusemi run
+utsusemi validate          # check config and credentials
+utsusemi run               # foreground agent (Ctrl+C to stop)
+brew services start utsusemi # background service
 ```
 
-`utsusemi run` runs in the foreground and stops with Ctrl+C. To run Utsusemi
-as a background service instead:
+### Clean up
+
+Stop Utsusemi, then remove every managed VM and runner for the current config:
 
 ```bash
-brew services start utsusemi
+utsusemi clean              # delete all
+utsusemi clean --dry-run    # preview only
 ```
 
-## Clean up
-
-Stop Utsusemi, then delete every managed Tart VM and GitHub runner for the
-current config:
-
-```bash
-utsusemi clean
-```
-
-Preview what would be removed:
-
-```bash
-utsusemi clean --dry-run
-```
-
-`clean` is a full purge of all VMs and runners matching the configured name
-prefix. It is separate from **reclaim**, which runs in the background while
-`utsusemi run` is active and removes only stale or orphaned resources according
-to `reclaim_policy` and `reclaim_grace` in the config.
+`clean` purges all resources matching the configured VM name prefix. This is
+separate from **reclaim**, which runs during `utsusemi run` and removes only
+stale or orphaned resources per `reclaim_policy` and `reclaim_grace` in the
+config.
 
 ## FAQ
 
 ### Tart VMs do not start on a headless host
 
 macOS 15+ requires an unlocked `login.keychain` before Tart can start a VM. Log
-in once via Screen Sharing (and optionally enable automatic login), or unlock
-the keychain before starting Utsusemi:
+in once via Screen Sharing (optional: enable automatic login), or unlock the
+keychain before starting Utsusemi:
 
 ```bash
 security unlock-keychain login.keychain
@@ -164,54 +146,20 @@ security unlock-keychain login.keychain
 
 ### The host creates more than 253 VMs per day
 
-With the built-in NAT network, macOS hands out one-day DHCP leases, which can be
-exhausted under high VM churn. Shorten the lease time once per host (see the
-[Tart FAQ](https://tart.run/faq/)):
+Built-in NAT uses one-day DHCP leases, which exhaust quickly under high churn.
+Shorten the lease once per host (see the [Tart FAQ](https://tart.run/faq/)):
 
 ```bash
 sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.InternetSharing.default.plist bootpd -dict DHCPLeaseTimeSecs -int 600
 ```
 
-Alternatively, set `softnet: true` in the config to run VMs with
-[Softnet](https://github.com/cirruslabs/softnet), which manages leases
-automatically and isolates VM networking. Softnet must be installed and granted
-root (SUID bit or passwordless sudo):
+Or set `softnet: true` in the config to use [Softnet](https://github.com/cirruslabs/softnet), which manages leases and isolates VM networking. Install Softnet and grant root (SUID or passwordless sudo):
 
 ```bash
 brew install cirruslabs/cli/softnet
 sudo chown root "$(which softnet)"
 sudo chmod +s "$(which softnet)"
 ```
-
-## Development
-
-```bash
-make test
-make build
-make worker-test
-```
-
-### Broker worker
-
-The hosted GitHub App talks to a Cloudflare Worker broker. CLI versions in this
-repository use these routes:
-
-| Method | Path | Purpose |
-|--------|------|---------|
-| `POST` | `/v1/credentials/exchange` | Exchange a GitHub user token for a host JWT |
-| `POST` | `/v1/jitconfig` | Create a JIT runner config |
-| `POST` | `/v1/runners/list` | List managed runners |
-| `DELETE` | `/v1/runners/:id` | Delete a runner |
-
-Deploy the worker (requires Cloudflare credentials for the `utsusemi-broker`
-project):
-
-```bash
-cd worker && npm install && npm run deploy
-```
-
-After deploying broker changes, run `utsusemi configure app` on each host so
-credentials use the current exchange path.
 
 ## License
 
