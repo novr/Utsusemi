@@ -142,6 +142,9 @@ jobs:
       formula: utsusemi
       version: ${{ needs.prepare.outputs.version }}
       sha256: ${{ needs.release-macos.outputs.sha256 }}
+      desc: Ephemeral self-hosted GitHub Actions runners for Apple Silicon Macs
+      test_match: Ephemeral self-hosted
+      service_run_args: run
     secrets:
       NOVRD_BOT_CLIENT_ID: ${{ secrets.NOVRD_BOT_CLIENT_ID }}
       NOVRD_BOT_KEY: ${{ secrets.NOVRD_BOT_KEY }}
