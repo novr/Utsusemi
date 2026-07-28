@@ -45,8 +45,13 @@ func runCommandStreaming(ctx context.Context, name string, args []string, stdin 
 	return nil
 }
 
+// The process outlives ctx, which only guards the start itself: a VM must stay
+// up for the whole job and is torn down explicitly by Stop and Delete.
 func startDetached(ctx context.Context, name string, args []string, env map[string]string) error {
-	cmd := exec.CommandContext(ctx, name, args...)
+	if err := ctx.Err(); err != nil {
+		return fmt.Errorf("%s %v: %w", name, args, err)
+	}
+	cmd := exec.Command(name, args...)
 	cmd.Env = os.Environ()
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
