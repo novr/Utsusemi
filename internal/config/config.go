@@ -25,7 +25,7 @@ const (
 	DefaultJobTimeout             = 6 * time.Hour
 	DefaultMinFreeDiskGB          = 50
 	DefaultVMNamePrefix           = "utsusemi-"
-	DefaultReclaimPolicy          = ReclaimSoft
+	DefaultReclaimPolicy          = ReclaimGrace
 	DefaultReclaimGrace           = 15 * time.Minute
 	DefaultCredentialService      = "utsusemi-credential"
 	DefaultHostedAppBrokerURL     = "https://utsusemi-broker.novrd.workers.dev"

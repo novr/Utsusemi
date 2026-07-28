@@ -1,191 +1,142 @@
 # Utsusemi
 
-Ephemeral self-hosted GitHub Actions runners for Apple Silicon Macs. Each job
-runs in a fresh Tart VM that is discarded when the job finishes.
-
 ## Quick start
 
 ```bash
 brew tap novr/taps
-brew install utsusemi tart
+brew install utsusemi
 utsusemi configure app --org my-org
 utsusemi validate
 utsusemi run
+# brew services start utsusemi   # background
 ```
-
-For a background service, use `brew services start utsusemi` instead of
-`utsusemi run`.
 
 ## Requirements
 
-- Apple Silicon Mac running macOS 15 or later
-- [Tart](https://tart.run/) 2.34 or later
+- Apple Silicon Mac, macOS 15+
+- [Tart](https://tart.run/) 2.34+
 
-## Paths and credentials
-
-Run setup and the service as the same macOS user. Credentials live in that
-user's Keychain and are not written to the config file.
+## Paths
 
 | Path | Default |
 |------|---------|
 | Config | `~/.config/utsusemi/config.yaml` |
 | State | `~/.local/state/utsusemi` |
-| Tart images | `~/.tart/` (or `TART_HOME`) |
+| Credentials | Keychain (same macOS user as setup and service) |
 
 ## Configuration
 
+### Setup commands
+
 ```text
-utsusemi configure app [flags]    # Utsusemi GitHub App (organization runners)
-utsusemi configure token [flags]  # fine-grained PAT (organization or repository)
+utsusemi configure app [flags]
+utsusemi configure token [flags]
 ```
 
 | | `configure app` | `configure token` |
 |--|-----------------|-------------------|
 | Auth | GitHub device flow | fine-grained PAT on stdin or `--token` |
 | Targets | organization | organization or repository |
-| Credential refresh | automatic (see below) | manual (re-run when the PAT expires) |
+| Credential refresh | automatic | manual |
 
-Shared runner options:
+Shared flags: `--base-image`, `--pool-size`, `--labels`, `--runner-version`, `--output`, `--force`.
 
-- `--base-image`, `--pool-size`, `--labels`, `--runner-version`
-- `--output` (config path), `--force` (overwrite without prompting)
+Organization: `--runner-group-id` (default `1`).
 
-Organization targets also accept `--runner-group-id` (default `1`).
+Existing config: prompt on TTY; `--force` for non-interactive.
 
-If the output file already exists, `configure` prompts on an interactive
-terminal. Non-interactive runs require `--force`.
+Example: [examples/config.pat.yaml](examples/config.pat.yaml).
 
-Run `utsusemi configure app --help` or `utsusemi configure token --help` for
-all flags. See [examples/config.pat.yaml](examples/config.pat.yaml) for a PAT
-configuration example.
+### GitHub App
 
-### GitHub App (organization)
-
-Install the [Utsusemi GitHub App](https://github.com/apps/utsusemiapp) in the
-organization, then:
+Organization runners only. Install the [Utsusemi GitHub App](https://github.com/apps/utsusemiapp). Enable **User-to-server token expiration** (Opt-in).
 
 ```bash
 utsusemi configure app --org my-org
 ```
 
-The App supports organization runners only and does not request repository
-`Administration` permission.
+Re-run when:
 
-Enable the App optional feature **User-to-server token expiration** (Opt-in).
-The host stores a GitHub refresh token in Keychain so credentials can renew
-without repeating device flow. `configure app` records which GitHub user
-authorized the host.
+- authorized user leaves the org or revokes the App
+- host offline >6 months
+- automatic refresh fails (`utsusemi validate`, logs)
 
-Re-run `utsusemi configure app` when:
-
-- that user leaves the organization or revokes the App
-- the host was offline for more than six months
-- automatic refresh fails (check logs; `utsusemi validate` shows the authorized
-  user and how long the current credential remains valid)
-
-Stop the service before re-configuring: `brew services stop utsusemi`.
+```bash
+brew services stop utsusemi   # before re-configuring
+```
 
 #### Credential lifecycle
 
-| Item | Lifetime | When it renews |
-|------|----------|----------------|
-| Host credential | 30 days | ≤7 days remain, on `validate`/`run` startup, or after an auth error from the service |
-| GitHub refresh token | 6 months of inactivity | Rotates on each automatic refresh (~23 days while running) |
-| GitHub user access token | 8 hours | Not stored; used only during refresh |
+| Item | Lifetime | Renews |
+|------|----------|--------|
+| Host credential | 30 days | ≤7 days left, `validate`/`run` startup, or auth error |
+| GitHub refresh token | 6 months idle | Each automatic refresh (~23 days while running) |
+| GitHub user access token | 8 hours | Not stored |
 
 ### Fine-grained PAT
 
-**Repository runner** — token needs repository `Administration: Read and write`:
+Repository (`Administration: Read and write`):
 
 ```bash
 printf '%s' "$TOKEN" | utsusemi configure token --repo owner/repo
 ```
 
-**Organization runner** — token needs organization `Self-hosted runners: Read and write`:
+Organization (`Self-hosted runners: Read and write`):
 
 ```bash
 printf '%s' "$TOKEN" | utsusemi configure token --org my-org
 ```
 
-Prefer stdin for scripts. `--token` is available when stdin is not; command-line
-arguments may be visible to other processes.
+### Runtime options
+
+Edit `config.yaml` after `configure` (not written by `configure`).
+
+| Key | Default | Notes |
+|-----|---------|-------|
+| `reclaim_policy` | `grace` | `soft` — local dev; `hard` — immediate |
+| `reclaim_grace` | `15m` | When `reclaim_policy` is `grace` |
+| `reconciliation_interval` | `5m` | Reclaim interval during `run` |
+
+## Provider
+
+### Tart
+
+`provider: tart`
+
+- **base_image** / `--base-image` — pull on agent start ([Tart](https://tart.run/))
+- **min_free_disk_gb** — default `50`
+- **Keychain** — unlock: `security unlock-keychain login.keychain`; headless: `security set-keychain-settings -t 0 ~/Library/Keychains/login.keychain-db`
+- **Networking** — [Tart FAQ](https://tart.run/faq/); `softnet: true` → [Softnet](https://github.com/cirruslabs/softnet)
 
 ## Operations
 
 ```bash
-utsusemi --version         # CLI version (dev locally; release tag when installed)
-utsusemi validate          # check config and credentials
-utsusemi status            # local operational summary (no network)
-utsusemi list              # list managed VMs and GitHub runners
-utsusemi run               # foreground agent (Ctrl+C to stop)
-brew services start utsusemi # background service
+utsusemi --version
+utsusemi validate
+utsusemi status
+utsusemi list
+utsusemi run
+brew services start utsusemi
 ```
 
-Service logs (Homebrew): `$(brew --prefix)/var/log/utsusemi.log`
-
-### Shell completion (zsh)
-
-The Homebrew formula installs completion files to
-`$(brew --prefix)/share/zsh/site-functions` on `brew install` / `brew reinstall`.
-zsh must load that directory via `brew shellenv` (not just `brew` on `PATH`). Add
-to `~/.zshrc` before `compinit`:
+Reclaim (automatic during `run`, per Runtime options) vs `clean` (manual purge; stop agent first):
 
 ```bash
-eval "$(brew shellenv)"
-autoload -Uz compinit
-compinit
+utsusemi clean
+utsusemi clean --dry-run
 ```
 
-Restart the shell or run `exec zsh`. Tab-complete subcommands (`configure app`,
-`list vms`, and so on) after the space.
+### Service logs
 
-Without changing `fpath`, you can source completions directly:
-
-```bash
-source <(utsusemi completion zsh)
-```
-
-### Clean up
-
-Stop Utsusemi, then remove every managed VM and runner for the current config:
+- `$(brew --prefix)/var/log/utsusemi.log`
+- `$(brew --prefix)/var/log/utsusemi.error.log`
 
 ```bash
-utsusemi clean              # delete all
-utsusemi clean --dry-run    # preview only
-```
-
-`clean` purges all resources matching the configured VM name prefix. This is
-separate from **reclaim**, which runs during `utsusemi run` and removes only
-stale or orphaned resources per `reclaim_policy` and `reclaim_grace` in the
-config.
-
-## FAQ
-
-### Tart VMs do not start on a headless host
-
-macOS 15+ requires an unlocked `login.keychain` before Tart can start a VM. Log
-in once via Screen Sharing (optional: enable automatic login), or unlock the
-keychain before starting Utsusemi:
-
-```bash
-security unlock-keychain login.keychain
-```
-
-### The host creates more than 253 VMs per day
-
-Built-in NAT uses one-day DHCP leases, which exhaust quickly under high churn.
-Shorten the lease once per host (see the [Tart FAQ](https://tart.run/faq/)):
-
-```bash
-sudo defaults write /Library/Preferences/SystemConfiguration/com.apple.InternetSharing.default.plist bootpd -dict DHCPLeaseTimeSecs -int 600
-```
-
-Or set `softnet: true` in the config to use [Softnet](https://github.com/cirruslabs/softnet), which manages leases and isolates VM networking. Install Softnet and grant root (SUID or passwordless sudo):
-
-```bash
-brew install cirruslabs/cli/softnet
-sudo chown root "$(which softnet)"
-sudo chmod +s "$(which softnet)"
+BREW_PREFIX="$(brew --prefix)"
+curl -fsSL https://raw.githubusercontent.com/novr/Utsusemi/main/examples/utsusemi.newsyslog.conf \
+  | sed "s|@HOMEBREW_PREFIX@|${BREW_PREFIX}|g" \
+  | sudo tee /etc/newsyslog.d/utsusemi.conf
+sudo newsyslog -nv
 ```
 
 ## License
