@@ -2,7 +2,7 @@
 
 Maintainer and agent reference. User-facing docs live in [README.md](README.md) only.
 
-## 関心 (Concerns)
+## Concerns
 
 - **Ephemeral job VMs** — each `spawn.Run` clones a VM, runs one Actions job, then deletes the VM and GitHub runner. The pool only keeps up to `pool_size` such cycles in flight; it does not retain long-lived runner VMs.
 - **Pool availability** — maintain warm capacity without leaking VMs, runners, disk, or leases.
@@ -12,7 +12,7 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 - **Registration modes** — `hosted_app` (organization + broker) and `github_pat` (organization or repository, direct GitHub API). Keep code paths separate.
 - **macOS / Tart** — Keychain, NAT lease limits, optional Softnet; Tart CLI stays behind `internal/provider`.
 
-## 責務 (Responsibilities)
+## Responsibilities
 
 | Area | Package / path | Owns |
 |------|----------------|------|
@@ -37,13 +37,13 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 | Release | `.github/workflows` | macOS binary, GitHub release, Homebrew formula dispatch |
 | Homebrew formula | `novr/homebrew-taps` | `Formula/utsusemi.rb` (separate repo) |
 
-## 境界 (Boundaries)
+## Boundaries
 
 ### README vs this file
 
 | README | AGENTS.md |
 |--------|-----------|
-| Install, configure, run, clean, FAQ | Architecture, invariants, contributor workflow |
+| Install, configure, run, clean | Architecture, invariants, contributor workflow |
 | No broker API or build internals | Broker routes, deploy, test constraints |
 
 ### Process and locks
@@ -67,9 +67,8 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 
 ### Shell completion
 
-- Cobra の `completion` で zsh/bash/fish を生成。Homebrew Formula は `generate_completions_from_executable(..., shell_parameter_format: :cobra)` でインストール時に配置する。
-- **コマンドの追加・削除・改名、サブコマンドや位置引数の変更時**は [README.md](README.md) の Operations / Configuration と同様に `cmd/utsusemi/completion.go`（`registerListCompletions` など）と `completion_test.go` を更新し、補完候補をドキュメントに追従させる。
-- トップレベルや `configure app|token` など Cobra が自動補完するものも、README から外れたらテストと登録の見直し対象とする。
+- Cobra `completion` generates zsh/bash/fish scripts. The Homebrew formula installs them via `generate_completions_from_executable(..., shell_parameter_format: :cobra)`.
+- When adding, removing, or renaming commands, subcommands, or positional args, update `cmd/utsusemi/completion.go` (`registerListCompletions`, etc.) and `completion_test.go`. Do not document end-user setup in README; leave that to the formula.
 
 ### Credentials
 
@@ -123,6 +122,8 @@ Deploy broker separately from CLI. After JWT signing or route changes, operators
 
 - Never put tokens, PATs, or bundles in `config.yaml`.
 - Default broker: `config.DefaultHostedAppBrokerURL`; validate with `config.ValidateBrokerURL` before device flow.
+- Default `reclaim_policy`: `grace` (`config.DefaultReclaimPolicy`).
+- Operator docs in [README.md](README.md) Operations and Provider. Alerts/notifications are out of scope.
 
 ### Tests and toolchain
 
@@ -139,7 +140,7 @@ cd worker && npm install && npm run deploy
 - Tag `v*` → `.github/workflows/release.yml`.
 - Release binaries embed the tag version (`v0.1.0` → `0.1.0`) via `-ldflags -X github.com/novr/utsusemi/internal/version.Version=...`.
 - Formula dispatch must pass `desc`, `test_match`, and `service_run_args: run` so the first release can create `utsusemi.rb` in `novr/homebrew-taps` (upsert when `desc` is set).
-- `Formula/utsusemi.rb` の `install` に `generate_completions_from_executable(bin/"utsusemi", shell_parameter_format: :cobra)` を含める（`brew install` / `brew reinstall` で zsh 補完を配置）。
+- `Formula/utsusemi.rb` `install` must include `generate_completions_from_executable(bin/"utsusemi", shell_parameter_format: :cobra)` (zsh completions on `brew install` / `brew reinstall`).
 - `release-macos` uses workspace-local `GOMODCACHE` / `GOCACHE`.
 
 ### Removed / no migration
