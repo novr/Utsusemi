@@ -20,12 +20,13 @@ type Bundle struct {
 	V            int    `json:"v"`
 	HostJWT      string `json:"host_jwt"`
 	RefreshToken string `json:"refresh_token"`
+	GitHubUser   string `json:"github_user"`
 }
 
 type Loaded struct {
 	HostJWT      string
 	RefreshToken string
-	Legacy       bool
+	GitHubUser   string
 }
 
 func Load(raw string) (Loaded, error) {
@@ -41,19 +42,16 @@ func Load(raw string) (Loaded, error) {
 		if b.V != BundleVersion {
 			return Loaded{}, fmt.Errorf("unsupported credential bundle version %d", b.V)
 		}
-		if b.HostJWT == "" || b.RefreshToken == "" {
+		if b.HostJWT == "" || b.RefreshToken == "" || b.GitHubUser == "" {
 			return Loaded{}, fmt.Errorf("invalid credential bundle")
 		}
 		return Loaded{
 			HostJWT:      b.HostJWT,
 			RefreshToken: b.RefreshToken,
-			Legacy:       false,
+			GitHubUser:   b.GitHubUser,
 		}, nil
 	}
-	if isLegacyJWT(raw) {
-		return Loaded{HostJWT: raw, Legacy: true}, nil
-	}
-	return Loaded{}, fmt.Errorf("unrecognized credential format")
+	return Loaded{}, fmt.Errorf("unrecognized credential format; run `utsusemi configure app`")
 }
 
 func MarshalBundle(b Bundle) (string, error) {
@@ -65,18 +63,32 @@ func MarshalBundle(b Bundle) (string, error) {
 	return string(data), nil
 }
 
-func NewBundle(hostJWT, refreshToken string) (string, error) {
+func NewBundle(hostJWT, refreshToken, githubUser string) (string, error) {
 	return MarshalBundle(Bundle{
 		HostJWT:      hostJWT,
 		RefreshToken: refreshToken,
+		GitHubUser:   githubUser,
 	})
 }
 
-func isLegacyJWT(raw string) bool {
-	if !strings.HasPrefix(raw, "eyJ") {
-		return false
+type Status struct {
+	GitHubUser       string
+	HostJWTExpiresIn time.Duration
+}
+
+func Describe(raw string) (Status, error) {
+	loaded, err := Load(raw)
+	if err != nil {
+		return Status{}, err
 	}
-	return strings.Count(raw, ".") == 2
+	remaining, err := HostJWTExpiresIn(loaded.HostJWT)
+	if err != nil {
+		return Status{}, err
+	}
+	return Status{
+		GitHubUser:       loaded.GitHubUser,
+		HostJWTExpiresIn: remaining,
+	}, nil
 }
 
 func HostJWTExpiresIn(jwt string) (time.Duration, error) {

@@ -16,7 +16,16 @@ import (
 	"github.com/novr/utsusemi/internal/target"
 )
 
-const legacyFreshJWT = "eyJhbGciOiJFUzI1NiJ9.eyJleHAiOjk5OTk5OTk5OTl9.c2ln"
+const freshHostJWT = "eyJhbGciOiJFUzI1NiJ9.eyJleHAiOjk5OTk5OTk5OTl9.c2ln"
+
+func testFreshBundle(t *testing.T) string {
+	t.Helper()
+	bundle, err := hostcredential.NewBundle(freshHostJWT, "refresh-test", "octocat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	return bundle
+}
 
 func testBrokerConfig(t *testing.T, serverURL string) *config.Config {
 	t.Helper()
@@ -45,7 +54,7 @@ func TestBrokerRegistrarJIT(t *testing.T) {
 	defer server.Close()
 
 	store := keychain.NewMemoryStore()
-	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, legacyFreshJWT)
+	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, testFreshBundle(t))
 	reg := NewBrokerRegistrar(store, testBrokerConfig(t, server.URL))
 	jit, err := reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "utsusemi-x")
 	if err != nil {
@@ -68,7 +77,7 @@ func TestBrokerRegistrarListRunners(t *testing.T) {
 	defer server.Close()
 
 	store := keychain.NewMemoryStore()
-	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, legacyFreshJWT)
+	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, testFreshBundle(t))
 	reg := NewBrokerRegistrar(store, testBrokerConfig(t, server.URL))
 	runners, err := reg.ListRunners(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, "utsusemi-")
 	if err != nil {
@@ -95,7 +104,7 @@ func TestBrokerRegistrarRetryOnRateLimit(t *testing.T) {
 	defer server.Close()
 
 	store := keychain.NewMemoryStore()
-	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, legacyFreshJWT)
+	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, testFreshBundle(t))
 	reg := NewBrokerRegistrar(store, testBrokerConfig(t, server.URL))
 	_, err := reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "n")
 	if err != nil {
@@ -107,20 +116,47 @@ func TestBrokerRegistrarRetryOnRateLimit(t *testing.T) {
 }
 
 func TestBrokerRegistrarUnauthorizedSuggestsReregister(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.WriteHeader(http.StatusUnauthorized)
-		_, _ = w.Write([]byte("unauthorized"))
+	broker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/v1/register/exchange":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"credential": makeExpiringJWT(time.Now().Add(30 * 24 * time.Hour)),
+				"target": map[string]any{
+					"type":            "org",
+					"org":             "my-org",
+					"runner_group_id": float64(1),
+				},
+			})
+		case "/v1/jitconfig":
+			w.WriteHeader(http.StatusUnauthorized)
+			_, _ = w.Write([]byte("unauthorized"))
+		default:
+			t.Fatalf("path %s", r.URL.Path)
+		}
 	}))
-	defer server.Close()
+	defer broker.Close()
+
+	oauth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  "access",
+			"refresh_token": "refresh-new",
+		})
+	}))
+	defer oauth.Close()
 
 	store := keychain.NewMemoryStore()
-	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, legacyFreshJWT)
-	reg := NewBrokerRegistrar(store, testBrokerConfig(t, server.URL))
+	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, testFreshBundle(t))
+	reg := NewBrokerRegistrar(store, testBrokerConfig(t, broker.URL))
+	reg.oauth = &hostcredential.OAuthClient{TokenURL: oauth.URL}
+
 	_, err := reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "n")
 	if err == nil {
 		t.Fatal("expected error")
 	}
 	if !strings.Contains(err.Error(), "utsusemi configure app") {
+		t.Fatalf("error=%v", err)
+	}
+	if !strings.Contains(err.Error(), "octocat") {
 		t.Fatalf("error=%v", err)
 	}
 }
@@ -148,7 +184,7 @@ func TestBrokerRegistrarRefreshBeforeExpiry(t *testing.T) {
 	defer oauth.Close()
 
 	jwt := makeExpiringJWT(time.Now().Add(30 * 24 * time.Hour))
-	bundle, err := hostcredential.NewBundle(jwt, "refresh-old")
+	bundle, err := hostcredential.NewBundle(jwt, "refresh-old", "octocat")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -202,7 +238,7 @@ func TestBrokerRegistrarRefreshWhenStale(t *testing.T) {
 	defer oauth.Close()
 
 	jwt := makeExpiringJWT(time.Now().Add(48 * time.Hour))
-	bundle, err := hostcredential.NewBundle(jwt, "refresh-old")
+	bundle, err := hostcredential.NewBundle(jwt, "refresh-old", "octocat")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -269,7 +305,7 @@ func TestBrokerRegistrarUnauthorizedRefreshesOnce(t *testing.T) {
 	defer oauth.Close()
 
 	jwt := makeExpiringJWT(time.Now().Add(30 * 24 * time.Hour))
-	bundle, err := hostcredential.NewBundle(jwt, "refresh-old")
+	bundle, err := hostcredential.NewBundle(jwt, "refresh-old", "octocat")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +352,7 @@ func TestBrokerRegistrarExchangeFailurePreservesRefreshToken(t *testing.T) {
 	defer oauth.Close()
 
 	jwt := makeExpiringJWT(time.Now().Add(48 * time.Hour))
-	bundle, err := hostcredential.NewBundle(jwt, "refresh-old")
+	bundle, err := hostcredential.NewBundle(jwt, "refresh-old", "octocat")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -401,7 +437,7 @@ func TestBrokerRegistrarExchangeNotFoundNoRetryLoop(t *testing.T) {
 	defer oauth.Close()
 
 	jwt := makeExpiringJWT(time.Now().Add(48 * time.Hour))
-	bundle, err := hostcredential.NewBundle(jwt, "refresh-old")
+	bundle, err := hostcredential.NewBundle(jwt, "refresh-old", "octocat")
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"strings"
 	"sync"
@@ -24,6 +25,7 @@ type BrokerRegistrar struct {
 	baseURL   string
 	refreshMu sync.Mutex
 	oauth     *hostcredential.OAuthClient
+	logger    *slog.Logger
 }
 
 func NewBrokerRegistrar(store keychain.Store, cfg *config.Config) *BrokerRegistrar {

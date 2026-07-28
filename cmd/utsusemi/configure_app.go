@@ -69,6 +69,11 @@ func newConfigureAppCmd() *cobra.Command {
 				return err
 			}
 
+			githubUser, err := hostcredential.FetchGitHubUserLogin(cmd.Context(), http.DefaultClient, flow.AccessToken)
+			if err != nil {
+				return fmt.Errorf("lookup github user: %w", err)
+			}
+
 			hostJWT, confirmedTarget, err := hostcredential.ExchangeHostJWT(
 				cmd.Context(),
 				http.DefaultClient,
@@ -80,7 +85,7 @@ func newConfigureAppCmd() *cobra.Command {
 				return fmt.Errorf("configure app exchange failed: %w", err)
 			}
 
-			credential, err := hostcredential.NewBundle(hostJWT, flow.RefreshToken)
+			credential, err := hostcredential.NewBundle(hostJWT, flow.RefreshToken, githubUser)
 			if err != nil {
 				return err
 			}
@@ -104,7 +109,7 @@ func newConfigureAppCmd() *cobra.Command {
 			if err := writeConfig(outputPath, cfg); err != nil {
 				return err
 			}
-			printConfigureSuccess(outputPath)
+			printConfigureSuccess(outputPath, githubUser)
 			return nil
 		},
 	}

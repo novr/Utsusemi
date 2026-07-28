@@ -21,7 +21,7 @@ func testJWT(exp time.Time) string {
 }
 
 func TestLoadBundle(t *testing.T) {
-	raw, err := NewBundle("eyJ.a.b", "refresh-1")
+	raw, err := NewBundle("eyJ.a.b", "refresh-1", "octocat")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,19 +29,15 @@ func TestLoadBundle(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if loaded.Legacy || loaded.RefreshToken != "refresh-1" || loaded.HostJWT != "eyJ.a.b" {
+	if loaded.RefreshToken != "refresh-1" || loaded.HostJWT != "eyJ.a.b" || loaded.GitHubUser != "octocat" {
 		t.Fatalf("loaded=%+v", loaded)
 	}
 }
 
-func TestLoadLegacyJWT(t *testing.T) {
+func TestLoadRejectsLegacyJWT(t *testing.T) {
 	jwt := testJWT(time.Now().Add(30 * 24 * time.Hour))
-	loaded, err := Load(jwt)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !loaded.Legacy || loaded.RefreshToken != "" {
-		t.Fatalf("loaded=%+v", loaded)
+	if _, err := Load(jwt); err == nil {
+		t.Fatal("expected error for legacy jwt")
 	}
 }
 
@@ -144,6 +140,42 @@ func TestExchangeHostJWT(t *testing.T) {
 	}
 	if credential != "host-jwt" || confirmed.Org != "my-org" {
 		t.Fatalf("credential=%q target=%+v", credential, confirmed)
+	}
+}
+
+func TestFetchGitHubUserLogin(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/user" {
+			t.Fatalf("path %s", r.URL.Path)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{"login": "octocat"})
+	}))
+	defer server.Close()
+
+	login, err := fetchGitHubUserLogin(t.Context(), server.Client(), "token", server.URL+"/user")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if login != "octocat" {
+		t.Fatalf("login=%q", login)
+	}
+}
+
+func TestDescribeBundle(t *testing.T) {
+	jwt := testJWT(time.Now().Add(30 * 24 * time.Hour))
+	raw, err := NewBundle(jwt, "refresh", "octocat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	status, err := Describe(raw)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.GitHubUser != "octocat" {
+		t.Fatalf("status=%+v", status)
+	}
+	if status.HostJWTExpiresIn <= 0 {
+		t.Fatalf("remaining=%s", status.HostJWTExpiresIn)
 	}
 }
 

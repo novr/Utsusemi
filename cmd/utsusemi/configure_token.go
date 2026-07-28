@@ -64,7 +64,7 @@ func newConfigureTokenCmd() *cobra.Command {
 			if err := writeConfig(outputPath, cfg); err != nil {
 				return err
 			}
-			printConfigureSuccess(outputPath)
+			printConfigureSuccess(outputPath, "")
 			return nil
 		},
 	}

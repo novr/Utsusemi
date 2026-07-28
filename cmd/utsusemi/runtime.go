@@ -39,6 +39,10 @@ func loadValidatedRuntime(ctx context.Context) (*runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	log := logging.New()
+	if broker, ok := reg.(*registrar.BrokerRegistrar); ok {
+		broker.SetLogger(log)
+	}
 	if err := reg.ValidateCredential(ctx, cfg.CredentialService(), cfg.CredentialAccount()); err != nil {
 		return nil, err
 	}

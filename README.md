@@ -36,13 +36,29 @@ configuration. The App supports organization runners only and does not request
 the repository `Administration` permission.
 
 Hosted app credentials refresh automatically before the broker-issued host JWT
-expires (within seven days of expiry, on startup validation, or after a broker
-401). Re-authorization requires the GitHub App **User-to-server token
+expires. Re-authorization requires the GitHub App **User-to-server token
 expiration** optional feature (Opt-in). The host stores a GitHub refresh token
 in Keychain alongside the host JWT so it can renew without repeating device flow.
-If the host is offline for more than six months or refresh fails, run
-`utsusemi configure app` again. Stop the background service before re-running
+`configure app` records which GitHub user authorized the host. If that user
+leaves the organization or revokes the App, run `utsusemi configure app` again
+as another org member. Stop the background service before re-running
 `configure app` (`brew services stop utsusemi`).
+
+### Hosted app credential lifecycle
+
+| Item | Lifetime | When it renews |
+|------|----------|----------------|
+| Host JWT (broker) | 30 days | Automatically when ≤7 days remain, on `validate`/`run` startup, or after a broker 401 |
+| GitHub refresh token | 6 months of inactivity | Rotates on each automatic refresh (about every 23 days while the host is running) |
+| GitHub user access token | 8 hours | Not stored; used only during refresh |
+
+While the host is running, credentials stay current without user action. If the
+host is offline for more than six months, or refresh fails, run
+`utsusemi configure app` again. `utsusemi validate` prints the authorized
+GitHub user and how long the current host credential remains valid.
+
+Failed automatic refresh is logged at error level with the GitHub user and
+suggests re-running `configure app` or restoring that user's App authorization.
 
 ## Fine-grained PAT: repository runner
 

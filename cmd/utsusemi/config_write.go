@@ -57,9 +57,13 @@ func confirmConfigOverwrite(path string, force bool, in io.Reader, out io.Writer
 	return nil
 }
 
-func printConfigureSuccess(path string) {
+func printConfigureSuccess(path, githubUser string) {
 	fmt.Printf("wrote config to %s\n", path)
-	fmt.Println("credential stored in keychain")
+	if githubUser != "" {
+		fmt.Printf("credential stored in keychain (GitHub user: %s)\n", githubUser)
+	} else {
+		fmt.Println("credential stored in keychain")
+	}
 	fmt.Println("next: run `utsusemi validate`, then `utsusemi run`")
 	fmt.Println("or start it in the background with `brew services start utsusemi`")
 }

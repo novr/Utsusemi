@@ -3,6 +3,7 @@ package registrar
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"path/filepath"
 	"strings"
 
@@ -44,12 +45,6 @@ func (r *BrokerRegistrar) ensureFresh(ctx context.Context, tgt target.Target, fo
 	if !needs {
 		return loaded.HostJWT, nil
 	}
-	if loaded.Legacy {
-		if force {
-			return "", fmt.Errorf("credential cannot be refreshed; run `utsusemi configure app` again")
-		}
-		return loaded.HostJWT, nil
-	}
 
 	loaded, err = r.loadCredential()
 	if err != nil {
@@ -72,10 +67,11 @@ func (r *BrokerRegistrar) ensureFresh(ctx context.Context, tgt target.Target, fo
 
 	refreshed, err := oauth.RefreshGitHubToken(ctx, hostcredential.PublicAppClientID, loaded.RefreshToken)
 	if err != nil {
-		return "", err
+		r.logCredentialFailure("refresh", loaded.GitHubUser, err)
+		return "", r.refreshError(loaded.GitHubUser, err)
 	}
 
-	partial, err := hostcredential.NewBundle(loaded.HostJWT, refreshed.RefreshToken)
+	partial, err := hostcredential.NewBundle(loaded.HostJWT, refreshed.RefreshToken, loaded.GitHubUser)
 	if err != nil {
 		return "", err
 	}
@@ -85,10 +81,11 @@ func (r *BrokerRegistrar) ensureFresh(ctx context.Context, tgt target.Target, fo
 
 	hostJWT, _, err := hostcredential.ExchangeHostJWT(ctx, r.client, r.baseURL, refreshed.AccessToken, tgt)
 	if err != nil {
-		return "", err
+		r.logCredentialFailure("exchange", loaded.GitHubUser, err)
+		return "", r.refreshError(loaded.GitHubUser, err)
 	}
 
-	final, err := hostcredential.NewBundle(hostJWT, refreshed.RefreshToken)
+	final, err := hostcredential.NewBundle(hostJWT, refreshed.RefreshToken, loaded.GitHubUser)
 	if err != nil {
 		return "", err
 	}
@@ -119,9 +116,50 @@ func (r *BrokerRegistrar) requestWithCredential(
 	}
 	if err := fn(token); err != nil {
 		if isUnauthorized(err) {
+			user := r.authorizedGitHubUser()
+			r.logCredentialFailure("broker_unauthorized", user, err)
+			if user != "" {
+				return fmt.Errorf("credential rejected for GitHub user %q: %w; run `utsusemi configure app` again", user, err)
+			}
 			return fmt.Errorf("%w; run `utsusemi configure app` again", err)
 		}
 		return err
 	}
 	return nil
+}
+
+func (r *BrokerRegistrar) authorizedGitHubUser() string {
+	loaded, err := r.loadCredential()
+	if err != nil {
+		return ""
+	}
+	return loaded.GitHubUser
+}
+
+func (r *BrokerRegistrar) SetLogger(logger *slog.Logger) {
+	r.logger = logger
+}
+
+func (r *BrokerRegistrar) log() *slog.Logger {
+	if r.logger != nil {
+		return r.logger
+	}
+	return slog.Default()
+}
+
+func (r *BrokerRegistrar) logCredentialFailure(stage, githubUser string, err error) {
+	r.log().Error(
+		"hosted app credential update failed",
+		"stage", stage,
+		"github_user", githubUser,
+		"error", err,
+		"action", "run `utsusemi configure app` again or restore GitHub App authorization for this user",
+	)
+}
+
+func (r *BrokerRegistrar) refreshError(githubUser string, err error) error {
+	if githubUser == "" {
+		return err
+	}
+	return fmt.Errorf("credential update failed for GitHub user %q: %w", githubUser, err)
 }

@@ -141,3 +141,45 @@ func ExchangeHostJWT(ctx context.Context, client *http.Client, brokerURL, userTo
 	}
 	return result.Credential, confirmed, nil
 }
+
+const defaultGitHubUserURL = "https://api.github.com/user"
+
+func FetchGitHubUserLogin(ctx context.Context, client *http.Client, accessToken string) (string, error) {
+	return fetchGitHubUserLogin(ctx, client, accessToken, defaultGitHubUserURL)
+}
+
+func fetchGitHubUserLogin(ctx context.Context, client *http.Client, accessToken, userURL string) (string, error) {
+	if client == nil {
+		client = http.DefaultClient
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, userURL, nil)
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	resp, err := client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("github user lookup failed: %s", strings.TrimSpace(string(body)))
+	}
+	var user struct {
+		Login string `json:"login"`
+	}
+	if err := json.Unmarshal(body, &user); err != nil {
+		return "", fmt.Errorf("parse github user: %w", err)
+	}
+	if user.Login == "" {
+		return "", fmt.Errorf("github user login missing")
+	}
+	return user.Login, nil
+}
