@@ -145,6 +145,11 @@ Preview what would be removed:
 utsusemi clean --dry-run
 ```
 
+`clean` is a full purge of all VMs and runners matching the configured name
+prefix. It is separate from **reclaim**, which runs in the background while
+`utsusemi run` is active and removes only stale or orphaned resources according
+to `reclaim_policy` and `reclaim_grace` in the config.
+
 ## FAQ
 
 ### Tart VMs do not start on a headless host
@@ -183,7 +188,30 @@ sudo chmod +s "$(which softnet)"
 ```bash
 make test
 make build
+make worker-test
 ```
+
+### Broker worker
+
+The hosted GitHub App talks to a Cloudflare Worker broker. CLI versions in this
+repository use these routes:
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| `POST` | `/v1/credentials/exchange` | Exchange a GitHub user token for a host JWT |
+| `POST` | `/v1/jitconfig` | Create a JIT runner config |
+| `POST` | `/v1/runners/list` | List managed runners |
+| `DELETE` | `/v1/runners/:id` | Delete a runner |
+
+Deploy the worker (requires Cloudflare credentials for the `utsusemi-broker`
+project):
+
+```bash
+cd worker && npm install && npm run deploy
+```
+
+After deploying broker changes, run `utsusemi configure app` on each host so
+credentials use the current exchange path.
 
 ## License
 
