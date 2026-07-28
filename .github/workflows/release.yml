@@ -53,6 +53,9 @@ jobs:
   release-macos:
     needs: prepare
     runs-on: macos-latest
+    env:
+      GOMODCACHE: ${{ github.workspace }}/.gomodcache
+      GOCACHE: ${{ github.workspace }}/.gocache
     outputs:
       url: ${{ steps.package.outputs.url }}
       sha256: ${{ steps.package.outputs.sha256 }}
