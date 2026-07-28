@@ -1,5 +1,7 @@
 package version
 
+const Name = "utsusemi"
+
 // Version is set at link time from the release tag (e.g. 0.1.0).
 var Version = "dev"
 
@@ -8,4 +10,8 @@ func String() string {
 		return "dev"
 	}
 	return Version
+}
+
+func Line() string {
+	return Name + " version " + String()
 }

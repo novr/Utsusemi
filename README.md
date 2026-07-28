@@ -113,6 +113,7 @@ arguments may be visible to other processes.
 ## Operations
 
 ```bash
+utsusemi --version         # CLI version (dev locally; release tag when installed)
 utsusemi validate          # check config and credentials
 utsusemi status            # local operational summary (no network)
 utsusemi list              # list managed VMs and GitHub runners

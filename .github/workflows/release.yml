@@ -75,7 +75,7 @@ jobs:
         run: |
           set -euo pipefail
           VERSION="${{ needs.prepare.outputs.version }}"
-          LDFLAGS="-s -w -X github.com/novr/utsusemi/internal/version.Version=${VERSION}"
+          LDFLAGS="-s -w -X 'github.com/novr/utsusemi/internal/version.Version=${VERSION}'"
 
           mkdir -p dist
           GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "${LDFLAGS}" -o dist/utsusemi ./cmd/utsusemi

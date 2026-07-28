@@ -14,15 +14,18 @@ var (
 	rootCmd    = &cobra.Command{
 		Use:           "utsusemi",
 		Short:         "Ephemeral self-hosted GitHub Actions runners",
-		Version:       version.String(),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
 )
 
 func main() {
+	rootCmd.Version = version.String()
+	rootCmd.SetVersionTemplate(version.Line() + "\n")
+
 	rootCmd.PersistentFlags().StringVar(&configPath, "config", defaultConfigPath(), "path to config file")
 
+	rootCmd.AddCommand(newVersionCmd())
 	rootCmd.AddCommand(newRunCmd())
 	rootCmd.AddCommand(newConfigureCmd())
 	rootCmd.AddCommand(newValidateCmd())

@@ -17,6 +17,11 @@ jobs:
         run: go test ./...
       - name: Build
         run: go build -o /tmp/utsusemi ./cmd/utsusemi
+      - name: Verify version embedding
+        run: |
+          go build -ldflags "-X github.com/novr/utsusemi/internal/version.Version=1.2.3-test" -o /tmp/utsusemi-version ./cmd/utsusemi
+          test "$(/tmp/utsusemi-version --version)" = "utsusemi version 1.2.3-test"
+          test "$(/tmp/utsusemi-version version)" = "utsusemi version 1.2.3-test"
 
   worker:
     runs-on: ubuntu-latest
