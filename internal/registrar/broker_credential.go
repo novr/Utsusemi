@@ -42,10 +42,6 @@ func (r *BrokerRegistrar) requestWithCredential(
 	return nil
 }
 
-func (r *BrokerRegistrar) SetLogger(logger *slog.Logger) {
-	r.logger = logger
-}
-
 func (r *BrokerRegistrar) log() *slog.Logger {
 	if r.logger != nil {
 		return r.logger

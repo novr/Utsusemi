@@ -6,7 +6,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/novr/utsusemi/internal/agent"
 	"github.com/novr/utsusemi/internal/instancelock"
 )
 
@@ -28,13 +27,7 @@ func newCleanCmd() *cobra.Command {
 			}
 			defer lock.Release()
 
-			ag, err := agent.New(agent.Options{
-				Config:    rt.cfg,
-				Target:    rt.tgt,
-				Provider:  rt.provider,
-				Registrar: rt.registrar,
-				Logger:    rt.logger,
-			})
+			ag, err := buildAgentFromRuntime(rt)
 			if err != nil {
 				return err
 			}

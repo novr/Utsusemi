@@ -55,11 +55,7 @@ func loadValidatedRuntime(ctx context.Context) (*runtime, error) {
 	}, nil
 }
 
-func buildAgent(ctx context.Context) (*agent.Agent, error) {
-	rt, err := loadValidatedRuntime(ctx)
-	if err != nil {
-		return nil, err
-	}
+func buildAgentFromRuntime(rt *runtime) (*agent.Agent, error) {
 	return agent.New(agent.Options{
 		Config:    rt.cfg,
 		Target:    rt.tgt,
@@ -67,6 +63,14 @@ func buildAgent(ctx context.Context) (*agent.Agent, error) {
 		Registrar: rt.registrar,
 		Logger:    rt.logger,
 	})
+}
+
+func buildAgent(ctx context.Context) (*agent.Agent, error) {
+	rt, err := loadValidatedRuntime(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return buildAgentFromRuntime(rt)
 }
 
 func saveCredential(cfg *config.Config, secret string) error {

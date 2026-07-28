@@ -13,8 +13,11 @@ import {
   parseTarget,
 } from "./github";
 import { HttpError, toErrorResponse } from "./http";
-
-const CREDENTIAL_EXCHANGE_PATH = "/v1/credentials/exchange";
+import {
+  brokerCredentialExchangePath,
+  brokerJITConfigPath,
+  brokerRunnersListPath,
+} from "./routes";
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
@@ -28,16 +31,16 @@ export default {
 
 async function route(request: Request, env: Env): Promise<Response> {
   const url = new URL(request.url);
-  if (request.method === "POST" && url.pathname === "/v1/jitconfig") {
+  if (request.method === "POST" && url.pathname === brokerJITConfigPath) {
     return handleJIT(request, env);
   }
   if (request.method === "DELETE" && url.pathname.startsWith("/v1/runners/")) {
     return handleDelete(request, env, url);
   }
-  if (request.method === "POST" && url.pathname === "/v1/runners/list") {
+  if (request.method === "POST" && url.pathname === brokerRunnersListPath) {
     return handleListRunners(request, env);
   }
-  if (request.method === "POST" && url.pathname === CREDENTIAL_EXCHANGE_PATH) {
+  if (request.method === "POST" && url.pathname === brokerCredentialExchangePath) {
     return handleCredentialExchange(request, env);
   }
   return new Response("not found", { status: 404 });

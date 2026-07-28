@@ -6,7 +6,6 @@ import (
 
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/lease"
-	"github.com/novr/utsusemi/internal/provider"
 )
 
 func (p *Pool) startupReclaim(ctx context.Context) error {
@@ -87,13 +86,9 @@ func (p *Pool) reclaim(ctx context.Context, startupHard bool) error {
 			if !aggressive && !lease.ShouldReclaimRunning(leasePtr, p.session, policy, grace, now) {
 				continue
 			}
-			if err := p.provider.Stop(ctx, vm.Name); err != nil {
-				p.logger.Warn("stop managed vm failed", "vm", vm.Name, "error", err)
-			}
 		}
 
-		if err := p.provider.Delete(ctx, vm.Name); err != nil {
-			p.logger.Warn("delete managed vm failed", "vm", vm.Name, "error", err)
+		if err := p.stopAndDeleteManagedVM(ctx, vm); err != nil {
 			continue
 		}
 		_ = p.leases.RemoveLease(vm.Name)
@@ -118,46 +113,4 @@ func (p *Pool) reclaim(ctx context.Context, startupHard bool) error {
 		}
 	}
 	return nil
-}
-
-func (p *Pool) purgeAllManaged(ctx context.Context, dryRun bool) ([]provider.VM, []int64, error) {
-	vms, err := p.provider.ListManaged(ctx, p.cfg.VMNamePrefix)
-	if err != nil {
-		return nil, nil, err
-	}
-	runners, err := p.registrar.ListRunners(ctx, p.tgt, p.cfg.VMNamePrefix)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	if dryRun {
-		deleted := make([]int64, 0, len(runners))
-		for _, runner := range runners {
-			deleted = append(deleted, runner.ID)
-		}
-		return vms, deleted, nil
-	}
-
-	for _, vm := range vms {
-		if vm.Running {
-			if err := p.provider.Stop(ctx, vm.Name); err != nil {
-				p.logger.Warn("stop vm failed", "vm", vm.Name, "error", err)
-			}
-		}
-		if err := p.provider.Delete(ctx, vm.Name); err != nil {
-			p.logger.Warn("delete vm failed", "vm", vm.Name, "error", err)
-		}
-	}
-	deleted := make([]int64, 0, len(runners))
-	for _, runner := range runners {
-		if err := p.registrar.DeleteRunner(ctx, p.tgt, runner.ID); err != nil {
-			p.logger.Warn("delete runner failed", "runner", runner.Name, "error", err)
-			continue
-		}
-		deleted = append(deleted, runner.ID)
-	}
-	if err := p.leases.ClearLeases(); err != nil {
-		p.logger.Warn("clear leases failed", "error", err)
-	}
-	return vms, deleted, nil
 }
