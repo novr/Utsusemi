@@ -1,6 +1,7 @@
 package hostcredential
 
 import (
+	"context"
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
@@ -84,7 +85,7 @@ func TestRefreshGitHubToken(t *testing.T) {
 	defer server.Close()
 
 	client := &OAuthClient{TokenURL: server.URL}
-	result, err := client.RefreshGitHubToken(t.Context(), PublicAppClientID, "old-refresh")
+	result, err := client.RefreshGitHubToken(context.Background(), PublicAppClientID, "old-refresh")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +104,7 @@ func TestRefreshGitHubTokenInvalidGrant(t *testing.T) {
 	defer server.Close()
 
 	client := &OAuthClient{TokenURL: server.URL}
-	_, err := client.RefreshGitHubToken(t.Context(), PublicAppClientID, "bad")
+	_, err := client.RefreshGitHubToken(context.Background(), PublicAppClientID, "bad")
 	if err == nil || !strings.Contains(err.Error(), "configure app") {
 		t.Fatalf("error=%v", err)
 	}
@@ -129,7 +130,7 @@ func TestExchangeHostJWT(t *testing.T) {
 	defer server.Close()
 
 	credential, confirmed, err := ExchangeHostJWT(
-		t.Context(),
+		context.Background(),
 		server.Client(),
 		server.URL,
 		"user-token",
@@ -152,7 +153,7 @@ func TestFetchGitHubUserLogin(t *testing.T) {
 	}))
 	defer server.Close()
 
-	login, err := fetchGitHubUserLogin(t.Context(), server.Client(), "token", server.URL+"/user")
+	login, err := fetchGitHubUserLogin(context.Background(), server.Client(), "token", server.URL+"/user")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -192,7 +193,7 @@ func TestRefreshGitHubTokenForm(t *testing.T) {
 	defer server.Close()
 
 	client := &OAuthClient{TokenURL: server.URL}
-	if _, err := client.RefreshGitHubToken(t.Context(), PublicAppClientID, "rt"); err != nil {
+	if _, err := client.RefreshGitHubToken(context.Background(), PublicAppClientID, "rt"); err != nil {
 		t.Fatal(err)
 	}
 	if form.Get("client_secret") != "" {
