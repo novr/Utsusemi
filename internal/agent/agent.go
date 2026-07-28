@@ -85,6 +85,6 @@ func (a *Agent) Run(ctx context.Context) error {
 	return a.pool.Run(ctx)
 }
 
-func (a *Agent) ReclaimAll(ctx context.Context, dryRun bool) ([]provider.VM, []int64, error) {
-	return a.pool.ReclaimAll(ctx, dryRun)
+func (a *Agent) PurgeAll(ctx context.Context, dryRun bool) ([]provider.VM, []int64, error) {
+	return a.pool.PurgeAll(ctx, dryRun)
 }

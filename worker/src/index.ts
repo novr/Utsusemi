@@ -55,14 +55,30 @@ async function readJSON<T>(request: Request): Promise<T> {
   }
 }
 
-async function handleJIT(request: Request, env: Env): Promise<Response> {
+type TargetBody = { target: Target };
+
+async function withBrokerAuth<TBody extends TargetBody, TResult>(
+  request: Request,
+  env: Env,
+  handler: (ctx: {
+    body: TBody;
+    target: Target;
+    installationToken: string;
+  }) => Promise<TResult>,
+): Promise<TResult> {
   const credential = await authenticate(env, request.headers.get("Authorization"));
-  const body = await readJSON<JITRequest>(request);
+  const body = await readJSON<TBody>(request);
   const target = parseTarget(body.target);
   authorizeTarget(credential, target);
+  const installationToken = await createInstallationToken(env, credential.installationId);
+  return handler({ body, target, installationToken });
+}
 
-  const token = await createInstallationToken(env, credential.installationId);
-  const jit = await createJIT(token, target, body.labels, body.name);
+async function handleJIT(request: Request, env: Env): Promise<Response> {
+  const jit = await withBrokerAuth(request, env, async ({ body, target, installationToken }) => {
+    const req = body as JITRequest;
+    return createJIT(installationToken, target, req.labels, req.name);
+  });
   return Response.json({
     encoded_jit_config: jit.encoded_jit_config,
     runner: jit.runner,
@@ -74,28 +90,21 @@ async function handleDelete(
   env: Env,
   url: URL,
 ): Promise<Response> {
-  const credential = await authenticate(env, request.headers.get("Authorization"));
   const runnerId = Number(url.pathname.split("/").pop());
   if (!Number.isInteger(runnerId) || runnerId <= 0) {
     throw new HttpError(400, "bad request");
   }
-  const body = await readJSON<{ target: Target }>(request);
-  const target = parseTarget(body.target);
-  authorizeTarget(credential, target);
-
-  const token = await createInstallationToken(env, credential.installationId);
-  await deleteRunner(token, target, runnerId);
+  await withBrokerAuth(request, env, async ({ target, installationToken }) => {
+    await deleteRunner(installationToken, target, runnerId);
+  });
   return new Response(null, { status: 204 });
 }
 
 async function handleListRunners(request: Request, env: Env): Promise<Response> {
-  const credential = await authenticate(env, request.headers.get("Authorization"));
-  const body = await readJSON<{ target: Target; prefix?: string }>(request);
-  const target = parseTarget(body.target);
-  authorizeTarget(credential, target);
-
-  const token = await createInstallationToken(env, credential.installationId);
-  const runners = await listRunners(token, target, body.prefix ?? "");
+  const runners = await withBrokerAuth(request, env, async ({ body, target, installationToken }) => {
+    const req = body as { target: Target; prefix?: string };
+    return listRunners(installationToken, target, req.prefix ?? "");
+  });
   return Response.json({ runners });
 }
 

@@ -1,4 +1,5 @@
 import type { Env, Target } from "./types";
+import { base64url } from "./encoding";
 import { HttpError } from "./http";
 import { pemToPkcs8 } from "./pem";
 
@@ -202,16 +203,6 @@ async function importPKCS8(pem: string): Promise<CryptoKey> {
     console.error("github app private key import failed", err);
     throw new HttpError(500, "github app private key is invalid");
   }
-}
-
-function base64url(input: string | ArrayBuffer): string {
-  const bytes =
-    typeof input === "string"
-      ? new TextEncoder().encode(input)
-      : new Uint8Array(input);
-  let binary = "";
-  for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
 }
 
 async function githubFetch(url: string, init: RequestInit): Promise<Response> {

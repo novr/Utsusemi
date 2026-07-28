@@ -89,3 +89,22 @@ func TestValidateHostedAppRequiresOrg(t *testing.T) {
 		t.Fatal("expected error")
 	}
 }
+
+func TestValidateHostedAppBrokerURL(t *testing.T) {
+	base := &Config{
+		Target:        target.ConfigYAML{Org: "my-org", RunnerGroupID: 1},
+		Labels:        []string{"self-hosted", "macOS"},
+		Registration:  Registration{Mode: ModeHostedApp, BrokerURL: "http://broker.example"},
+		Provider:      "tart",
+		BaseImage:     "ghcr.io/example/image:1",
+		RunnerVersion: "2.336.0",
+		PoolSize:      1,
+	}
+	if _, err := Validate(base, 2); err == nil {
+		t.Fatal("expected error for http broker url")
+	}
+	base.Registration.BrokerURL = "https://broker.example"
+	if _, err := Validate(base, 2); err != nil {
+		t.Fatal(err)
+	}
+}

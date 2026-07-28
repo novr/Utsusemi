@@ -1,4 +1,5 @@
 import type { Env, HostCredential, Target } from "./types";
+import { atobUrl, base64url, decodeBase64Url } from "./encoding";
 import { parseTarget, targetKey } from "./github";
 import { HttpError } from "./http";
 import { pemToPkcs8 } from "./pem";
@@ -148,30 +149,3 @@ async function importEd25519PublicKey(privateKeyPem: string): Promise<CryptoKey>
   return crypto.subtle.importKey("jwk", jwk, { name: "Ed25519" }, false, ["verify"]);
 }
 
-function base64url(input: string | ArrayBuffer): string {
-  const bytes =
-    typeof input === "string"
-      ? new TextEncoder().encode(input)
-      : new Uint8Array(input);
-  let binary = "";
-  for (const b of bytes) binary += String.fromCharCode(b);
-  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
-}
-
-function atobUrl(value: string): string {
-  return atob(padBase64Url(value));
-}
-
-function decodeBase64Url(value: string): Uint8Array {
-  const binary = atob(padBase64Url(value));
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
-}
-
-function padBase64Url(value: string): string {
-  const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
-  return normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
-}

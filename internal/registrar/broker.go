@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"path/filepath"
 	"strings"
-	"sync"
 
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/hostcredential"
@@ -16,27 +16,34 @@ import (
 )
 
 type BrokerRegistrar struct {
-	client    *http.Client
-	api       *httpClient
-	store     keychain.Store
-	cfg       *config.Config
-	baseURL   string
-	refreshMu sync.Mutex
-	oauth     *hostcredential.OAuthClient
-	logger    *slog.Logger
+	client      *http.Client
+	api         *httpClient
+	credentials *hostcredential.Manager
+	cfg         *config.Config
+	baseURL     string
+	logger      *slog.Logger
 }
 
 func NewBrokerRegistrar(store keychain.Store, cfg *config.Config, logger *slog.Logger) *BrokerRegistrar {
 	client := &http.Client{Timeout: defaultHTTPTimeout}
 	baseURL := strings.TrimRight(cfg.Registration.BrokerURL, "/")
-	return &BrokerRegistrar{
+	reg := &BrokerRegistrar{
 		client:  client,
 		api:     newBrokerHTTPClient(client, baseURL),
-		store:   store,
 		cfg:     cfg,
 		baseURL: baseURL,
 		logger:  logger,
 	}
+	reg.credentials = hostcredential.NewManager(hostcredential.ManagerOptions{
+		Store:      store,
+		Service:    cfg.CredentialService(),
+		Account:    cfg.CredentialAccount(),
+		BrokerURL:  baseURL,
+		LockPath:   filepath.Join(cfg.StateDir, "credential.refresh.lock"),
+		HTTPClient: client,
+		OnFailure:  reg.logCredentialFailure,
+	})
+	return reg
 }
 
 func (r *BrokerRegistrar) ValidateCredential(ctx context.Context, service, account string) error {

@@ -223,6 +223,6 @@ func (p *Pool) newVMName() (string, error) {
 	return fmt.Sprintf("%s%s", p.cfg.VMNamePrefix, hex.EncodeToString(buf)), nil
 }
 
-func (p *Pool) ReclaimAll(ctx context.Context, dryRun bool) ([]provider.VM, []int64, error) {
-	return p.deleteAllManaged(ctx, dryRun)
+func (p *Pool) PurgeAll(ctx context.Context, dryRun bool) ([]provider.VM, []int64, error) {
+	return p.purgeAllManaged(ctx, dryRun)
 }

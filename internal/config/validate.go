@@ -16,7 +16,7 @@ func validateRegistration(reg Registration) error {
 		if strings.TrimSpace(reg.BrokerURL) == "" {
 			return fmt.Errorf("registration.broker_url is required for %s", reg.Mode)
 		}
-		return nil
+		return ValidateBrokerURL(reg.BrokerURL)
 	default:
 		return fmt.Errorf("unsupported registration.mode %q", reg.Mode)
 	}
@@ -76,4 +76,14 @@ func Validate(cfg *Config, maxConcurrent int) (target.Target, error) {
 		return target.Target{}, fmt.Errorf("hosted_app requires an organization target")
 	}
 	return tgt, nil
+}
+
+// ValidateBrokerURL checks hosted app broker URLs (https, or local dev http).
+func ValidateBrokerURL(brokerURL string) error {
+	if strings.HasPrefix(brokerURL, "https://") ||
+		strings.HasPrefix(brokerURL, "http://127.0.0.1") ||
+		strings.HasPrefix(brokerURL, "http://localhost") {
+		return nil
+	}
+	return fmt.Errorf("registration.broker_url must use https")
 }

@@ -8,7 +8,6 @@ import (
 
 	"github.com/novr/utsusemi/internal/agent"
 	"github.com/novr/utsusemi/internal/instancelock"
-	"github.com/novr/utsusemi/internal/logging"
 )
 
 func newCleanCmd() *cobra.Command {
@@ -34,13 +33,13 @@ func newCleanCmd() *cobra.Command {
 				Target:    rt.tgt,
 				Provider:  rt.provider,
 				Registrar: rt.registrar,
-				Logger:    logging.New(),
+				Logger:    rt.logger,
 			})
 			if err != nil {
 				return err
 			}
 
-			vms, runnerIDs, err := ag.ReclaimAll(cmd.Context(), dryRun)
+			vms, runnerIDs, err := ag.PurgeAll(cmd.Context(), dryRun)
 			if err != nil {
 				return err
 			}

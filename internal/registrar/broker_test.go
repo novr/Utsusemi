@@ -147,7 +147,7 @@ func TestBrokerRegistrarUnauthorizedSuggestsReregister(t *testing.T) {
 	store := keychain.NewMemoryStore()
 	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, testFreshBundle(t))
 	reg := NewBrokerRegistrar(store, testBrokerConfig(t, broker.URL), nil)
-	reg.oauth = &hostcredential.OAuthClient{TokenURL: oauth.URL}
+	reg.credentials.SetOAuth(&hostcredential.OAuthClient{TokenURL: oauth.URL})
 
 	_, err := reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "n")
 	if err == nil {
@@ -192,7 +192,7 @@ func TestBrokerRegistrarRefreshBeforeExpiry(t *testing.T) {
 	store := keychain.NewMemoryStore()
 	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, bundle)
 	reg := NewBrokerRegistrar(store, testBrokerConfig(t, broker.URL), nil)
-	reg.oauth = &hostcredential.OAuthClient{TokenURL: oauth.URL}
+	reg.credentials.SetOAuth(&hostcredential.OAuthClient{TokenURL: oauth.URL})
 
 	_, err = reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "n")
 	if err != nil {
@@ -246,7 +246,7 @@ func TestBrokerRegistrarRefreshWhenStale(t *testing.T) {
 	store := keychain.NewMemoryStore()
 	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, bundle)
 	reg := NewBrokerRegistrar(store, testBrokerConfig(t, broker.URL), nil)
-	reg.oauth = &hostcredential.OAuthClient{TokenURL: oauth.URL}
+	reg.credentials.SetOAuth(&hostcredential.OAuthClient{TokenURL: oauth.URL})
 
 	_, err = reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "n")
 	if err != nil {
@@ -313,7 +313,7 @@ func TestBrokerRegistrarUnauthorizedRefreshesOnce(t *testing.T) {
 	store := keychain.NewMemoryStore()
 	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, bundle)
 	reg := NewBrokerRegistrar(store, testBrokerConfig(t, broker.URL), nil)
-	reg.oauth = &hostcredential.OAuthClient{TokenURL: oauth.URL}
+	reg.credentials.SetOAuth(&hostcredential.OAuthClient{TokenURL: oauth.URL})
 
 	_, err = reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "n")
 	if err != nil {
@@ -360,7 +360,7 @@ func TestBrokerRegistrarExchangeFailurePreservesRefreshToken(t *testing.T) {
 	store := keychain.NewMemoryStore()
 	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, bundle)
 	reg := NewBrokerRegistrar(store, testBrokerConfig(t, broker.URL), nil)
-	reg.oauth = &hostcredential.OAuthClient{TokenURL: oauth.URL}
+	reg.credentials.SetOAuth(&hostcredential.OAuthClient{TokenURL: oauth.URL})
 
 	_, err = reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "n")
 	if err == nil {
@@ -445,7 +445,7 @@ func TestBrokerRegistrarExchangeNotFoundNoRetryLoop(t *testing.T) {
 	store := keychain.NewMemoryStore()
 	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, bundle)
 	reg := NewBrokerRegistrar(store, testBrokerConfig(t, broker.URL), nil)
-	reg.oauth = &hostcredential.OAuthClient{TokenURL: oauth.URL}
+	reg.credentials.SetOAuth(&hostcredential.OAuthClient{TokenURL: oauth.URL})
 
 	_, err = reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "n")
 	if err == nil {

@@ -120,7 +120,7 @@ func (p *Pool) reclaim(ctx context.Context, startupHard bool) error {
 	return nil
 }
 
-func (p *Pool) deleteAllManaged(ctx context.Context, dryRun bool) ([]provider.VM, []int64, error) {
+func (p *Pool) purgeAllManaged(ctx context.Context, dryRun bool) ([]provider.VM, []int64, error) {
 	vms, err := p.provider.ListManaged(ctx, p.cfg.VMNamePrefix)
 	if err != nil {
 		return nil, nil, err
