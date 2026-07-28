@@ -92,7 +92,7 @@ func (r *GitHubPATRegistrar) doRequest(ctx context.Context, url, method, token s
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
 	}
-	resp, err := r.client.Do(req)
+	resp, err := r.api.client.Do(req)
 	if err != nil {
 		return err
 	}

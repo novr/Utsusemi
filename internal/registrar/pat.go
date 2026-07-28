@@ -1,12 +1,9 @@
 package registrar
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -18,15 +15,16 @@ import (
 const githubAPI = "https://api.github.com"
 
 type GitHubPATRegistrar struct {
-	client  *http.Client
+	api     *httpClient
 	store   keychain.Store
 	service string
 	account string
 }
 
 func NewGitHubPATRegistrar(store keychain.Store, service, account string) *GitHubPATRegistrar {
+	client := &http.Client{Timeout: 30 * time.Second}
 	return &GitHubPATRegistrar{
-		client:  &http.Client{Timeout: 30 * time.Second},
+		api:     newGitHubHTTPClient(client),
 		store:   store,
 		service: service,
 		account: account,
@@ -83,7 +81,7 @@ func (r *GitHubPATRegistrar) CreateJIT(ctx context.Context, tgt target.Target, l
 	}
 
 	var resp jitResponse
-	if err := r.doWithRetry(ctx, http.MethodPost, path, token, payload, &resp); err != nil {
+	if err := r.api.doWithRetry(ctx, http.MethodPost, path, token, payload, &resp); err != nil {
 		return JITConfig{}, err
 	}
 	return JITConfig{
@@ -104,7 +102,7 @@ func (r *GitHubPATRegistrar) DeleteRunner(ctx context.Context, tgt target.Target
 	if err != nil {
 		return err
 	}
-	return r.doWithRetry(ctx, http.MethodDelete, path, token, nil, nil)
+	return r.api.doWithRetry(ctx, http.MethodDelete, path, token, nil, nil)
 }
 
 func (r *GitHubPATRegistrar) ListRunners(ctx context.Context, tgt target.Target, prefix string) ([]Runner, error) {
@@ -122,7 +120,7 @@ func (r *GitHubPATRegistrar) ListRunners(ctx context.Context, tgt target.Target,
 	for {
 		pagedPath := fmt.Sprintf("%s?per_page=100&page=%d", path, page)
 		var resp listResponse
-		if err := r.doWithRetry(ctx, http.MethodGet, pagedPath, token, nil, &resp); err != nil {
+		if err := r.api.doWithRetry(ctx, http.MethodGet, pagedPath, token, nil, &resp); err != nil {
 			return nil, err
 		}
 		for _, item := range resp.Runners {
@@ -173,89 +171,4 @@ func deletePath(tgt target.Target, runnerID int64) (string, error) {
 	default:
 		return "", fmt.Errorf("unsupported target type")
 	}
-}
-
-func (r *GitHubPATRegistrar) doWithRetry(ctx context.Context, method, path, token string, body []byte, out any) error {
-	backoff := time.Second
-	for attempt := 0; attempt < 5; attempt++ {
-		err := r.do(ctx, method, path, token, body, out)
-		if err == nil {
-			return nil
-		}
-		if !isRetryable(err) || attempt == 4 {
-			return err
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(backoff):
-		}
-		backoff *= 2
-	}
-	return fmt.Errorf("request failed after retries")
-}
-
-func isRetryable(err error) bool {
-	apiErr, ok := asAPIError(err)
-	if !ok {
-		return false
-	}
-	return apiErr.StatusCode == http.StatusTooManyRequests || apiErr.StatusCode >= 500
-}
-
-func IsUnauthorized(err error) bool {
-	apiErr, ok := asAPIError(err)
-	return ok && apiErr.StatusCode == http.StatusUnauthorized
-}
-
-func asAPIError(err error) (*apiError, bool) {
-	var apiErr *apiError
-	if errors.As(err, &apiErr) {
-		return apiErr, true
-	}
-	return nil, false
-}
-
-type apiError struct {
-	StatusCode int
-	Message    string
-}
-
-func (e *apiError) Error() string {
-	return fmt.Sprintf("api %d: %s", e.StatusCode, e.Message)
-}
-
-func (r *GitHubPATRegistrar) do(ctx context.Context, method, path, token string, body []byte, out any) error {
-	var reader io.Reader
-	if body != nil {
-		reader = bytes.NewReader(body)
-	}
-	req, err := http.NewRequestWithContext(ctx, method, githubAPI+path, reader)
-	if err != nil {
-		return err
-	}
-	req.Header.Set("Authorization", "Bearer "+token)
-	req.Header.Set("Accept", "application/vnd.github+json")
-	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	if body != nil {
-		req.Header.Set("Content-Type", "application/json")
-	}
-
-	resp, err := r.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return err
-	}
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return &apiError{StatusCode: resp.StatusCode, Message: strings.TrimSpace(string(respBody))}
-	}
-	if out == nil || len(respBody) == 0 {
-		return nil
-	}
-	return json.Unmarshal(respBody, out)
 }

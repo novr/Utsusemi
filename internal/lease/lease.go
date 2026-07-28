@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 	"syscall"
 	"time"
+
+	"github.com/novr/utsusemi/internal/config"
 )
 
 type Lease struct {
@@ -167,9 +169,9 @@ func IsStale(lease *Lease, session *AgentSession) bool {
 
 func ShouldReclaimRunning(lease *Lease, session *AgentSession, policy string, grace time.Duration, now time.Time) bool {
 	switch policy {
-	case "hard":
+	case config.ReclaimHard:
 		return IsStale(lease, session)
-	case "grace":
+	case config.ReclaimGrace:
 		if lease == nil {
 			return true
 		}

@@ -3,6 +3,8 @@ package lease
 import (
 	"testing"
 	"time"
+
+	"github.com/novr/utsusemi/internal/config"
 )
 
 func TestIsStaleDifferentAgent(t *testing.T) {
@@ -22,16 +24,13 @@ func TestShouldReclaimRunningGrace(t *testing.T) {
 		StartedAt: time.Now().UTC().Add(-30 * time.Minute),
 	}
 	now := time.Now().UTC()
-	if !ShouldReclaimRunning(old, session, ReclaimGracePolicy(), 15*time.Minute, now) {
+	if !ShouldReclaimRunning(old, session, config.ReclaimGrace, 15*time.Minute, now) {
 		t.Fatal("expected grace reclaim")
 	}
-	if ShouldReclaimRunning(old, session, ReclaimSoftPolicy(), 15*time.Minute, now) {
+	if ShouldReclaimRunning(old, session, config.ReclaimSoft, 15*time.Minute, now) {
 		t.Fatal("soft should not reclaim running vm")
 	}
 }
-
-func ReclaimSoftPolicy() string  { return "soft" }
-func ReclaimGracePolicy() string { return "grace" }
 
 func TestRegistryWriteRemoveLease(t *testing.T) {
 	dir := t.TempDir()

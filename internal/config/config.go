@@ -27,7 +27,7 @@ const (
 	DefaultVMNamePrefix           = "utsusemi-"
 	DefaultReclaimPolicy          = ReclaimSoft
 	DefaultReclaimGrace           = 15 * time.Minute
-	DefaultCredentialService      = "utsusemi-registration"
+	DefaultCredentialService      = "utsusemi-credential"
 	DefaultCredentialAccount      = "utsusemi"
 )
 

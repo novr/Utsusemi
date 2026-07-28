@@ -14,6 +14,8 @@ import {
 } from "./github";
 import { HttpError, toErrorResponse } from "./http";
 
+const CREDENTIAL_EXCHANGE_PATH = "/v1/credentials/exchange";
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     try {
@@ -35,8 +37,8 @@ async function route(request: Request, env: Env): Promise<Response> {
   if (request.method === "POST" && url.pathname === "/v1/runners/list") {
     return handleListRunners(request, env);
   }
-  if (request.method === "POST" && url.pathname === "/v1/register/exchange") {
-    return handleRegisterExchange(request, env);
+  if (request.method === "POST" && url.pathname === CREDENTIAL_EXCHANGE_PATH) {
+    return handleCredentialExchange(request, env);
   }
   return new Response("not found", { status: 404 });
 }
@@ -97,7 +99,7 @@ async function handleListRunners(request: Request, env: Env): Promise<Response> 
   return Response.json({ runners });
 }
 
-async function handleRegisterExchange(request: Request, env: Env): Promise<Response> {
+async function handleCredentialExchange(request: Request, env: Env): Promise<Response> {
   const userToken = request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
   if (!userToken) {
     throw new HttpError(401, "unauthorized");

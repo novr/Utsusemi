@@ -39,7 +39,7 @@ func FromConfig(cfg ConfigYAML) (Target, error) {
 		}
 		return Target{
 			Type:          TypeOrg,
-			Org:           strings.TrimSpace(cfg.Org),
+			Org:           strings.ToLower(strings.TrimSpace(cfg.Org)),
 			RunnerGroupID: cfg.RunnerGroupID,
 		}, nil
 	case hasRepo:
@@ -93,4 +93,11 @@ func (t Target) Validate() error {
 		return fmt.Errorf("unknown target type %q", t.Type)
 	}
 	return nil
+}
+
+func RequireOrg(tgt Target) error {
+	if tgt.Type != TypeOrg {
+		return fmt.Errorf("broker supports organization targets only")
+	}
+	return tgt.Validate()
 }

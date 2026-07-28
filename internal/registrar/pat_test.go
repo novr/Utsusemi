@@ -29,7 +29,7 @@ func TestGitHubPATRegistrarCreateJITOrg(t *testing.T) {
 	store := keychain.NewMemoryStore()
 	_ = store.Set("svc", "acct", "pat")
 	reg := &GitHubPATRegistrar{
-		client:  server.Client(),
+		api:     &httpClient{client: server.Client()},
 		store:   store,
 		service: "svc",
 		account: "acct",
@@ -62,7 +62,7 @@ func TestGitHubPATRegistrarRetryOnRateLimit(t *testing.T) {
 
 	store := keychain.NewMemoryStore()
 	_ = store.Set("svc", "acct", "pat")
-	reg := &GitHubPATRegistrar{client: server.Client(), store: store, service: "svc", account: "acct"}
+	reg := &GitHubPATRegistrar{api: &httpClient{client: server.Client()}, store: store, service: "svc", account: "acct"}
 	tgt := target.Target{Type: target.TypeRepo, Owner: "alice", Repo: "app"}
 	_, err := reg.createJITWithBase(context.Background(), server.URL, tgt, []string{"self-hosted"}, "n")
 	if err != nil {

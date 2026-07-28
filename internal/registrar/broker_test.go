@@ -55,7 +55,7 @@ func TestBrokerRegistrarJIT(t *testing.T) {
 
 	store := keychain.NewMemoryStore()
 	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, testFreshBundle(t))
-	reg := NewBrokerRegistrar(store, testBrokerConfig(t, server.URL))
+	reg := NewBrokerRegistrar(store, testBrokerConfig(t, server.URL), nil)
 	jit, err := reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "utsusemi-x")
 	if err != nil {
 		t.Fatal(err)
@@ -78,7 +78,7 @@ func TestBrokerRegistrarListRunners(t *testing.T) {
 
 	store := keychain.NewMemoryStore()
 	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, testFreshBundle(t))
-	reg := NewBrokerRegistrar(store, testBrokerConfig(t, server.URL))
+	reg := NewBrokerRegistrar(store, testBrokerConfig(t, server.URL), nil)
 	runners, err := reg.ListRunners(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, "utsusemi-")
 	if err != nil {
 		t.Fatal(err)
@@ -105,7 +105,7 @@ func TestBrokerRegistrarRetryOnRateLimit(t *testing.T) {
 
 	store := keychain.NewMemoryStore()
 	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, testFreshBundle(t))
-	reg := NewBrokerRegistrar(store, testBrokerConfig(t, server.URL))
+	reg := NewBrokerRegistrar(store, testBrokerConfig(t, server.URL), nil)
 	_, err := reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "n")
 	if err != nil {
 		t.Fatal(err)
@@ -118,7 +118,7 @@ func TestBrokerRegistrarRetryOnRateLimit(t *testing.T) {
 func TestBrokerRegistrarUnauthorizedSuggestsReregister(t *testing.T) {
 	broker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/v1/register/exchange":
+		case hostcredential.CredentialExchangePath:
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"credential": makeExpiringJWT(time.Now().Add(30 * 24 * time.Hour)),
 				"target": map[string]any{
@@ -146,7 +146,7 @@ func TestBrokerRegistrarUnauthorizedSuggestsReregister(t *testing.T) {
 
 	store := keychain.NewMemoryStore()
 	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, testFreshBundle(t))
-	reg := NewBrokerRegistrar(store, testBrokerConfig(t, broker.URL))
+	reg := NewBrokerRegistrar(store, testBrokerConfig(t, broker.URL), nil)
 	reg.oauth = &hostcredential.OAuthClient{TokenURL: oauth.URL}
 
 	_, err := reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "n")
@@ -191,7 +191,7 @@ func TestBrokerRegistrarRefreshBeforeExpiry(t *testing.T) {
 
 	store := keychain.NewMemoryStore()
 	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, bundle)
-	reg := NewBrokerRegistrar(store, testBrokerConfig(t, broker.URL))
+	reg := NewBrokerRegistrar(store, testBrokerConfig(t, broker.URL), nil)
 	reg.oauth = &hostcredential.OAuthClient{TokenURL: oauth.URL}
 
 	_, err = reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "n")
@@ -209,7 +209,7 @@ func TestBrokerRegistrarRefreshBeforeExpiry(t *testing.T) {
 func TestBrokerRegistrarRefreshWhenStale(t *testing.T) {
 	broker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/v1/register/exchange":
+		case hostcredential.CredentialExchangePath:
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"credential": makeExpiringJWT(time.Now().Add(30 * 24 * time.Hour)),
 				"target": map[string]any{
@@ -245,7 +245,7 @@ func TestBrokerRegistrarRefreshWhenStale(t *testing.T) {
 
 	store := keychain.NewMemoryStore()
 	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, bundle)
-	reg := NewBrokerRegistrar(store, testBrokerConfig(t, broker.URL))
+	reg := NewBrokerRegistrar(store, testBrokerConfig(t, broker.URL), nil)
 	reg.oauth = &hostcredential.OAuthClient{TokenURL: oauth.URL}
 
 	_, err = reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "n")
@@ -270,7 +270,7 @@ func TestBrokerRegistrarUnauthorizedRefreshesOnce(t *testing.T) {
 	attempts := 0
 	broker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/v1/register/exchange":
+		case hostcredential.CredentialExchangePath:
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"credential": makeExpiringJWT(time.Now().Add(30 * 24 * time.Hour)),
 				"target": map[string]any{
@@ -312,7 +312,7 @@ func TestBrokerRegistrarUnauthorizedRefreshesOnce(t *testing.T) {
 
 	store := keychain.NewMemoryStore()
 	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, bundle)
-	reg := NewBrokerRegistrar(store, testBrokerConfig(t, broker.URL))
+	reg := NewBrokerRegistrar(store, testBrokerConfig(t, broker.URL), nil)
 	reg.oauth = &hostcredential.OAuthClient{TokenURL: oauth.URL}
 
 	_, err = reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "n")
@@ -328,7 +328,7 @@ func TestBrokerRegistrarExchangeFailurePreservesRefreshToken(t *testing.T) {
 	oauthCalls := 0
 	broker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/v1/register/exchange":
+		case hostcredential.CredentialExchangePath:
 			w.WriteHeader(http.StatusBadGateway)
 			_, _ = w.Write([]byte("broker down"))
 		case "/v1/jitconfig":
@@ -359,7 +359,7 @@ func TestBrokerRegistrarExchangeFailurePreservesRefreshToken(t *testing.T) {
 
 	store := keychain.NewMemoryStore()
 	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, bundle)
-	reg := NewBrokerRegistrar(store, testBrokerConfig(t, broker.URL))
+	reg := NewBrokerRegistrar(store, testBrokerConfig(t, broker.URL), nil)
 	reg.oauth = &hostcredential.OAuthClient{TokenURL: oauth.URL}
 
 	_, err = reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "n")
@@ -384,7 +384,7 @@ func TestBrokerRegistrarExchangeFailurePreservesRefreshToken(t *testing.T) {
 
 	broker.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/v1/register/exchange":
+		case hostcredential.CredentialExchangePath:
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"credential": makeExpiringJWT(time.Now().Add(30 * 24 * time.Hour)),
 				"target": map[string]any{
@@ -416,7 +416,7 @@ func TestBrokerRegistrarExchangeNotFoundNoRetryLoop(t *testing.T) {
 	oauthCalls := 0
 	broker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
-		case "/v1/register/exchange":
+		case hostcredential.CredentialExchangePath:
 			w.WriteHeader(http.StatusNotFound)
 			_, _ = w.Write([]byte("installation not found"))
 		case "/v1/jitconfig":
@@ -444,7 +444,7 @@ func TestBrokerRegistrarExchangeNotFoundNoRetryLoop(t *testing.T) {
 
 	store := keychain.NewMemoryStore()
 	_ = store.Set(config.DefaultCredentialService, config.DefaultCredentialAccount, bundle)
-	reg := NewBrokerRegistrar(store, testBrokerConfig(t, broker.URL))
+	reg := NewBrokerRegistrar(store, testBrokerConfig(t, broker.URL), nil)
 	reg.oauth = &hostcredential.OAuthClient{TokenURL: oauth.URL}
 
 	_, err = reg.CreateJIT(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}, []string{"self-hosted"}, "n")

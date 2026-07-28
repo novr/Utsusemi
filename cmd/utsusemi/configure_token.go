@@ -32,9 +32,6 @@ func newConfigureTokenCmd() *cobra.Command {
 			if org == "" && repo == "" {
 				return fmt.Errorf("either --org or --repo is required")
 			}
-			if org != "" && repo != "" {
-				return fmt.Errorf("--org and --repo are mutually exclusive")
-			}
 			if org != "" && runnerGroup <= 0 {
 				runnerGroup = 1
 			}

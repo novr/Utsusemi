@@ -77,7 +77,7 @@ func (c *OAuthClient) RefreshGitHubToken(ctx context.Context, clientID, refreshT
 	}
 	if result.Error != "" {
 		if result.Error == "invalid_grant" {
-			return RefreshResult{}, fmt.Errorf("%s: %s; run `utsusemi configure app` again", result.Error, result.ErrorDesc)
+			return RefreshResult{}, fmt.Errorf("%s: %s; %s", result.Error, result.ErrorDesc, ReconfigureAppHint)
 		}
 		return RefreshResult{}, fmt.Errorf("refresh token failed: %s", result.Error)
 	}
@@ -95,15 +95,18 @@ func ExchangeHostJWT(ctx context.Context, client *http.Client, brokerURL, userTo
 	if client == nil {
 		client = http.DefaultClient
 	}
-	payload := map[string]any{"target": TargetPayload(tgt)}
-	body, err := json.Marshal(payload)
+	targetPayload, err := TargetPayload(tgt)
+	if err != nil {
+		return "", target.Target{}, err
+	}
+	body, err := json.Marshal(map[string]any{"target": targetPayload})
 	if err != nil {
 		return "", target.Target{}, err
 	}
 	req, err := http.NewRequestWithContext(
 		ctx,
 		http.MethodPost,
-		strings.TrimRight(brokerURL, "/")+"/v1/register/exchange",
+		strings.TrimRight(brokerURL, "/")+CredentialExchangePath,
 		strings.NewReader(string(body)),
 	)
 	if err != nil {

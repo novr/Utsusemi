@@ -111,7 +111,7 @@ func TestRefreshGitHubTokenInvalidGrant(t *testing.T) {
 
 func TestExchangeHostJWT(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/v1/register/exchange" {
+		if r.URL.Path != CredentialExchangePath {
 			t.Fatalf("path=%s", r.URL.Path)
 		}
 		if !strings.HasPrefix(r.Header.Get("Authorization"), "Bearer user-token") {

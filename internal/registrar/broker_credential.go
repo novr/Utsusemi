@@ -18,7 +18,7 @@ func (r *BrokerRegistrar) loadCredential() (hostcredential.Loaded, error) {
 		return hostcredential.Loaded{}, fmt.Errorf("credential missing from keychain: %w", err)
 	}
 	if strings.TrimSpace(raw) == "" || raw == "-" {
-		return hostcredential.Loaded{}, fmt.Errorf("invalid credential in keychain; run `utsusemi configure app` again")
+		return hostcredential.Loaded{}, fmt.Errorf("invalid credential in keychain; %s", hostcredential.ReconfigureAppHint)
 	}
 	return hostcredential.Load(raw)
 }
@@ -106,7 +106,7 @@ func (r *BrokerRegistrar) requestWithCredential(
 	}
 	if err := fn(token); err == nil {
 		return nil
-	} else if !isUnauthorized(err) {
+	} else if !IsUnauthorized(err) {
 		return err
 	}
 
@@ -115,13 +115,13 @@ func (r *BrokerRegistrar) requestWithCredential(
 		return err
 	}
 	if err := fn(token); err != nil {
-		if isUnauthorized(err) {
+		if IsUnauthorized(err) {
 			user := r.authorizedGitHubUser()
 			r.logCredentialFailure("broker_unauthorized", user, err)
 			if user != "" {
-				return fmt.Errorf("credential rejected for GitHub user %q: %w; run `utsusemi configure app` again", user, err)
+				return fmt.Errorf("credential rejected for GitHub user %q: %w; %s", user, err, hostcredential.ReconfigureAppHint)
 			}
-			return fmt.Errorf("%w; run `utsusemi configure app` again", err)
+			return fmt.Errorf("%w; %s", err, hostcredential.ReconfigureAppHint)
 		}
 		return err
 	}
@@ -153,7 +153,7 @@ func (r *BrokerRegistrar) logCredentialFailure(stage, githubUser string, err err
 		"stage", stage,
 		"github_user", githubUser,
 		"error", err,
-		"action", "run `utsusemi configure app` again or restore GitHub App authorization for this user",
+		"action", hostcredential.ReconfigureAppAuthAction,
 	)
 }
 

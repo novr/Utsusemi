@@ -3,6 +3,7 @@ package registrar
 import (
 	"context"
 	"fmt"
+	"log/slog"
 
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/keychain"
@@ -26,12 +27,12 @@ type RunnerRegistrar interface {
 	ValidateCredential(ctx context.Context, service, account string) error
 }
 
-func NewFromConfig(cfg *config.Config, store keychain.Store) (RunnerRegistrar, error) {
+func NewFromConfig(cfg *config.Config, store keychain.Store, logger *slog.Logger) (RunnerRegistrar, error) {
 	switch cfg.Registration.Mode {
 	case config.ModeGitHubPAT:
 		return NewGitHubPATRegistrar(store, cfg.CredentialService(), cfg.CredentialAccount()), nil
 	case config.ModeHostedApp:
-		return NewBrokerRegistrar(store, cfg), nil
+		return NewBrokerRegistrar(store, cfg, logger), nil
 	default:
 		return nil, fmt.Errorf("unsupported registration.mode %q", cfg.Registration.Mode)
 	}

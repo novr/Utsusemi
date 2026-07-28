@@ -4,15 +4,16 @@ import (
 	"context"
 	"time"
 
+	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/lease"
 	"github.com/novr/utsusemi/internal/provider"
 )
 
 func (p *Pool) startupReclaim(ctx context.Context) error {
 	switch p.cfg.ReclaimPolicy {
-	case "hard":
+	case config.ReclaimHard:
 		return p.reclaim(ctx, true)
-	case "grace":
+	case config.ReclaimGrace:
 		return p.reclaim(ctx, false)
 	default:
 		return p.reclaim(ctx, false)
@@ -82,7 +83,7 @@ func (p *Pool) reclaim(ctx context.Context, startupHard bool) error {
 		}
 
 		if vm.Running {
-			aggressive := startupHard && policy == "hard"
+			aggressive := startupHard && policy == config.ReclaimHard
 			if !aggressive && !lease.ShouldReclaimRunning(leasePtr, p.session, policy, grace, now) {
 				continue
 			}
@@ -108,7 +109,7 @@ func (p *Pool) reclaim(ctx context.Context, startupHard bool) error {
 		}
 
 		l, hasLease := leaseMap[runner.Name]
-		if hasLease && !lease.IsStale(&l, p.session) && p.cfg.ReclaimPolicy == "soft" {
+		if hasLease && !lease.IsStale(&l, p.session) && p.cfg.ReclaimPolicy == config.ReclaimSoft {
 			continue
 		}
 

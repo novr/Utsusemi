@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"log/slog"
 
 	"github.com/novr/utsusemi/internal/agent"
 	"github.com/novr/utsusemi/internal/config"
@@ -17,6 +18,7 @@ type runtime struct {
 	tgt       target.Target
 	provider  provider.VMProvider
 	registrar registrar.RunnerRegistrar
+	logger    *slog.Logger
 }
 
 func loadValidatedRuntime(ctx context.Context) (*runtime, error) {
@@ -34,14 +36,11 @@ func loadValidatedRuntime(ctx context.Context) (*runtime, error) {
 		return nil, err
 	}
 
+	log := logging.New()
 	store := keychain.New()
-	reg, err := registrar.NewFromConfig(cfg, store)
+	reg, err := registrar.NewFromConfig(cfg, store, log)
 	if err != nil {
 		return nil, err
-	}
-	log := logging.New()
-	if broker, ok := reg.(*registrar.BrokerRegistrar); ok {
-		broker.SetLogger(log)
 	}
 	if err := reg.ValidateCredential(ctx, cfg.CredentialService(), cfg.CredentialAccount()); err != nil {
 		return nil, err
@@ -52,6 +51,7 @@ func loadValidatedRuntime(ctx context.Context) (*runtime, error) {
 		tgt:       tgt,
 		provider:  vmProvider,
 		registrar: reg,
+		logger:    log,
 	}, nil
 }
 
@@ -60,26 +60,18 @@ func buildAgent(ctx context.Context) (*agent.Agent, error) {
 	if err != nil {
 		return nil, err
 	}
-	log := logging.New()
 	return agent.New(agent.Options{
 		Config:    rt.cfg,
 		Target:    rt.tgt,
 		Provider:  rt.provider,
 		Registrar: rt.registrar,
-		Logger:    log,
+		Logger:    rt.logger,
 	})
-}
-
-func mustCredentialService(cfg *config.Config) string {
-	if cfg.Registration.CredentialKeychainService == "" {
-		return config.DefaultCredentialService
-	}
-	return cfg.Registration.CredentialKeychainService
 }
 
 func saveCredential(cfg *config.Config, secret string) error {
 	store := keychain.New()
-	return store.Set(mustCredentialService(cfg), cfg.CredentialAccount(), secret)
+	return store.Set(cfg.CredentialService(), cfg.CredentialAccount(), secret)
 }
 
 func providerMaxConcurrent() int {

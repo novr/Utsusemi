@@ -12,6 +12,16 @@ func TestFromConfigOrg(t *testing.T) {
 	}
 }
 
+func TestFromConfigOrgNormalizesCase(t *testing.T) {
+	tgt, err := FromConfig(ConfigYAML{Org: "My-Org", RunnerGroupID: 1})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tgt.Org != "my-org" {
+		t.Fatalf("org=%q", tgt.Org)
+	}
+}
+
 func TestFromConfigRepo(t *testing.T) {
 	tgt, err := FromConfig(ConfigYAML{Repo: "alice/my-app"})
 	if err != nil {

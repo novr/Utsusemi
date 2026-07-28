@@ -11,9 +11,12 @@ import (
 )
 
 const (
-	PublicAppClientID = "Iv23ctWrJ3Yq0JDLEa85"
-	BundleVersion     = 1
-	RefreshThreshold  = 7 * 24 * time.Hour
+	PublicAppClientID        = "Iv23ctWrJ3Yq0JDLEa85"
+	BundleVersion            = 1
+	RefreshThreshold         = 7 * 24 * time.Hour
+	CredentialExchangePath   = "/v1/credentials/exchange"
+	ReconfigureAppHint       = "run `utsusemi configure app` again"
+	ReconfigureAppAuthAction = "run `utsusemi configure app` again or restore GitHub App authorization for this user"
 )
 
 type Bundle struct {
@@ -51,7 +54,7 @@ func Load(raw string) (Loaded, error) {
 			GitHubUser:   b.GitHubUser,
 		}, nil
 	}
-	return Loaded{}, fmt.Errorf("unrecognized credential format; run `utsusemi configure app`")
+	return Loaded{}, fmt.Errorf("unrecognized credential format; %s", ReconfigureAppHint)
 }
 
 func MarshalBundle(b Bundle) (string, error) {
@@ -123,15 +126,15 @@ func NeedsRefresh(hostJWT string, force bool) (bool, error) {
 	return remaining <= RefreshThreshold, nil
 }
 
-func TargetPayload(tgt target.Target) map[string]any {
-	if tgt.Type != target.TypeOrg {
-		return map[string]any{}
+func TargetPayload(tgt target.Target) (map[string]any, error) {
+	if err := target.RequireOrg(tgt); err != nil {
+		return nil, err
 	}
 	return map[string]any{
 		"type":            "org",
 		"org":             tgt.Org,
 		"runner_group_id": tgt.RunnerGroupID,
-	}
+	}, nil
 }
 
 func ParseTargetMap(raw map[string]any) (target.Target, error) {
@@ -141,5 +144,9 @@ func ParseTargetMap(raw map[string]any) (target.Target, error) {
 	}
 	org, _ := raw["org"].(string)
 	group, _ := raw["runner_group_id"].(float64)
-	return target.Target{Type: target.TypeOrg, Org: org, RunnerGroupID: int64(group)}, nil
+	return target.Target{
+		Type:          target.TypeOrg,
+		Org:           strings.ToLower(strings.TrimSpace(org)),
+		RunnerGroupID: int64(group),
+	}, nil
 }
