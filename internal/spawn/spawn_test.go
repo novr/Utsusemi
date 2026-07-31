@@ -95,6 +95,10 @@ func TestBootstrapForwardsStdinJITToRunner(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, "run.sh"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	// Version sentinel must be present so bootstrap skips the download.
+	if err := os.WriteFile(filepath.Join(home, ".runner-version"), []byte("2.336.0"), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	cmd := exec.Command("bash", "-c", bootstrapScript)
 	cmd.Env = append(os.Environ(), "RUNNER_VERSION=2.336.0", "RUNNER_HOME="+home)
@@ -109,6 +113,81 @@ func TestBootstrapForwardsStdinJITToRunner(t *testing.T) {
 	}
 	if want := "--jitconfig\nencoded-jit\n"; string(got) != want {
 		t.Fatalf("run.sh args = %q, want %q", string(got), want)
+	}
+}
+
+// TestBootstrapSkipsDownloadWhenInstalled verifies that a matching runner
+// installation causes bootstrap to skip the curl download entirely.
+func TestBootstrapSkipsDownloadWhenInstalled(t *testing.T) {
+	home := t.TempDir()
+	stub := "#!/bin/bash\n" // no-op run.sh
+	if err := os.WriteFile(filepath.Join(home, "run.sh"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".runner-version"), []byte("2.336.0"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("bash", "-c", bootstrapScript)
+	cmd.Env = append(os.Environ(), "RUNNER_VERSION=2.336.0", "RUNNER_HOME="+home)
+	cmd.Stdin = strings.NewReader("encoded-jit")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("bootstrap failed: %v: %s", err, out)
+	}
+	if !strings.Contains(string(out), "skipping download") {
+		t.Errorf("expected 'skipping download' in output, got: %s", out)
+	}
+}
+
+// TestBootstrapRedownloadsOnVersionMismatch verifies that a stale runner
+// (version in .runner-version does not match RUNNER_VERSION) causes bootstrap
+// to re-install and update .runner-version.
+func TestBootstrapRedownloadsOnVersionMismatch(t *testing.T) {
+	home := t.TempDir()
+
+	// Stale runner at an older version.
+	stub := "#!/bin/bash\n"
+	if err := os.WriteFile(filepath.Join(home, "run.sh"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(home, ".runner-version"), []byte("2.335.0"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Provide fake curl and tar so the download step succeeds without network.
+	fakebin := t.TempDir()
+	fakeCurl := "#!/bin/bash\ntouch actions-runner.tar.gz\n"
+	if err := os.WriteFile(filepath.Join(fakebin, "curl"), []byte(fakeCurl), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeTar := "#!/bin/bash\n" // existing run.sh remains; tar is a no-op
+	if err := os.WriteFile(filepath.Join(fakebin, "tar"), []byte(fakeTar), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("bash", "-c", bootstrapScript)
+	cmd.Env = append(os.Environ(),
+		"RUNNER_VERSION=2.336.0",
+		"RUNNER_HOME="+home,
+		"PATH="+fakebin+":"+os.Getenv("PATH"),
+	)
+	cmd.Stdin = strings.NewReader("encoded-jit")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("bootstrap failed: %v: %s", err, out)
+	}
+
+	// .runner-version must be updated to the new version.
+	got, err := os.ReadFile(filepath.Join(home, ".runner-version"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(got)) != "2.336.0" {
+		t.Fatalf(".runner-version = %q, want %q", string(got), "2.336.0")
+	}
+	if !strings.Contains(string(out), "installing runner") {
+		t.Errorf("expected 'installing runner' in output, got: %s", out)
 	}
 }
 

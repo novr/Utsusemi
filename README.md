@@ -108,6 +108,27 @@ Edit `config.yaml` after `configure` (not written by `configure`).
 - **Keychain** — unlock: `security unlock-keychain login.keychain`; headless: `security set-keychain-settings -t 0 ~/Library/Keychains/login.keychain-db`
 - **Networking** — [Tart FAQ](https://tart.run/faq/); `softnet: true` → [Softnet](https://github.com/cirruslabs/softnet)
 
+#### Pre-installed runner (low-latency base image)
+
+By default bootstrap downloads the Actions runner tarball on every job start (~30–60 s).
+To eliminate that latency, pre-install the runner in the base image:
+
+```bash
+# Run once inside the base image VM, then snapshot / push the image.
+RUNNER_VERSION="2.336.0"   # must match runner_version in config.yaml
+RUNNER_HOME="${HOME}/actions-runner"
+mkdir -p "$RUNNER_HOME" && cd "$RUNNER_HOME"
+curl -fsSL -o actions-runner.tar.gz \
+  "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-osx-arm64-${RUNNER_VERSION}.tar.gz"
+tar xzf actions-runner.tar.gz && rm actions-runner.tar.gz
+# Write the version sentinel so bootstrap knows to skip the download.
+echo "${RUNNER_VERSION}" > .runner-version
+```
+
+Bootstrap reads `.runner-version` and skips the download when the installed version matches `runner_version` in `config.yaml`. A mismatch (or a missing sentinel) causes bootstrap to re-download — safe but slower.
+
+Keep `runner_version` in `config.yaml` in sync with the pre-installed version. When you upgrade the runner, rebuild the base image and update `config.yaml` together.
+
 ## Operations
 
 ```bash
