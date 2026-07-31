@@ -116,7 +116,7 @@ To eliminate that latency, pre-install the runner in the base image:
 ```bash
 # Run once inside the base image VM, then snapshot / push the image.
 RUNNER_VERSION="2.336.0"   # must match runner_version in config.yaml
-RUNNER_HOME="${HOME}/actions-runner"
+RUNNER_HOME="/Users/admin/actions-runner"   # must match bootstrap.sh default
 mkdir -p "$RUNNER_HOME" && cd "$RUNNER_HOME"
 curl -fsSL -o actions-runner.tar.gz \
   "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-osx-arm64-${RUNNER_VERSION}.tar.gz"
