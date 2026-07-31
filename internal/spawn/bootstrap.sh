@@ -9,9 +9,20 @@ if [ -z "${JIT_CONFIG}" ]; then
 fi
 mkdir -p "$RUNNER_HOME"
 cd "$RUNNER_HOME"
-if [ ! -f ./run.sh ]; then
+
+# Skip download when the runner at the requested version is already installed.
+# The .runner-version sentinel is written after each install, and must also be
+# present in pre-baked base images (see README § "Pre-installed runner").
+if [ -f ./run.sh ] && [ -f ./.runner-version ] && [ "$(cat ./.runner-version)" = "${RUNNER_VERSION}" ]; then
+  echo "bootstrap: runner v${RUNNER_VERSION} already installed, skipping download" >&2
+else
+  echo "bootstrap: installing runner v${RUNNER_VERSION}" >&2
+  t0=$SECONDS
   curl -fsSL -o actions-runner.tar.gz "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-osx-arm64-${RUNNER_VERSION}.tar.gz"
   tar xzf actions-runner.tar.gz
   rm actions-runner.tar.gz
+  echo "${RUNNER_VERSION}" > ./.runner-version
+  echo "bootstrap: runner download+install took $((SECONDS - t0))s" >&2
 fi
+
 ./run.sh --jitconfig "${JIT_CONFIG}"
