@@ -34,7 +34,7 @@ func newListCmd() *cobra.Command {
 				return fmt.Errorf("%w\nRun `utsusemi validate` to check configuration and credentials", err)
 			}
 
-			report, err := listing.Collect(cmd.Context(), rt.listingInput(scope))
+			report, err := listing.Collect(cmd.Context(), rt.ListingInput(scope))
 			if err != nil {
 				return err
 			}

@@ -21,7 +21,7 @@ func newCleanCmd() *cobra.Command {
 				return err
 			}
 
-			lock, err := instancelock.Acquire(filepath.Join(rt.cfg.StateDir, "utsusemi.lock"))
+			lock, err := instancelock.Acquire(filepath.Join(rt.Config.StateDir, "utsusemi.lock"))
 			if err != nil {
 				return fmt.Errorf("stop utsusemi before clean: %w", err)
 			}

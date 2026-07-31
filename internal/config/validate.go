@@ -5,6 +5,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/target"
 )
 
@@ -22,14 +23,18 @@ func validateRegistration(reg Registration) error {
 	}
 }
 
-func Validate(cfg *Config, maxConcurrent int) (target.Target, error) {
+func Validate(cfg *Config, p provider.VMProvider) (target.Target, error) {
 	if cfg == nil {
 		return target.Target{}, fmt.Errorf("config is nil")
 	}
-	applyDefaults(cfg)
-	if cfg.Provider != "tart" {
-		return target.Target{}, fmt.Errorf("unsupported provider %q", cfg.Provider)
+	if p == nil {
+		return target.Target{}, fmt.Errorf("provider is nil")
 	}
+	applyDefaults(cfg)
+	if strings.TrimSpace(cfg.Provider) == "" {
+		cfg.Provider = "tart"
+	}
+	maxConcurrent := p.Capabilities().MaxConcurrent
 	if strings.TrimSpace(cfg.BaseImage) == "" {
 		return target.Target{}, fmt.Errorf("base_image is required")
 	}

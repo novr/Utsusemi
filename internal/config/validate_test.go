@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/target"
 )
 
@@ -18,7 +19,7 @@ func TestValidateOK(t *testing.T) {
 		RunnerVersion: "2.336.0",
 		PoolSize:      1,
 	}
-	_, err := Validate(cfg, 2)
+	_, err := Validate(cfg, provider.NewStub(2))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -34,7 +35,7 @@ func TestValidateRequiresSelfHostedLabel(t *testing.T) {
 		RunnerVersion: "2.336.0",
 		PoolSize:      1,
 	}
-	_, err := Validate(cfg, 2)
+	_, err := Validate(cfg, provider.NewStub(2))
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -50,7 +51,7 @@ func TestValidatePoolSizeLimit(t *testing.T) {
 		RunnerVersion: "2.336.0",
 		PoolSize:      3,
 	}
-	_, err := Validate(cfg, 2)
+	_, err := Validate(cfg, provider.NewStub(2))
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -72,7 +73,7 @@ func TestValidateSpawnTimeoutMustNotExceedJobTimeout(t *testing.T) {
 		JobTimeout:    Duration(time.Hour),
 	}
 	ApplyDefaults(cfg)
-	_, err := Validate(cfg, 2)
+	_, err := Validate(cfg, provider.NewStub(2))
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -88,7 +89,7 @@ func TestValidateHostedAppRequiresOrg(t *testing.T) {
 		RunnerVersion: "2.336.0",
 		PoolSize:      1,
 	}
-	_, err := Validate(cfg, 2)
+	_, err := Validate(cfg, provider.NewStub(2))
 	if err == nil {
 		t.Fatal("expected error")
 	}
@@ -110,17 +111,14 @@ func TestValidatePoolSizeLimitIsProviderScoped(t *testing.T) {
 		PoolSize:      4,
 	}
 
-	// With a higher-capacity provider (MaxConcurrent=5), pool_size=4 must pass.
-	if _, err := Validate(cfg, 5); err != nil {
+	if _, err := Validate(cfg, provider.NewStub(5)); err != nil {
 		t.Fatalf("expected no error with maxConcurrent=5, got: %v", err)
 	}
 
-	// With Tart's limit (MaxConcurrent=2), the same pool_size must fail.
-	_, err := Validate(cfg, 2)
+	_, err := Validate(cfg, provider.NewStub(2))
 	if err == nil {
 		t.Fatal("expected error with maxConcurrent=2, got nil")
 	}
-	// Error message must name the provider so operators know which limit applies.
 	if !strings.Contains(err.Error(), "tart") {
 		t.Errorf("error message should mention the provider name, got: %q", err.Error())
 	}
@@ -136,11 +134,11 @@ func TestValidateHostedAppBrokerURL(t *testing.T) {
 		RunnerVersion: "2.336.0",
 		PoolSize:      1,
 	}
-	if _, err := Validate(base, 2); err == nil {
+	if _, err := Validate(base, provider.NewStub(2)); err == nil {
 		t.Fatal("expected error for http broker url")
 	}
 	base.Registration.BrokerURL = "https://broker.example"
-	if _, err := Validate(base, 2); err != nil {
+	if _, err := Validate(base, provider.NewStub(2)); err != nil {
 		t.Fatal(err)
 	}
 }

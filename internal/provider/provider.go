@@ -6,6 +6,7 @@ import (
 
 type Capabilities struct {
 	MaxConcurrent int
+	RunnerArch    string
 }
 
 type VM struct {

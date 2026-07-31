@@ -8,6 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/novr/utsusemi/internal/app"
 	"github.com/novr/utsusemi/internal/config"
 )
 
@@ -52,7 +53,7 @@ func newConfigureTokenCmd() *cobra.Command {
 			}
 			opts.apply(cfg)
 			config.ApplyDefaults(cfg)
-			if _, err := config.Validate(cfg, providerMaxConcurrent(cfg)); err != nil {
+			if _, err := app.ValidateConfig(cfg); err != nil {
 				return err
 			}
 			if err := saveCredential(cfg, token); err != nil {

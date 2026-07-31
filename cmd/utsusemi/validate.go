@@ -15,7 +15,7 @@ func newValidateCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			if err := printHostedCredentialStatus(rt.cfg); err != nil {
+			if err := printHostedCredentialStatus(rt.Config); err != nil {
 				return err
 			}
 			fmt.Println("configuration is valid")
