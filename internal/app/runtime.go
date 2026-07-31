@@ -6,6 +6,7 @@ import (
 
 	"github.com/novr/utsusemi/internal/agent"
 	"github.com/novr/utsusemi/internal/config"
+	"github.com/novr/utsusemi/internal/doctor"
 	"github.com/novr/utsusemi/internal/keychain"
 	"github.com/novr/utsusemi/internal/listing"
 	"github.com/novr/utsusemi/internal/logging"
@@ -99,6 +100,16 @@ func (r *Runtime) ListingInput(scope string) listing.Input {
 		Provider:  r.Provider,
 		Registrar: r.Registrar,
 		Scope:     scope,
+	}
+}
+
+func (r *Runtime) DoctorInput(store keychain.Store) doctor.Input {
+	return doctor.Input{
+		Cfg:       r.Config,
+		Target:    r.Target,
+		Provider:  r.Provider,
+		Registrar: r.Registrar,
+		Store:     store,
 	}
 }
 

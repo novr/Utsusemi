@@ -30,6 +30,7 @@ func initRootCmd() {
 		rootCmd.AddCommand(newConfigureCmd())
 		rootCmd.AddCommand(newValidateCmd())
 		rootCmd.AddCommand(newStatusCmd())
+		rootCmd.AddCommand(newDoctorCmd())
 
 		listCmd := newListCmd()
 		registerListCompletions(listCmd)

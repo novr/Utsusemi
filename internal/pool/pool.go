@@ -6,13 +6,11 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
-	"os"
-	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
 	"github.com/novr/utsusemi/internal/config"
+	"github.com/novr/utsusemi/internal/hostid"
 	"github.com/novr/utsusemi/internal/lease"
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/registrar"
@@ -49,7 +47,7 @@ func New(cfg *config.Config, tgt target.Target, vmProvider provider.VMProvider, 
 		logger = slog.Default()
 	}
 	leases := lease.NewRegistry(cfg.StateDir)
-	hostID := loadOrInitHostID(cfg.StateDir)
+	hostID := hostid.Load(cfg.StateDir)
 	effectivePrefix := cfg.VMNamePrefix + hostID + "-"
 	return &Pool{
 		cfg:             cfg,
@@ -167,6 +165,7 @@ func (p *Pool) tick(ctx context.Context) {
 
 		p.logger.Info("spawning runner", "vm", vmName)
 
+		spawnStart := time.Now()
 		p.mu.Lock()
 		p.inFlightVMs[vmName] = struct{}{}
 		p.mu.Unlock()
@@ -185,7 +184,7 @@ func (p *Pool) tick(ctx context.Context) {
 			p.logger.Warn("spawn failed", "vm", vmName, "error", err)
 			return
 		}
-		p.logger.Info("runner finished", "vm", vmName)
+		p.logger.Info("runner finished", "vm", vmName, "duration_ms", time.Since(spawnStart).Milliseconds())
 		p.mu.Lock()
 		p.failures = 0
 		p.backoffUntil = time.Time{}
@@ -229,53 +228,6 @@ func (p *Pool) newVMName() (string, error) {
 		return "", err
 	}
 	return fmt.Sprintf("%s%s", p.effectivePrefix, hex.EncodeToString(buf)), nil
-}
-
-// loadOrInitHostID returns a stable, sanitized identifier for this host.
-// It reads from {stateDir}/host_id when present, otherwise derives one from
-// os.Hostname() and writes it back so the value survives hostname changes.
-func loadOrInitHostID(stateDir string) string {
-	path := filepath.Join(stateDir, "host_id")
-	if data, err := os.ReadFile(path); err == nil {
-		if id := strings.TrimSpace(string(data)); id != "" {
-			return id
-		}
-	}
-	hostname, _ := os.Hostname()
-	id := sanitizeHostname(hostname)
-	if id == "" {
-		buf := make([]byte, 4)
-		_, _ = rand.Read(buf)
-		id = hex.EncodeToString(buf)
-	}
-	// Best-effort persist; failure is non-fatal.
-	_ = os.MkdirAll(stateDir, 0o755)
-	_ = os.WriteFile(path, []byte(id), 0o644)
-	return id
-}
-
-// sanitizeHostname converts a hostname to a safe VM-name component:
-// lowercase, non-alphanumeric characters replaced with dashes, consecutive
-// dashes collapsed, leading/trailing dashes stripped, capped at 24 characters.
-func sanitizeHostname(s string) string {
-	s = strings.ToLower(s)
-	var b strings.Builder
-	for _, r := range s {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
-			b.WriteRune(r)
-		} else {
-			b.WriteRune('-')
-		}
-	}
-	result := strings.Trim(b.String(), "-")
-	for strings.Contains(result, "--") {
-		result = strings.ReplaceAll(result, "--", "-")
-	}
-	if len(result) > 24 {
-		result = result[:24]
-		result = strings.TrimRight(result, "-")
-	}
-	return result
 }
 
 func (p *Pool) PurgeAll(ctx context.Context, dryRun bool) ([]provider.VM, []int64, error) {

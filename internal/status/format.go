@@ -10,6 +10,22 @@ import (
 func FormatText(r Report) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "target: %s\n", r.Target)
+	fmt.Fprintf(&b, "host: %s (prefix %s)\n", r.Host.ID, r.Host.EffectivePrefix)
+	for _, w := range r.Host.Warnings {
+		fmt.Fprintf(&b, "warning: %s\n", w)
+	}
+	fmt.Fprintf(&b, "runner_version: %s", r.RunnerVersion.Configured)
+	if r.RunnerVersion.LastSpawn != "" {
+		fmt.Fprintf(&b, " (last spawn %s)", r.RunnerVersion.LastSpawn)
+	}
+	if r.RunnerVersion.Status != "ok" {
+		fmt.Fprintf(&b, " — %s", r.RunnerVersion.Status)
+	}
+	b.WriteByte('\n')
+	if r.Spawn != nil {
+		fmt.Fprintf(&b, "spawn: clone %s, boot %s, register %s, cold_start %s, job %s, total %s (%s)\n",
+			r.Spawn.Clone, r.Spawn.Boot, r.Spawn.Register, r.Spawn.ColdStart, r.Spawn.Job, r.Spawn.Total, r.Spawn.At)
+	}
 	fmt.Fprintf(&b, "agent: %s", r.Agent.State)
 	if r.Agent.PID > 0 {
 		fmt.Fprintf(&b, " (pid %d", r.Agent.PID)

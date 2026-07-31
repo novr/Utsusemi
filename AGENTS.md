@@ -144,6 +144,8 @@ Deploy broker separately from CLI. After JWT signing or route changes, operators
 - **Runtime assembly**: `internal/app` owns provider construction (`buildProvider`), config validation, registrar setup, and `Runtime` helpers used by CLI commands.
 - **Bootstrap env**: `spawn.BootstrapEnv` sets `RUNNER_VERSION`, `RUNNER_ARCH`, and `RUNNER_HOME` for `bootstrap.sh`. `RUNNER_ARCH` comes from `VMProvider.Capabilities().RunnerArch` (Tart: `osx-arm64`).
 - Operator docs in [README.md](README.md) Operations and Provider. Alerts/notifications are out of scope.
+- **`utsusemi doctor`**: preflight via `internal/doctor` (provider, disk, credential, host_id, runner_version, multi-host). Exit 1 when any check is `fail`.
+- **Spawn metrics**: `spawn.SaveLastSpawn` writes `{StateDir}/last_spawn.json`; `status` and spawn logs expose cold-start phase timings.
 
 ### Tests and toolchain
 
