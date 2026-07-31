@@ -42,13 +42,13 @@ func (p *Pool) reclaim(ctx context.Context, startupHard bool) error {
 		return nil
 	}
 
-	runners, err := p.registrar.ListRunners(ctx, p.tgt, p.cfg.VMNamePrefix)
+	runners, err := p.registrar.ListRunners(ctx, p.tgt, p.effectivePrefix)
 	if err != nil {
 		p.logger.Warn("list runners failed", "error", err)
 		return nil
 	}
 
-	vms, err := p.provider.ListManaged(ctx, p.cfg.VMNamePrefix)
+	vms, err := p.provider.ListManaged(ctx, p.effectivePrefix)
 	if err != nil {
 		return err
 	}

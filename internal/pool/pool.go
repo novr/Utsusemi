@@ -6,6 +6,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"log/slog"
+	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,14 +21,15 @@ import (
 )
 
 type Pool struct {
-	cfg       *config.Config
-	tgt       target.Target
-	provider  provider.VMProvider
-	registrar registrar.RunnerRegistrar
-	spawner   *spawn.Spawner
-	leases    *lease.Registry
-	session   *lease.AgentSession
-	logger    *slog.Logger
+	cfg             *config.Config
+	tgt             target.Target
+	provider        provider.VMProvider
+	registrar       registrar.RunnerRegistrar
+	spawner         *spawn.Spawner
+	leases          *lease.Registry
+	session         *lease.AgentSession
+	logger          *slog.Logger
+	effectivePrefix string // VMNamePrefix + hostID + "-"; scopes reclaim to this host
 
 	mu           sync.Mutex
 	active       int
@@ -45,16 +49,19 @@ func New(cfg *config.Config, tgt target.Target, vmProvider provider.VMProvider, 
 		logger = slog.Default()
 	}
 	leases := lease.NewRegistry(cfg.StateDir)
+	hostID := loadOrInitHostID(cfg.StateDir)
+	effectivePrefix := cfg.VMNamePrefix + hostID + "-"
 	return &Pool{
-		cfg:         cfg,
-		tgt:         tgt,
-		provider:    vmProvider,
-		registrar:   reg,
-		leases:      leases,
-		spawner:     spawn.New(spawn.Options{Config: cfg, Target: tgt, Provider: vmProvider, Registrar: reg, Leases: leases, Logger: logger}),
-		logger:      logger,
-		fatalCh:     make(chan error, 1),
-		inFlightVMs: make(map[string]struct{}),
+		cfg:             cfg,
+		tgt:             tgt,
+		provider:        vmProvider,
+		registrar:       reg,
+		leases:          leases,
+		spawner:         spawn.New(spawn.Options{Config: cfg, Target: tgt, Provider: vmProvider, Registrar: reg, Leases: leases, Logger: logger}),
+		logger:          logger,
+		effectivePrefix: effectivePrefix,
+		fatalCh:         make(chan error, 1),
+		inFlightVMs:     make(map[string]struct{}),
 	}
 }
 
@@ -77,6 +84,7 @@ func (p *Pool) Run(ctx context.Context) error {
 		"pool_size", p.cfg.PoolSize,
 		"check_interval", p.cfg.PoolCheckInterval.Duration().String(),
 		"reconciliation_interval", p.cfg.ReconciliationInterval.Duration().String(),
+		"effective_prefix", p.effectivePrefix,
 	)
 	p.tick(ctx)
 
@@ -220,7 +228,54 @@ func (p *Pool) newVMName() (string, error) {
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
-	return fmt.Sprintf("%s%s", p.cfg.VMNamePrefix, hex.EncodeToString(buf)), nil
+	return fmt.Sprintf("%s%s", p.effectivePrefix, hex.EncodeToString(buf)), nil
+}
+
+// loadOrInitHostID returns a stable, sanitized identifier for this host.
+// It reads from {stateDir}/host_id when present, otherwise derives one from
+// os.Hostname() and writes it back so the value survives hostname changes.
+func loadOrInitHostID(stateDir string) string {
+	path := filepath.Join(stateDir, "host_id")
+	if data, err := os.ReadFile(path); err == nil {
+		if id := strings.TrimSpace(string(data)); id != "" {
+			return id
+		}
+	}
+	hostname, _ := os.Hostname()
+	id := sanitizeHostname(hostname)
+	if id == "" {
+		buf := make([]byte, 4)
+		_, _ = rand.Read(buf)
+		id = hex.EncodeToString(buf)
+	}
+	// Best-effort persist; failure is non-fatal.
+	_ = os.MkdirAll(stateDir, 0o755)
+	_ = os.WriteFile(path, []byte(id), 0o644)
+	return id
+}
+
+// sanitizeHostname converts a hostname to a safe VM-name component:
+// lowercase, non-alphanumeric characters replaced with dashes, consecutive
+// dashes collapsed, leading/trailing dashes stripped, capped at 24 characters.
+func sanitizeHostname(s string) string {
+	s = strings.ToLower(s)
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+	result := strings.Trim(b.String(), "-")
+	for strings.Contains(result, "--") {
+		result = strings.ReplaceAll(result, "--", "-")
+	}
+	if len(result) > 24 {
+		result = result[:24]
+		result = strings.TrimRight(result, "-")
+	}
+	return result
 }
 
 func (p *Pool) PurgeAll(ctx context.Context, dryRun bool) ([]provider.VM, []int64, error) {

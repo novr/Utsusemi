@@ -130,6 +130,31 @@ Bootstrap reads `.runner-version` and skips the download when the installed vers
 
 Keep `runner_version` in `config.yaml` in sync with the pre-installed version. When you upgrade the runner, rebuild the base image and update `config.yaml` together.
 
+## Multi-host setup
+
+You can run Utsusemi on multiple Mac hosts pointing at the same GitHub org or
+repository. Each host automatically scopes its reclaim to only the runners it
+created, so Host A will never delete Host B's runners.
+
+**How it works** — on first start, Utsusemi derives a *host identifier* from
+`os.Hostname()` and stores it in `{StateDir}/host_id`. All runner VMs created
+by that host are named `{vm_name_prefix}{host_id}-{random}`. Reclaim and
+`clean` only touch names that start with that combined prefix.
+
+**Requirements for safe multi-host operation:**
+
+- Each host must have a unique hostname (`scutil --get LocalHostName`). Two
+  hosts with the same hostname will still interfere.
+- Alternatively, set a unique `vm_name_prefix` per host in `config.yaml`
+  (e.g. `vm_name_prefix: utsusemi-mac-a-`); the host identifier is appended
+  automatically so names remain distinct.
+
+**Upgrade note** — runners created before this version used the bare
+`vm_name_prefix` without a host identifier (e.g. `utsusemi-abc1234`). Those
+runners are no longer visible to reclaim or `clean`. Remove them manually
+via the GitHub UI or API before upgrading, or accept that they will linger
+as offline runners until they expire.
+
 ## Operations
 
 ```bash

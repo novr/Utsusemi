@@ -7,11 +7,11 @@ import (
 )
 
 func (p *Pool) purgeAllManaged(ctx context.Context, dryRun bool) ([]provider.VM, []int64, error) {
-	vms, err := p.provider.ListManaged(ctx, p.cfg.VMNamePrefix)
+	vms, err := p.provider.ListManaged(ctx, p.effectivePrefix)
 	if err != nil {
 		return nil, nil, err
 	}
-	runners, err := p.registrar.ListRunners(ctx, p.tgt, p.cfg.VMNamePrefix)
+	runners, err := p.registrar.ListRunners(ctx, p.tgt, p.effectivePrefix)
 	if err != nil {
 		return nil, nil, err
 	}
