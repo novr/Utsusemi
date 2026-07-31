@@ -123,6 +123,7 @@ Deploy broker separately from CLI. After JWT signing or route changes, operators
 - Never put tokens, PATs, or bundles in `config.yaml`.
 - Default broker: `config.DefaultHostedAppBrokerURL`; validate with `config.ValidateBrokerURL` before device flow.
 - Default `reclaim_policy`: `grace` (`config.DefaultReclaimPolicy`).
+- **`pool_size` upper bound is provider-specific**: `config.Validate` receives `maxConcurrent` from `VMProvider.Capabilities().MaxConcurrent` (configure uses `providerMaxConcurrent(cfg)`; run uses the loaded provider). Each provider implementation must document why its limit is what it is (see `provider.TartProvider.Capabilities`). The error message names the provider; `utsusemi status` prints `max` under `vms`.
 - Operator docs in [README.md](README.md) Operations and Provider. Alerts/notifications are out of scope.
 
 ### Tests and toolchain

@@ -59,9 +59,10 @@ type Job struct {
 }
 
 type VMsInfo struct {
-	Running  int `json:"running"`
-	Total    int `json:"total"`
-	PoolSize int `json:"pool_size"`
+	Running       int `json:"running"`
+	Total         int `json:"total"`
+	PoolSize      int `json:"pool_size"`
+	MaxConcurrent int `json:"max_concurrent,omitempty"`
 }
 
 type HealthInfo struct {
@@ -94,6 +95,7 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 		return Report{}, err
 	}
 	vmInfo, warming := summarizeVMs(vms, in.Cfg.PoolSize, jobs, agent.State, leases)
+	vmInfo.MaxConcurrent = in.Provider.Capabilities().MaxConcurrent
 
 	freeGB, err := in.Provider.FreeDiskGB(ctx)
 	if err != nil {

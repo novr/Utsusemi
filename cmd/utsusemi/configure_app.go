@@ -86,7 +86,7 @@ func newConfigureAppCmd() *cobra.Command {
 			}
 			opts.apply(cfg)
 			config.ApplyDefaults(cfg)
-			if _, err := config.Validate(cfg, providerMaxConcurrent()); err != nil {
+			if _, err := config.Validate(cfg, providerMaxConcurrent(cfg)); err != nil {
 				return err
 			}
 

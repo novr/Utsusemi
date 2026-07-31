@@ -19,6 +19,8 @@ func NewTartProvider(exec CommandExecutor, softnet bool) *TartProvider {
 }
 
 func (p *TartProvider) Capabilities() Capabilities {
+	// pool_size must not exceed 2 while using Tart on macOS (see https://tart.run/faq/).
+	// Guest networking mode (built-in NAT vs softnet) does not raise this cap.
 	return Capabilities{MaxConcurrent: 2}
 }
 

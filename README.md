@@ -93,6 +93,7 @@ Edit `config.yaml` after `configure` (not written by `configure`).
 
 | Key | Default | Notes |
 |-----|---------|-------|
+| `pool_size` | `1` | Upper bound is provider-specific (`utsusemi status` shows `max`; Tart is 2) |
 | `reclaim_policy` | `grace` | `soft` — local dev; `hard` — immediate |
 | `reclaim_grace` | `15m` | When `reclaim_policy` is `grace` |
 | `reconciliation_interval` | `5m` | Reclaim interval during `run` |
