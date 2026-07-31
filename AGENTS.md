@@ -165,11 +165,4 @@ cd worker && npm install && npm run deploy
 
 ### Removed / no migration
 
-Legacy paths (`register`, bare JWT, `api_key`, `own_app`) are gone. Product is unreleased; breaking credential or storage changes are acceptable when noted here or in release notes.
-
-**Release note (pending):** default `reclaim_policy` changed from `soft` to `grace`. Configs without an explicit policy now reclaim stale VMs after `reclaim_grace`. Set `reclaim_policy: soft` for prior behavior.
-
-**Release note (pending):** runner names now include a host identifier
-(`{vm_name_prefix}{host_id}-{random}`). Runners created before this change
-(named `{vm_name_prefix}{random}`) are no longer managed by reclaim or `clean`
-and should be removed manually via the GitHub UI before upgrading.
+Legacy paths (`register`, bare JWT, `api_key`, `own_app`) are gone.

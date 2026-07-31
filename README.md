@@ -149,12 +149,6 @@ by that host are named `{vm_name_prefix}{host_id}-{random}`. Reclaim and
   (e.g. `vm_name_prefix: utsusemi-mac-a-`); the host identifier is appended
   automatically so names remain distinct.
 
-**Upgrade note** — runners created before this version used the bare
-`vm_name_prefix` without a host identifier (e.g. `utsusemi-abc1234`). Those
-runners are no longer visible to reclaim or `clean`. Remove them manually
-via the GitHub UI or API before upgrading, or accept that they will linger
-as offline runners until they expire.
-
 ## Operations
 
 ```bash
