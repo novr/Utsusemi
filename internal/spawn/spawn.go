@@ -103,7 +103,7 @@ func (s *Spawner) Run(ctx context.Context, vmName string) error {
 	defer jobCancel()
 
 	log.Info("waiting for job", "runner_id", runnerID, "runner_version", cfg.RunnerVersion)
-	env := map[string]string{"RUNNER_VERSION": cfg.RunnerVersion}
+	env := BootstrapEnv(cfg, s.opts.Provider)
 	execDone := make(chan error, 1)
 	go func() {
 		execDone <- s.opts.Provider.ExecStdin(jobCtx, vmName, "bash", []string{"-c", bootstrapScript}, []byte(jit.Encoded), env)

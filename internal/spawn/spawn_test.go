@@ -88,6 +88,15 @@ func TestSpawnUsesKeychainRegistrarInterface(_ *testing.T) {
 	_ = keychain.NewMemoryStore()
 }
 
+func bootstrapTestEnv(home string, extra ...string) []string {
+	env := append(os.Environ(),
+		"RUNNER_VERSION=2.336.0",
+		"RUNNER_ARCH=osx-arm64",
+		"RUNNER_HOME="+home,
+	)
+	return append(env, extra...)
+}
+
 func TestBootstrapForwardsStdinJITToRunner(t *testing.T) {
 	home := t.TempDir()
 	recorded := filepath.Join(home, "args.txt")
@@ -101,7 +110,7 @@ func TestBootstrapForwardsStdinJITToRunner(t *testing.T) {
 	}
 
 	cmd := exec.Command("bash", "-c", bootstrapScript)
-	cmd.Env = append(os.Environ(), "RUNNER_VERSION=2.336.0", "RUNNER_HOME="+home)
+	cmd.Env = bootstrapTestEnv(home)
 	cmd.Stdin = strings.NewReader("encoded-jit")
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("bootstrap failed: %v: %s", err, out)
@@ -129,7 +138,7 @@ func TestBootstrapSkipsDownloadWhenInstalled(t *testing.T) {
 	}
 
 	cmd := exec.Command("bash", "-c", bootstrapScript)
-	cmd.Env = append(os.Environ(), "RUNNER_VERSION=2.336.0", "RUNNER_HOME="+home)
+	cmd.Env = bootstrapTestEnv(home)
 	cmd.Stdin = strings.NewReader("encoded-jit")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -167,11 +176,7 @@ func TestBootstrapRedownloadsOnVersionMismatch(t *testing.T) {
 	}
 
 	cmd := exec.Command("bash", "-c", bootstrapScript)
-	cmd.Env = append(os.Environ(),
-		"RUNNER_VERSION=2.336.0",
-		"RUNNER_HOME="+home,
-		"PATH="+fakebin+":"+os.Getenv("PATH"),
-	)
+	cmd.Env = bootstrapTestEnv(home, "PATH="+fakebin+":"+os.Getenv("PATH"))
 	cmd.Stdin = strings.NewReader("encoded-jit")
 	out, err := cmd.CombinedOutput()
 	if err != nil {
@@ -194,7 +199,7 @@ func TestBootstrapRedownloadsOnVersionMismatch(t *testing.T) {
 func TestBootstrapRequiresJITOnStdin(t *testing.T) {
 	home := t.TempDir()
 	cmd := exec.Command("bash", "-c", bootstrapScript)
-	cmd.Env = append(os.Environ(), "RUNNER_VERSION=2.336.0", "RUNNER_HOME="+home)
+	cmd.Env = bootstrapTestEnv(home)
 	cmd.Stdin = strings.NewReader("")
 	if err := cmd.Run(); err == nil {
 		t.Fatal("expected failure when stdin is empty")

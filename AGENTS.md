@@ -140,7 +140,9 @@ Deploy broker separately from CLI. After JWT signing or route changes, operators
 - Never put tokens, PATs, or bundles in `config.yaml`.
 - Default broker: `config.DefaultHostedAppBrokerURL`; validate with `config.ValidateBrokerURL` before device flow.
 - Default `reclaim_policy`: `grace` (`config.DefaultReclaimPolicy`).
-- **`pool_size` upper bound is provider-specific**: `config.Validate` receives `maxConcurrent` from `VMProvider.Capabilities().MaxConcurrent` (configure uses `providerMaxConcurrent(cfg)`; run uses the loaded provider). Each provider implementation must document why its limit is what it is (see `provider.TartProvider.Capabilities`). The error message names the provider; `utsusemi status` prints `max` under `vms`.
+- **`pool_size` upper bound is provider-specific**: `config.Validate(cfg, VMProvider)` reads `VMProvider.Capabilities().MaxConcurrent`. Configure uses `app.ValidateConfig` (capabilities only; does not require `tart` in PATH). Run/status use `app.Load`, which also checks provider availability.
+- **Runtime assembly**: `internal/app` owns provider construction (`buildProvider`), config validation, registrar setup, and `Runtime` helpers used by CLI commands.
+- **Bootstrap env**: `spawn.BootstrapEnv` sets `RUNNER_VERSION`, `RUNNER_ARCH`, and `RUNNER_HOME` for `bootstrap.sh`. `RUNNER_ARCH` comes from `VMProvider.Capabilities().RunnerArch` (Tart: `osx-arm64`).
 - Operator docs in [README.md](README.md) Operations and Provider. Alerts/notifications are out of scope.
 
 ### Tests and toolchain

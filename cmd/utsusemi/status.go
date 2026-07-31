@@ -17,7 +17,7 @@ func newStatusCmd() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			report, err := status.Collect(cmd.Context(), rt.statusInput(nil))
+			report, err := status.Collect(cmd.Context(), rt.StatusInput(nil))
 			if err != nil {
 				return err
 			}
