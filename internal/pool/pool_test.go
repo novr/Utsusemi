@@ -3,6 +3,7 @@ package pool
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -45,8 +46,12 @@ func (r *trackingRegistrar) DeleteRunner(ctx context.Context, tgt target.Target,
 func (r *trackingRegistrar) ListRunners(ctx context.Context, tgt target.Target, prefix string) ([]registrar.Runner, error) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
-	out := make([]registrar.Runner, len(r.runners))
-	copy(out, r.runners)
+	var out []registrar.Runner
+	for _, runner := range r.runners {
+		if prefix == "" || strings.HasPrefix(runner.Name, prefix) {
+			out = append(out, runner)
+		}
+	}
 	return out, nil
 }
 func (r *trackingRegistrar) ValidateCredential(ctx context.Context, service, account string) error {
@@ -75,6 +80,23 @@ func testPoolConfig(t *testing.T) *config.Config {
 func newTestPool(t *testing.T, cfg *config.Config, vmProvider provider.VMProvider, reg registrar.RunnerRegistrar) *Pool {
 	t.Helper()
 	p := New(cfg, target.Target{Type: target.TypeRepo, Owner: "a", Repo: "b"}, vmProvider, reg, slog.Default())
+	// Override effectivePrefix with bare VMNamePrefix so test VM names don't
+	// depend on the hostname of the machine running the tests.
+	p.effectivePrefix = cfg.VMNamePrefix
+	session, err := p.leases.BeginAgentSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.session = session
+	return p
+}
+
+// newTestPoolWithPrefix creates a pool whose effectivePrefix is set explicitly.
+// Use this when testing multi-host scenarios where different prefixes matter.
+func newTestPoolWithPrefix(t *testing.T, cfg *config.Config, vmProvider provider.VMProvider, reg registrar.RunnerRegistrar, prefix string) *Pool {
+	t.Helper()
+	p := New(cfg, target.Target{Type: target.TypeRepo, Owner: "a", Repo: "b"}, vmProvider, reg, slog.Default())
+	p.effectivePrefix = prefix
 	session, err := p.leases.BeginAgentSession()
 	if err != nil {
 		t.Fatal(err)
@@ -172,5 +194,54 @@ func TestStartupHardReclaimDeletesStaleRunningVM(t *testing.T) {
 	}
 	if _, ok := exec.VMs["utsusemi-old"]; ok {
 		t.Fatal("stale running vm should be deleted")
+	}
+}
+
+// TestReclaimSkipsOtherHostRunners verifies that when two hosts share the same
+// GitHub org/repo with the same vm_name_prefix, reclaim on Host A only removes
+// runners whose names start with Host A's effective prefix and leaves Host B's
+// runners untouched.
+func TestReclaimSkipsOtherHostRunners(t *testing.T) {
+	const (
+		prefixA = "utsusemi-host-a-"
+		prefixB = "utsusemi-host-b-"
+	)
+
+	// VM layer: Host A has one stopped VM; Host B's VM is also present on the
+	// same tart host (shared NAS scenario), but it is stopped as well.
+	exec := provider.NewFakeExecutor()
+	exec.VMs[prefixA+"dead"] = false // Host A's stale VM
+	exec.VMs[prefixB+"dead"] = false // Host B's stale VM — must NOT be touched
+
+	// Runner layer: both hosts' orphaned runners are visible via the GitHub API.
+	reg := &trackingRegistrar{
+		runners: []registrar.Runner{
+			{ID: 10, Name: prefixA + "dead"},
+			{ID: 20, Name: prefixB + "dead"},
+		},
+	}
+
+	cfg := testPoolConfig(t)
+	// Use Host A's effective prefix explicitly.
+	p := newTestPoolWithPrefix(t, cfg, provider.NewTartProvider(exec, true), reg, prefixA)
+
+	if err := p.reclaim(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+
+	// Host A's VM must be deleted.
+	if _, ok := exec.VMs[prefixA+"dead"]; ok {
+		t.Errorf("host-A VM should have been reclaimed")
+	}
+	// Host B's VM must be untouched.
+	if _, ok := exec.VMs[prefixB+"dead"]; !ok {
+		t.Errorf("host-B VM should NOT have been reclaimed by host-A's reclaim")
+	}
+
+	reg.mu.Lock()
+	defer reg.mu.Unlock()
+	// Only runner 10 (Host A's) must be deleted.
+	if len(reg.deleted) != 1 || reg.deleted[0] != 10 {
+		t.Errorf("expected only runner 10 deleted, got deleted=%v", reg.deleted)
 	}
 }

@@ -102,6 +102,23 @@ Hosted app rules:
 
 Shared teardown: `stopAndDeleteManagedVM` (`managed_vm.go`).
 
+### Multi-host safety
+
+Each `Pool` carries an `effectivePrefix = cfg.VMNamePrefix + hostID + "-"`.
+
+- **hostID** is loaded from `{StateDir}/host_id`. On first run, it is derived
+  from `os.Hostname()` (sanitized: lowercase, non-alphanumeric → dash, max 24
+  chars) and written to that file for stability across hostname changes.
+- `reclaim` and `purgeAllManaged` both use `effectivePrefix` instead of
+  `cfg.VMNamePrefix`, so they only see and delete runners created by this host.
+- `listing` (`utsusemi list`) still uses `cfg.VMNamePrefix` for full
+  visibility across all hosts sharing that prefix.
+- Two hosts with identical hostnames will still conflict; each must have a
+  unique `LocalHostName` or a unique `vm_name_prefix` in config.
+- Runners created by older versions (named `{VMNamePrefix}{hex}` without a
+  host segment) are invisible to reclaim after upgrade and must be removed
+  manually.
+
 ### Broker HTTP paths
 
 Keep aligned across:
@@ -149,3 +166,8 @@ cd worker && npm install && npm run deploy
 Legacy paths (`register`, bare JWT, `api_key`, `own_app`) are gone. Product is unreleased; breaking credential or storage changes are acceptable when noted here or in release notes.
 
 **Release note (pending):** default `reclaim_policy` changed from `soft` to `grace`. Configs without an explicit policy now reclaim stale VMs after `reclaim_grace`. Set `reclaim_policy: soft` for prior behavior.
+
+**Release note (pending):** runner names now include a host identifier
+(`{vm_name_prefix}{host_id}-{random}`). Runners created before this change
+(named `{vm_name_prefix}{random}`) are no longer managed by reclaim or `clean`
+and should be removed manually via the GitHub UI before upgrading.
