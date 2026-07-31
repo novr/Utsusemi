@@ -107,6 +107,10 @@ func saveCredential(cfg *config.Config, secret string) error {
 	return store.Set(cfg.CredentialService(), cfg.CredentialAccount(), secret)
 }
 
-func providerMaxConcurrent() int {
-	return provider.NewTartProvider(provider.RealExecutor{}, false).Capabilities().MaxConcurrent
+func providerMaxConcurrent(cfg *config.Config) int {
+	softnet := false
+	if cfg != nil {
+		softnet = cfg.Softnet
+	}
+	return provider.NewTartProvider(provider.RealExecutor{}, softnet).Capabilities().MaxConcurrent
 }

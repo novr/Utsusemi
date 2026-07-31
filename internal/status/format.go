@@ -51,7 +51,11 @@ func FormatText(r Report) string {
 		b.WriteByte('\n')
 	}
 
-	fmt.Fprintf(&b, "vms: %d running, %d total (pool_size %d)\n", r.VMs.Running, r.VMs.Total, r.VMs.PoolSize)
+	if r.VMs.MaxConcurrent > 0 {
+		fmt.Fprintf(&b, "vms: %d running, %d total (pool_size %d, max %d)\n", r.VMs.Running, r.VMs.Total, r.VMs.PoolSize, r.VMs.MaxConcurrent)
+	} else {
+		fmt.Fprintf(&b, "vms: %d running, %d total (pool_size %d)\n", r.VMs.Running, r.VMs.Total, r.VMs.PoolSize)
+	}
 	fmt.Fprintf(&b, "warming: %d", len(r.Warming))
 	if len(r.Warming) > 0 {
 		fmt.Fprintf(&b, " (%s)", strings.Join(r.Warming, ", "))

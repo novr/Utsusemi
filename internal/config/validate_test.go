@@ -54,6 +54,9 @@ func TestValidatePoolSizeLimit(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error")
 	}
+	if !strings.Contains(err.Error(), "tart") {
+		t.Errorf("error message should mention the provider name, got: %q", err.Error())
+	}
 }
 
 func TestValidateSpawnTimeoutMustNotExceedJobTimeout(t *testing.T) {
