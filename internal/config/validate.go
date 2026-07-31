@@ -40,7 +40,7 @@ func Validate(cfg *Config, maxConcurrent int) (target.Target, error) {
 		return target.Target{}, fmt.Errorf("pool_size must be positive")
 	}
 	if cfg.PoolSize > maxConcurrent {
-		return target.Target{}, fmt.Errorf("pool_size %d exceeds provider max concurrent %d", cfg.PoolSize, maxConcurrent)
+		return target.Target{}, fmt.Errorf("pool_size %d exceeds %s provider max concurrent %d", cfg.PoolSize, cfg.Provider, maxConcurrent)
 	}
 	if !slices.Contains(cfg.Labels, "self-hosted") {
 		return target.Target{}, fmt.Errorf("labels must include self-hosted")

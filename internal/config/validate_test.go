@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -87,6 +88,38 @@ func TestValidateHostedAppRequiresOrg(t *testing.T) {
 	_, err := Validate(cfg, 2)
 	if err == nil {
 		t.Fatal("expected error")
+	}
+}
+
+// TestValidatePoolSizeLimitIsProviderScoped proves that pool_size validation
+// uses the maxConcurrent value supplied by the selected provider, not a
+// Tart-specific constant. We simulate a hypothetical second provider (e.g. a
+// Linux ARM container backend) by passing maxConcurrent=5 and confirm that a
+// pool_size=4 is accepted, whereas the same config fails with Tart's limit of 2.
+func TestValidatePoolSizeLimitIsProviderScoped(t *testing.T) {
+	cfg := &Config{
+		Target:        target.ConfigYAML{Org: "my-org", RunnerGroupID: 1},
+		Labels:        []string{"self-hosted", "linux"},
+		Registration:  Registration{Mode: ModeGitHubPAT},
+		Provider:      "tart",
+		BaseImage:     "ghcr.io/example/image:1",
+		RunnerVersion: "2.336.0",
+		PoolSize:      4,
+	}
+
+	// With a higher-capacity provider (MaxConcurrent=5), pool_size=4 must pass.
+	if _, err := Validate(cfg, 5); err != nil {
+		t.Fatalf("expected no error with maxConcurrent=5, got: %v", err)
+	}
+
+	// With Tart's limit (MaxConcurrent=2), the same pool_size must fail.
+	_, err := Validate(cfg, 2)
+	if err == nil {
+		t.Fatal("expected error with maxConcurrent=2, got nil")
+	}
+	// Error message must name the provider so operators know which limit applies.
+	if !strings.Contains(err.Error(), "tart") {
+		t.Errorf("error message should mention the provider name, got: %q", err.Error())
 	}
 }
 

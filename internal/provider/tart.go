@@ -19,6 +19,9 @@ func NewTartProvider(exec CommandExecutor, softnet bool) *TartProvider {
 }
 
 func (p *TartProvider) Capabilities() Capabilities {
+	// macOS Virtualization.framework permits at most 2 VMs running simultaneously
+	// per NAT interface without Softnet. This is a host kernel constraint, not a
+	// Tart limitation, so pool_size must not exceed 2 for this provider.
 	return Capabilities{MaxConcurrent: 2}
 }
 
