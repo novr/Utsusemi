@@ -118,8 +118,8 @@ func TestRecordShortExitAppliesBackoff(t *testing.T) {
 	if p.shortExits != 1 {
 		t.Fatalf("shortExits = %d, want 1", p.shortExits)
 	}
-	if !time.Now().Before(p.backoffUntil) {
-		t.Fatal("backoffUntil should be in the future")
+	if backoff := time.Until(p.backoffUntil); backoff < 29*time.Second {
+		t.Fatalf("backoff = %v, want at least 29s", backoff)
 	}
 }
 
@@ -200,19 +200,21 @@ func TestHandleSpawnSuccessStopsAgentAfterMaxShortExits(t *testing.T) {
 
 	p.handleSpawnSuccess("vm-1", spawn.Result{JobMs: 28_000, TotalMs: 90_000})
 
-	select {
-	case err := <-p.fatalCh:
-		if err == nil {
-			t.Fatal("expected fatal error")
-		}
-	case <-time.After(time.Second):
-		t.Fatal("expected agent stop")
-	}
-
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if !p.shutdown {
 		t.Fatal("expected shutdown flag")
+	}
+	if p.fatalErr == nil {
+		t.Fatal("expected fatal error")
+	}
+	select {
+	case err := <-p.fatalCh:
+		if err == nil {
+			t.Fatal("expected fatal error on channel")
+		}
+	default:
+		t.Fatal("expected fatal error on channel")
 	}
 }
 
