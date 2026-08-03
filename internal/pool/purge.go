@@ -45,6 +45,7 @@ func (p *Pool) purgeAllManaged(ctx context.Context, dryRun bool) ([]provider.VM,
 	}
 	if err := p.leases.ClearLeases(); err != nil {
 		p.logger.Warn("clear leases failed", "error", err)
+		errs = append(errs, err)
 	}
 	return deletedVMs, deletedRunners, errors.Join(errs...)
 }

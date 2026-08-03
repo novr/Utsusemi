@@ -3,6 +3,8 @@ package pool
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/novr/utsusemi/internal/lease"
@@ -120,5 +122,25 @@ func TestPurgeAllReturnsErrorOnRunnerDeleteFailure(t *testing.T) {
 	}
 	if len(exec.VMs) != 0 {
 		t.Fatalf("expected vm to be deleted: %#v", exec.VMs)
+	}
+}
+
+func TestPurgeAllReturnsErrorOnClearLeasesFailure(t *testing.T) {
+	exec := provider.NewFakeExecutor()
+	cfg := testPoolConfig(t)
+	p := newTestPool(t, cfg, provider.NewTartProvider(exec, true), noopRegistrar{})
+	if err := p.leases.WriteLease(p.session, lease.Lease{VMName: "utsusemi-a", RunnerID: 1}); err != nil {
+		t.Fatal(err)
+	}
+
+	leaseDir := filepath.Join(cfg.StateDir, "leases")
+	if err := os.Chmod(leaseDir, 0o555); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(leaseDir, 0o755) })
+
+	_, _, err := p.PurgeAll(context.Background(), false)
+	if err == nil {
+		t.Fatal("expected error when clearing leases fails, got nil")
 	}
 }

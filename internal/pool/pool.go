@@ -99,16 +99,16 @@ func (p *Pool) Run(ctx context.Context) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return p.drainAndWait()
+			return p.drainAndWait(ctx)
 		case err := <-p.fatalCh:
-			_ = p.drainAndWait()
+			_ = p.drainAndWait(ctx)
 			return err
 		case <-ticker.C:
 			p.tick(ctx)
 		case <-reconcileTicker.C:
 			if err := p.reclaim(ctx, false); err != nil {
 				if registrar.IsUnauthorized(err) {
-					_ = p.drainAndWait()
+					_ = p.drainAndWait(ctx)
 					return err
 				}
 				p.logger.Warn("reconciliation failed", "error", err)
@@ -123,16 +123,23 @@ func (p *Pool) BeginShutdown() {
 	p.mu.Unlock()
 }
 
-func (p *Pool) drainAndWait() error {
+const shutdownPurgeTimeout = 2 * time.Minute
+
+func (p *Pool) drainAndWait(ctx context.Context) error {
 	p.mu.Lock()
 	p.drain = true
 	p.mu.Unlock()
 	p.inFlight.Wait()
 	// Clean up any VMs that outlived the drain (e.g. grace-window VMs from a
 	// previous session that reclaim never reached before shutdown).
-	vms, _, err := p.purgeAllManaged(context.Background(), false)
-	if len(vms) > 0 || err != nil {
-		p.logger.Info("shutdown cleanup", "vms_deleted", len(vms), "error", err)
+	purgeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), shutdownPurgeTimeout)
+	defer cancel()
+	vms, _, err := p.purgeAllManaged(purgeCtx, false)
+	switch {
+	case err != nil:
+		p.logger.Warn("shutdown cleanup failed", "vms_deleted", len(vms), "error", err)
+	case len(vms) > 0:
+		p.logger.Info("shutdown cleanup", "vms_deleted", len(vms))
 	}
 	return nil
 }
