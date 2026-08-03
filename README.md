@@ -2,10 +2,9 @@
 
 ## Quick start
 
+Install [Tart](#requirements) first, then:
+
 ```bash
-brew tap openai/tools
-brew trust openai/tools
-brew install openai/tools/tart
 brew tap novr/taps
 brew trust novr/taps
 brew install utsusemi
