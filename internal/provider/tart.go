@@ -107,7 +107,7 @@ func (p *TartProvider) ExecStdin(ctx context.Context, name, cmd string, args []s
 	}
 	execArgs = append(execArgs, cmd)
 	execArgs = append(execArgs, args...)
-	return p.exec.Run(ctx, "tart", execArgs, stdin, nil)
+	return p.exec.RunStreaming(ctx, "tart", execArgs, stdin, nil)
 }
 
 func sortedKeys(env map[string]string) []string {

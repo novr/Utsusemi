@@ -115,7 +115,11 @@ Edit `config.yaml` after `configure` (not written by `configure`).
 #### Pre-installed runner (low-latency base image)
 
 By default bootstrap downloads the Actions runner tarball on every job start (~30–60 s).
-To eliminate that latency, pre-install the runner in the base image:
+To eliminate that latency, pre-install the runner in the base image.
+
+**Stock cirruslabs images** (`ghcr.io/cirruslabs/macos-*-xcode`) already ship the runner at `/Users/admin/actions-runner`. Bootstrap detects the installed version by running `Runner.Listener --version` and skips the download automatically — no custom bake step required. Just set `runner_version` in `config.yaml` to match what the image ships.
+
+**Custom images** — if `Runner.Listener` is not on `PATH`, bootstrap falls back to a `.runner-version` sentinel file:
 
 ```bash
 # Run once inside the base image VM, then snapshot / push the image.
@@ -125,11 +129,8 @@ mkdir -p "$RUNNER_HOME" && cd "$RUNNER_HOME"
 curl -fsSL -o actions-runner.tar.gz \
   "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-osx-arm64-${RUNNER_VERSION}.tar.gz"
 tar xzf actions-runner.tar.gz && rm actions-runner.tar.gz
-# Write the version sentinel so bootstrap knows to skip the download.
 echo "${RUNNER_VERSION}" > .runner-version
 ```
-
-Bootstrap reads `.runner-version` and skips the download when the installed version matches `runner_version` in `config.yaml`. A mismatch (or a missing sentinel) causes bootstrap to re-download — safe but slower.
 
 Keep `runner_version` in `config.yaml` in sync with the pre-installed version. When you upgrade the runner, rebuild the base image and update `config.yaml` together.
 
