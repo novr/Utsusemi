@@ -90,6 +90,23 @@ Organization (`Self-hosted runners: Read and write`):
 printf '%s' "$TOKEN" | utsusemi configure token --org my-org
 ```
 
+### Personal account (no org)
+
+PAT mode supports `--repo`, so Utsusemi can run against personal repositories. One agent serves one repo, so each additional repo needs its own isolated instance:
+
+| Isolate per instance | Why |
+|----------------------|-----|
+| `--config` / `UTSUSEMI_CONFIG` | Separate config file |
+| `state_dir` | Lock file and lease state live here; collision prevents startup |
+| `vm_name_prefix` | Prevents VM name collisions across instances |
+| `credential_keychain_service` | Prevents keychain entry collisions |
+
+`brew services` manages one service definition; a second instance needs a hand-written launchd plist. With Tart capped at 2 concurrent VMs, at most two single-slot pools can run on one host. Credential refresh is manual (GitHub App mode is organization-only).
+
+**Recommended path for multiple repos: create a free GitHub organization.**
+
+Free orgs include the default runner group (matches `--runner-group-id 1`), enable GitHub App mode (single agent for all repos, automatic credential refresh), and existing repo URLs redirect after transfer. Cost: one org creation, one transfer per repo.
+
 ### Runtime options
 
 Edit `config.yaml` after `configure` (not written by `configure`).
