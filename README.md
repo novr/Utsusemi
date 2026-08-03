@@ -4,6 +4,7 @@
 
 ```bash
 brew tap novr/taps
+brew trust novr/taps
 brew install utsusemi
 utsusemi configure app --org my-org
 utsusemi validate
@@ -14,7 +15,7 @@ utsusemi run
 ## Requirements
 
 - Apple Silicon Mac, macOS 15+
-- [Tart](https://tart.run/) 2.34+
+- [Tart](https://tart.run/) 2.34+ — install via `brew tap openai/tools && brew trust openai/tools && brew install openai/tools/tart`
 
 ## Paths
 

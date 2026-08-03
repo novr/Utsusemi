@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 )
 
 type TartProvider struct {
@@ -24,9 +26,15 @@ func (p *TartProvider) Capabilities() Capabilities {
 	return Capabilities{MaxConcurrent: 2, RunnerArch: "osx-arm64"}
 }
 
+const tartMinVersion = "2.34.0"
+const tartInstallCmd = "brew tap openai/tools && brew trust openai/tools && brew install openai/tools/tart"
+
 func (p *TartProvider) Available() error {
 	if _, err := exec.LookPath("tart"); err != nil {
-		return fmt.Errorf("tart not found in PATH; install with `brew install tart`")
+		return fmt.Errorf("tart not found in PATH; install with `%s`", tartInstallCmd)
+	}
+	if err := checkTartVersion(); err != nil {
+		return err
 	}
 	if p.softnet {
 		if _, err := exec.LookPath("softnet"); err != nil {
@@ -34,6 +42,37 @@ func (p *TartProvider) Available() error {
 		}
 	}
 	return nil
+}
+
+func checkTartVersion() error {
+	out, err := exec.Command("tart", "--version").Output()
+	if err != nil {
+		return fmt.Errorf("tart --version: %w", err)
+	}
+	return requireTartVersion(strings.TrimSpace(string(out)))
+}
+
+func requireTartVersion(got string) error {
+	if !versionAtLeast(got, tartMinVersion) {
+		return fmt.Errorf("tart %s is below the required %s; upgrade with `%s`", got, tartMinVersion, tartInstallCmd)
+	}
+	return nil
+}
+
+func versionAtLeast(got, min string) bool {
+	gParts := strings.Split(got, ".")
+	mParts := strings.Split(min, ".")
+	for i, ms := range mParts {
+		if i >= len(gParts) {
+			return false
+		}
+		g, _ := strconv.Atoi(gParts[i])
+		m, _ := strconv.Atoi(ms)
+		if g != m {
+			return g > m
+		}
+	}
+	return true
 }
 
 func (p *TartProvider) SyncImage(ctx context.Context, ref string) error {
