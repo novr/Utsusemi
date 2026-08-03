@@ -182,8 +182,8 @@ func TestCollectStaleAgentWithLease(t *testing.T) {
 	if len(report.Jobs) != 1 || !report.Jobs[0].Stale {
 		t.Fatalf("jobs=%v", report.Jobs)
 	}
-	if len(report.Warming) != 0 {
-		t.Fatalf("warming=%v", report.Warming)
+	if len(report.Draining) != 0 {
+		t.Fatalf("draining=%v", report.Draining)
 	}
 }
 
@@ -207,7 +207,7 @@ func TestCollectStoppedWithLivePID(t *testing.T) {
 	}
 }
 
-func TestCollectWarmingVM(t *testing.T) {
+func TestCollectDrainingVM(t *testing.T) {
 	dir := t.TempDir()
 	lockPath := filepath.Join(dir, "utsusemi.lock")
 	lock, err := instancelock.Acquire(lockPath)
@@ -240,8 +240,8 @@ func TestCollectWarmingVM(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Warming) != 1 || report.Warming[0] != "utsusemi-warm" {
-		t.Fatalf("warming=%v", report.Warming)
+	if len(report.Draining) != 1 || report.Draining[0] != "utsusemi-warm" {
+		t.Fatalf("draining=%v", report.Draining)
 	}
 }
 
@@ -275,8 +275,8 @@ func TestCollectOrphanVMNotWarming(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Warming) != 0 {
-		t.Fatalf("warming=%v, want orphan lease VM excluded", report.Warming)
+	if len(report.Draining) != 0 {
+		t.Fatalf("draining=%v, want orphan lease VM excluded", report.Draining)
 	}
 }
 
