@@ -33,11 +33,11 @@ func newCleanCmd() *cobra.Command {
 			}
 
 			vms, runnerIDs, err := ag.PurgeAll(cmd.Context(), dryRun)
-			if err != nil {
-				return err
-			}
 
 			if dryRun {
+				if err != nil {
+					return err
+				}
 				fmt.Printf("would delete %d vm(s) and %d runner(s)\n", len(vms), len(runnerIDs))
 				for _, vm := range vms {
 					fmt.Printf("  vm %s running=%v\n", vm.Name, vm.Running)
@@ -48,8 +48,10 @@ func newCleanCmd() *cobra.Command {
 				return nil
 			}
 
+			// Always print what was actually deleted before returning any error,
+			// so the operator knows the partial state.
 			fmt.Printf("deleted %d vm(s) and %d runner(s)\n", len(vms), len(runnerIDs))
-			return nil
+			return err
 		},
 	}
 
