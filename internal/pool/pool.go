@@ -142,7 +142,7 @@ func (p *Pool) drainAndWait(ctx context.Context) error {
 	case len(vms) > 0:
 		p.logger.Info("shutdown cleanup", "vms_deleted", len(vms))
 	}
-	return nil
+	return err
 }
 
 func (p *Pool) tick(ctx context.Context) {

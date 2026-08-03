@@ -390,3 +390,37 @@ func TestReclaimSkipsOtherHostRunners(t *testing.T) {
 		t.Errorf("expected only runner 10 deleted, got deleted=%v", reg.deleted)
 	}
 }
+
+// TestDrainAndWaitPurgesResidualVMs is the regression test for #27: VMs that
+// outlived the drain window (grace-period VMs from a previous session) must be
+// cleaned up by drainAndWait after in-flight goroutines finish.
+func TestDrainAndWaitPurgesResidualVMs(t *testing.T) {
+	exec := provider.NewFakeExecutor()
+	exec.VMs["utsusemi-residual"] = true // running VM under effectivePrefix, no lease
+
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, false), noopRegistrar{})
+
+	if err := p.drainAndWait(context.Background()); err != nil {
+		t.Fatalf("drainAndWait: %v", err)
+	}
+	if _, ok := exec.VMs["utsusemi-residual"]; ok {
+		t.Fatal("residual VM should have been purged by drainAndWait")
+	}
+}
+
+// TestDrainAndWaitReturnsErrorOnPurgeFailure verifies that drainAndWait
+// propagates a purge error so that utsusemi run exits non-zero when shutdown
+// cleanup fails (e.g. GitHub 502 that exhausts all retries).
+func TestDrainAndWaitReturnsErrorOnPurgeFailure(t *testing.T) {
+	exec := provider.NewFakeExecutor()
+	exec.VMs["utsusemi-stuck"] = false // stopped VM, runner delete will fail
+
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, false), &failDeleteRegistrar{
+		runners: []registrar.Runner{{ID: 1, Name: "utsusemi-stuck"}},
+	})
+
+	err := p.drainAndWait(context.Background())
+	if err == nil {
+		t.Fatal("drainAndWait should return an error when shutdown purge fails")
+	}
+}
