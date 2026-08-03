@@ -391,12 +391,9 @@ func TestReclaimSkipsOtherHostRunners(t *testing.T) {
 	}
 }
 
-// TestDrainAndWaitPurgesResidualVMs is the regression test for #27: VMs that
-// outlived the drain window (grace-period VMs from a previous session) must be
-// cleaned up by drainAndWait after in-flight goroutines finish.
 func TestDrainAndWaitPurgesResidualVMs(t *testing.T) {
 	exec := provider.NewFakeExecutor()
-	exec.VMs["utsusemi-residual"] = true // running VM under effectivePrefix, no lease
+	exec.VMs["utsusemi-residual"] = true
 
 	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, false), noopRegistrar{})
 
@@ -408,19 +405,44 @@ func TestDrainAndWaitPurgesResidualVMs(t *testing.T) {
 	}
 }
 
-// TestDrainAndWaitReturnsErrorOnPurgeFailure verifies that drainAndWait
-// propagates a purge error so that utsusemi run exits non-zero when shutdown
-// cleanup fails (e.g. GitHub 502 that exhausts all retries).
 func TestDrainAndWaitReturnsErrorOnPurgeFailure(t *testing.T) {
 	exec := provider.NewFakeExecutor()
-	exec.VMs["utsusemi-stuck"] = false // stopped VM, runner delete will fail
+	exec.VMs["utsusemi-stuck"] = false
 
 	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, false), &failDeleteRegistrar{
 		runners: []registrar.Runner{{ID: 1, Name: "utsusemi-stuck"}},
 	})
 
-	err := p.drainAndWait(context.Background())
-	if err == nil {
+	if err := p.drainAndWait(context.Background()); err == nil {
 		t.Fatal("drainAndWait should return an error when shutdown purge fails")
+	}
+}
+
+func TestPoolRunReturnsDrainErrorOnShutdownPurgeFailure(t *testing.T) {
+	exec := provider.NewFakeExecutor()
+	exec.VMs["utsusemi-stuck"] = false
+
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, false), &failDeleteRegistrar{
+		runners: []registrar.Runner{{ID: 1, Name: "utsusemi-stuck"}},
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- p.Run(ctx)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("Run should return an error when shutdown purge fails")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for pool shutdown")
 	}
 }

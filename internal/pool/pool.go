@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -102,15 +103,13 @@ func (p *Pool) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return p.drainAndWait(ctx)
 		case err := <-p.fatalCh:
-			_ = p.drainAndWait(ctx)
-			return err
+			return errors.Join(err, p.drainAndWait(ctx))
 		case <-ticker.C:
 			p.tick(ctx)
 		case <-reconcileTicker.C:
 			if err := p.reclaim(ctx, false); err != nil {
 				if registrar.IsUnauthorized(err) {
-					_ = p.drainAndWait(ctx)
-					return err
+					return errors.Join(err, p.drainAndWait(ctx))
 				}
 				p.logger.Warn("reconciliation failed", "error", err)
 			}
