@@ -166,7 +166,6 @@ func (p *Pool) tick(ctx context.Context) {
 
 		p.logger.Info("spawning runner", "vm", vmName)
 
-		spawnStart := time.Now()
 		p.mu.Lock()
 		p.inFlightVMs[vmName] = struct{}{}
 		p.mu.Unlock()
@@ -176,7 +175,7 @@ func (p *Pool) tick(ctx context.Context) {
 			p.mu.Unlock()
 		}()
 
-		if err := p.spawner.Run(ctx, vmName); err != nil {
+		if result, err := p.spawner.Run(ctx, vmName); err != nil {
 			if registrar.IsUnauthorized(err) {
 				p.reportFatal(err)
 				return
@@ -184,17 +183,8 @@ func (p *Pool) tick(ctx context.Context) {
 			p.recordFailure(err)
 			p.logger.Warn("spawn failed", "vm", vmName, "error", err)
 			return
-		}
-		duration := time.Since(spawnStart)
-		p.logger.Info("runner finished", "vm", vmName, "duration_ms", duration.Milliseconds())
-		if duration < minJobDuration {
-			p.recordShortExit(vmName, duration)
 		} else {
-			p.mu.Lock()
-			p.failures = 0
-			p.shortExits = 0
-			p.backoffUntil = time.Time{}
-			p.mu.Unlock()
+			p.handleSpawnSuccess(vmName, result)
 		}
 	}()
 }
@@ -210,21 +200,49 @@ func (p *Pool) reportFatal(err error) {
 	if already {
 		return
 	}
-	p.logger.Error("fatal authorization error; stopping", "error", err)
+	p.logger.Error("stopping agent", "error", err)
 	select {
 	case p.fatalCh <- err:
 	default:
 	}
 }
 
-// minJobDuration is the threshold below which a nil-exit spawn is considered
-// suspiciously short (runner likely timed out without claiming a job).
-// GitHub JIT runners that receive no job exit with code 0 after ~28 s; cold
-// start (clone+boot+register) typically adds another 60–90 s, so any total
-// duration well under 3 minutes almost certainly means no job was claimed.
-const minJobDuration = 3 * time.Minute
+// maxUnclaimedJobMs is the upper bound for the job phase when a JIT runner
+// exits without ever claiming work. GitHub's idle timeout is ~28 s; allow
+// margin for bootstrap overhead inside the job phase.
+const maxUnclaimedJobMs int64 = 50_000
 
-func (p *Pool) recordShortExit(vmName string, duration time.Duration) {
+// maxConsecutiveShortExits stops the agent after repeated unclaimed exits.
+const maxConsecutiveShortExits = 5
+
+func isUnclaimedJobExit(result spawn.Result) bool {
+	return result.JobMs > 0 && result.JobMs < maxUnclaimedJobMs
+}
+
+func (p *Pool) handleSpawnSuccess(vmName string, result spawn.Result) {
+	p.logger.Info("runner finished",
+		"vm", vmName,
+		"duration_ms", result.TotalMs,
+		"job_ms", result.JobMs,
+	)
+	if isUnclaimedJobExit(result) {
+		if err := p.recordShortExit(vmName, result); err != nil {
+			p.reportFatal(err)
+		}
+		return
+	}
+	p.resetSpawnBackoff()
+}
+
+func (p *Pool) resetSpawnBackoff() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.failures = 0
+	p.shortExits = 0
+	p.backoffUntil = time.Time{}
+}
+
+func (p *Pool) recordShortExit(vmName string, result spawn.Result) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.shortExits++
@@ -235,10 +253,15 @@ func (p *Pool) recordShortExit(vmName string, duration time.Duration) {
 	p.backoffUntil = time.Now().Add(backoff)
 	p.logger.Warn("runner finished quickly without claiming a job; check that runner_version is current",
 		"vm", vmName,
-		"duration_ms", duration.Milliseconds(),
+		"job_ms", result.JobMs,
+		"duration_ms", result.TotalMs,
 		"consecutive_short_exits", p.shortExits,
 		"backoff", backoff,
 	)
+	if p.shortExits >= maxConsecutiveShortExits {
+		return fmt.Errorf("runner exited without claiming a job %d times in a row; check runner_version in config.yaml and the base image", p.shortExits)
+	}
+	return nil
 }
 
 func (p *Pool) recordFailure(err error) {

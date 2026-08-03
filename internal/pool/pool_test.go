@@ -12,6 +12,7 @@ import (
 	"github.com/novr/utsusemi/internal/lease"
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/registrar"
+	"github.com/novr/utsusemi/internal/spawn"
 	"github.com/novr/utsusemi/internal/target"
 )
 
@@ -108,7 +109,9 @@ func newTestPoolWithPrefix(t *testing.T, cfg *config.Config, vmProvider provider
 func TestRecordShortExitAppliesBackoff(t *testing.T) {
 	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
 
-	p.recordShortExit("vm-1", 10*time.Second)
+	if err := p.recordShortExit("vm-1", spawn.Result{JobMs: 28_000, TotalMs: 90_000}); err != nil {
+		t.Fatalf("recordShortExit: %v", err)
+	}
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -120,24 +123,65 @@ func TestRecordShortExitAppliesBackoff(t *testing.T) {
 	}
 }
 
-func TestRecordShortExitResetsOnLongRun(t *testing.T) {
+func TestRecordShortExitStopsAfterMaxConsecutive(t *testing.T) {
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+
+	var err error
+	for i := 0; i < maxConsecutiveShortExits; i++ {
+		err = p.recordShortExit("vm-1", spawn.Result{JobMs: 28_000, TotalMs: 90_000})
+	}
+	if err == nil {
+		t.Fatal("expected stop error after max consecutive short exits")
+	}
+}
+
+func TestHandleSpawnSuccessResetsOnLongJob(t *testing.T) {
 	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
 
 	p.mu.Lock()
 	p.shortExits = 3
+	p.backoffUntil = time.Now().Add(time.Minute)
 	p.mu.Unlock()
 
-	// Simulate a long-running spawn completing successfully.
-	p.mu.Lock()
-	p.failures = 0
-	p.shortExits = 0
-	p.backoffUntil = time.Time{}
-	p.mu.Unlock()
+	p.handleSpawnSuccess("vm-1", spawn.Result{JobMs: 120_000, TotalMs: 180_000})
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.shortExits != 0 {
-		t.Fatalf("shortExits = %d, want 0 after long run", p.shortExits)
+		t.Fatalf("shortExits = %d, want 0 after long job", p.shortExits)
+	}
+	if !p.backoffUntil.IsZero() {
+		t.Fatalf("backoffUntil = %v, want zero", p.backoffUntil)
+	}
+}
+
+func TestHandleSpawnSuccessRecordsShortExit(t *testing.T) {
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+
+	p.handleSpawnSuccess("vm-1", spawn.Result{JobMs: 28_000, TotalMs: 90_000})
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.shortExits != 1 {
+		t.Fatalf("shortExits = %d, want 1", p.shortExits)
+	}
+}
+
+func TestIsUnclaimedJobExit(t *testing.T) {
+	tests := []struct {
+		result spawn.Result
+		want   bool
+	}{
+		{spawn.Result{JobMs: 28_000, TotalMs: 90_000}, true},
+		{spawn.Result{JobMs: 49_999, TotalMs: 120_000}, true},
+		{spawn.Result{JobMs: 50_000, TotalMs: 120_000}, false},
+		{spawn.Result{JobMs: 120_000, TotalMs: 180_000}, false},
+		{spawn.Result{JobMs: 0, TotalMs: 90_000}, false},
+	}
+	for _, tt := range tests {
+		if got := isUnclaimedJobExit(tt.result); got != tt.want {
+			t.Errorf("isUnclaimedJobExit(%+v) = %v, want %v", tt.result, got, tt.want)
+		}
 	}
 }
 
