@@ -33,7 +33,7 @@ func buildProvider(cfg *config.Config, exec provider.CommandExecutor, requireAva
 	}
 	switch name {
 	case "tart":
-		p := provider.NewTartProvider(exec, cfg.Softnet)
+		p := provider.NewTartProvider(exec, cfg.Softnet, cfg.Mounts)
 		if requireAvailable {
 			if err := p.Available(); err != nil {
 				return nil, err

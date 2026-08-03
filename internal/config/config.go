@@ -82,6 +82,7 @@ type Config struct {
 	VMNamePrefix           string            `yaml:"vm_name_prefix"`
 	StateDir               string            `yaml:"state_dir,omitempty"`
 	Softnet                bool              `yaml:"softnet,omitempty"`
+	Mounts                 []string          `yaml:"mounts,omitempty"`
 	ReclaimPolicy          string            `yaml:"reclaim_policy,omitempty"`
 	ReclaimGrace           Duration          `yaml:"reclaim_grace,omitempty"`
 }

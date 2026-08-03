@@ -35,3 +35,25 @@ func TestCheckRunnerVersionMismatch(t *testing.T) {
 		t.Fatalf("checks=%+v", checks)
 	}
 }
+
+func TestCheckMountsMissingPath(t *testing.T) {
+	var checks []Check
+	add := func(name string, status Status, msg string) {
+		checks = append(checks, Check{Name: name, Status: status, Message: msg})
+	}
+	checkMounts(&config.Config{Mounts: []string{"/nonexistent-utsusemi-mount"}}, add)
+	if len(checks) != 1 || checks[0].Status != StatusWarn {
+		t.Fatalf("checks=%+v", checks)
+	}
+}
+
+func TestCheckMountsOmitsWhenUnset(t *testing.T) {
+	var checks []Check
+	add := func(name string, status Status, msg string) {
+		checks = append(checks, Check{Name: name, Status: status, Message: msg})
+	}
+	checkMounts(&config.Config{}, add)
+	if len(checks) != 0 {
+		t.Fatalf("checks=%+v", checks)
+	}
+}

@@ -111,3 +111,20 @@ func TestFormatTextStoppedWarning(t *testing.T) {
 		t.Fatalf("unexpected output:\n%s", out)
 	}
 }
+
+func TestFormatTextMounts(t *testing.T) {
+	out := FormatText(Report{
+		Target: "repo:owner/app",
+		Agent:  AgentInfo{State: AgentStopped},
+		Mounts: []string{"/Users/me/cache", "/Users/me/toolchains:ro"},
+		Health: HealthInfo{FreeDiskGB: 42.1, Status: "ok"},
+		Credential: credentialview.Info{
+			Mode:    "github_pat",
+			Present: true,
+		},
+	})
+	want := "mounts: /Users/me/cache, /Users/me/toolchains:ro"
+	if !strings.Contains(out, want) {
+		t.Fatalf("output missing %q:\n%s", want, out)
+	}
+}

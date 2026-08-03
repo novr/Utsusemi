@@ -3,6 +3,7 @@ package doctor
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -112,9 +113,34 @@ func Collect(ctx context.Context, in Input) Report {
 	}
 
 	checkRunnerVersion(in.Cfg, add)
+	checkMounts(in.Cfg, add)
 	checkMultiHost(ctx, in, host, add)
 
 	return Report{Checks: checks}
+}
+
+func checkMounts(cfg *config.Config, add func(string, Status, string)) {
+	if len(cfg.Mounts) == 0 {
+		return
+	}
+	dirs, err := provider.ResolveMountDirs(cfg.Mounts)
+	if err != nil {
+		add("mounts", StatusFail, err.Error())
+		return
+	}
+	var missing []string
+	for _, d := range dirs {
+		path := provider.MountHostPath(d)
+		if _, err := os.Stat(path); err != nil {
+			missing = append(missing, path)
+		}
+	}
+	switch len(missing) {
+	case 0:
+		add("mounts", StatusOK, fmt.Sprintf("%d configured", len(dirs)))
+	default:
+		add("mounts", StatusWarn, fmt.Sprintf("%d configured; missing on host: %s", len(dirs), strings.Join(missing, ", ")))
+	}
 }
 
 func checkRunnerVersion(cfg *config.Config, add func(string, Status, string)) {

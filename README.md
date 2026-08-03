@@ -138,6 +138,21 @@ Edit `config.yaml` after `configure` (not written by `configure`).
 - **min_free_disk_gb** — default `50`
 - **Keychain** — unlock: `security unlock-keychain login.keychain`; headless: `security set-keychain-settings -t 0 ~/Library/Keychains/login.keychain-db`
 - **Networking** — [Tart FAQ](https://tart.run/faq/); `softnet: true` → [Softnet](https://github.com/cirruslabs/softnet)
+- **Directory shares** — `mounts` passes host directories into the VM as Tart `--dir` flags (see below)
+
+#### Directory shares (host → VM)
+
+`mounts` is a list of host paths passed to Tart's `--dir` flag. Paths starting with `~/` (or `name:~/…` in Tart's tagged form) are expanded to the home directory of the user running `utsusemi` (the same user as `brew services`). Empty entries are ignored. `utsusemi status` shows the resolved paths; `utsusemi doctor` warns when a configured path is missing on disk.
+
+```yaml
+mounts:
+  - ~/utsusemi-cache/swiftpm        # read-write (default)
+  - ~/utsusemi-toolchains:ro        # read-only
+```
+
+> **Warning:** A shared directory persists across jobs and survives VM recycling, which partially gives up the "every job starts from a pristine VM" guarantee. Use `:ro` for anything the job should only read (toolchains, SDKs). A poisoned cache in a writable share affects every future job until it is manually cleaned.
+>
+> The workspace path inside every VM is identical (`/Users/admin/actions-runner/_work/<repo>/<repo>`), so even build products with absolute paths baked in restore correctly from a host-side cache.
 
 #### Pre-installed runner (low-latency base image)
 

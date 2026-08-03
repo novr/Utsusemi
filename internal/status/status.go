@@ -39,6 +39,7 @@ type Report struct {
 	StateDir      string              `json:"state_dir"`
 	Host          HostInfo            `json:"host"`
 	RunnerVersion RunnerVersionInfo   `json:"runner_version"`
+	Mounts        []string            `json:"mounts,omitempty"`
 	Spawn         *SpawnInfo          `json:"spawn,omitempty"`
 	Agent         AgentInfo           `json:"agent"`
 	Jobs          []Job               `json:"jobs"`
@@ -155,6 +156,14 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 		Configured: in.Cfg.RunnerVersion,
 		Status:     "ok",
 	}
+	var mounts []string
+	if len(in.Cfg.Mounts) > 0 {
+		resolved, err := provider.ResolveMountDirs(in.Cfg.Mounts)
+		if err != nil {
+			return Report{}, err
+		}
+		mounts = resolved
+	}
 	var spawnInfo *SpawnInfo
 	if last, ok := spawn.LoadLastSpawn(stateDir); ok {
 		runnerInfo.LastSpawn = last.RunnerVersion
@@ -178,6 +187,7 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 		StateDir:      stateDir,
 		Host:          HostInfo{ID: host.ID, Hostname: host.Hostname, LocalHostName: host.LocalHostName, EffectivePrefix: host.EffectivePrefix, Warnings: host.Warnings},
 		RunnerVersion: runnerInfo,
+		Mounts:        mounts,
 		Spawn:         spawnInfo,
 		Agent:         agent,
 		Jobs:          emptyJobs(jobs),

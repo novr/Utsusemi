@@ -48,7 +48,7 @@ func TestSpawnPassesJITOnStdin(t *testing.T) {
 			MinFreeDiskGB: 1,
 		},
 		Target:   target.Target{Type: target.TypeRepo, Owner: "alice", Repo: "app"},
-		Provider: provider.NewTartProvider(exec, true),
+		Provider: provider.NewTartProvider(exec, true, nil),
 		Registrar: &fakeRegistrar{jit: registrar.JITConfig{
 			Encoded: "jit-token",
 			Runner:  registrar.Runner{ID: 1, Name: "utsusemi-test"},

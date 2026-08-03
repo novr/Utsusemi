@@ -39,7 +39,7 @@ func TestPurgeAllDryRun(t *testing.T) {
 			{ID: 2, Name: "utsusemi-b"},
 		},
 	}
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true), reg)
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true, nil), reg)
 
 	vms, runnerIDs, err := p.PurgeAll(context.Background(), true)
 	if err != nil {
@@ -70,7 +70,7 @@ func TestPurgeAllDeletesManagedResources(t *testing.T) {
 			{ID: 2, Name: "utsusemi-b"},
 		},
 	}
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true), reg)
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true, nil), reg)
 	if err := p.leases.WriteLease(p.session, lease.Lease{VMName: "utsusemi-a", RunnerID: 1}); err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func TestPurgeAllReturnsErrorOnRunnerDeleteFailure(t *testing.T) {
 	reg := &failDeleteRegistrar{
 		runners: []registrar.Runner{{ID: 1, Name: "utsusemi-a"}},
 	}
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true), reg)
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true, nil), reg)
 
 	vms, runnerIDs, err := p.PurgeAll(context.Background(), false)
 	if err == nil {
@@ -130,7 +130,7 @@ func TestPurgeAllReturnsErrorOnStopFailure(t *testing.T) {
 	exec.VMs["utsusemi-a"] = true
 	exec.FailNext["tart stop utsusemi-a"] = fmt.Errorf("tart stop failed")
 
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true), noopRegistrar{})
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true, nil), noopRegistrar{})
 
 	vms, _, err := p.PurgeAll(context.Background(), false)
 	if err == nil {
@@ -147,7 +147,7 @@ func TestPurgeAllReturnsErrorOnStopFailure(t *testing.T) {
 func TestPurgeAllReturnsErrorOnClearLeasesFailure(t *testing.T) {
 	exec := provider.NewFakeExecutor()
 	cfg := testPoolConfig(t)
-	p := newTestPool(t, cfg, provider.NewTartProvider(exec, true), noopRegistrar{})
+	p := newTestPool(t, cfg, provider.NewTartProvider(exec, true, nil), noopRegistrar{})
 	if err := p.leases.WriteLease(p.session, lease.Lease{VMName: "utsusemi-a", RunnerID: 1}); err != nil {
 		t.Fatal(err)
 	}
