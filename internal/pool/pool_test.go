@@ -155,6 +155,67 @@ func TestHandleSpawnSuccessResetsOnLongJob(t *testing.T) {
 	}
 }
 
+func TestHandleSpawnSuccessLeavesCountersForMediumJob(t *testing.T) {
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+
+	p.mu.Lock()
+	p.shortExits = 2
+	p.backoffUntil = time.Now().Add(time.Minute)
+	p.mu.Unlock()
+
+	p.handleSpawnSuccess("vm-1", spawn.Result{JobMs: 45_000, TotalMs: 105_000})
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.shortExits != 2 {
+		t.Fatalf("shortExits = %d, want unchanged", p.shortExits)
+	}
+	if p.backoffUntil.IsZero() {
+		t.Fatal("backoffUntil should remain set")
+	}
+}
+
+func TestHandleSpawnSuccessIgnoresMissingJobTiming(t *testing.T) {
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+
+	p.mu.Lock()
+	p.shortExits = 2
+	p.mu.Unlock()
+
+	p.handleSpawnSuccess("vm-1", spawn.Result{})
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.shortExits != 2 {
+		t.Fatalf("shortExits = %d, want unchanged", p.shortExits)
+	}
+}
+
+func TestHandleSpawnSuccessStopsAgentAfterMaxShortExits(t *testing.T) {
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+
+	p.mu.Lock()
+	p.shortExits = maxConsecutiveShortExits - 1
+	p.mu.Unlock()
+
+	p.handleSpawnSuccess("vm-1", spawn.Result{JobMs: 28_000, TotalMs: 90_000})
+
+	select {
+	case err := <-p.fatalCh:
+		if err == nil {
+			t.Fatal("expected fatal error")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("expected agent stop")
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.shutdown {
+		t.Fatal("expected shutdown flag")
+	}
+}
+
 func TestHandleSpawnSuccessRecordsShortExit(t *testing.T) {
 	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
 
@@ -173,8 +234,10 @@ func TestIsUnclaimedJobExit(t *testing.T) {
 		want   bool
 	}{
 		{spawn.Result{JobMs: 28_000, TotalMs: 90_000}, true},
-		{spawn.Result{JobMs: 49_999, TotalMs: 120_000}, true},
-		{spawn.Result{JobMs: 50_000, TotalMs: 120_000}, false},
+		{spawn.Result{JobMs: 37_999, TotalMs: 120_000}, true},
+		{spawn.Result{JobMs: 21_999, TotalMs: 90_000}, false},
+		{spawn.Result{JobMs: 38_000, TotalMs: 120_000}, false},
+		{spawn.Result{JobMs: 45_000, TotalMs: 105_000}, false},
 		{spawn.Result{JobMs: 120_000, TotalMs: 180_000}, false},
 		{spawn.Result{JobMs: 0, TotalMs: 90_000}, false},
 	}

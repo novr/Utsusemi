@@ -207,16 +207,20 @@ func (p *Pool) reportFatal(err error) {
 	}
 }
 
-// maxUnclaimedJobMs is the upper bound for the job phase when a JIT runner
-// exits without ever claiming work. GitHub's idle timeout is ~28 s; allow
-// margin for bootstrap overhead inside the job phase.
-const maxUnclaimedJobMs int64 = 50_000
+// JIT idle timeout is ~28 s. Unclaimed exits cluster just above that in the job
+// phase (bootstrap + run.sh). Claimed work usually runs longer; medium jobs
+// leave counters unchanged so a single short success cannot clear a streak.
+const (
+	minUnclaimedJobMs   int64 = 22_000
+	maxUnclaimedJobMs   int64 = 38_000
+	clearShortExitJobMs int64 = 60_000
+)
 
 // maxConsecutiveShortExits stops the agent after repeated unclaimed exits.
 const maxConsecutiveShortExits = 5
 
 func isUnclaimedJobExit(result spawn.Result) bool {
-	return result.JobMs > 0 && result.JobMs < maxUnclaimedJobMs
+	return result.JobMs >= minUnclaimedJobMs && result.JobMs < maxUnclaimedJobMs
 }
 
 func (p *Pool) handleSpawnSuccess(vmName string, result spawn.Result) {
@@ -225,13 +229,21 @@ func (p *Pool) handleSpawnSuccess(vmName string, result spawn.Result) {
 		"duration_ms", result.TotalMs,
 		"job_ms", result.JobMs,
 	)
+	if result.JobMs <= 0 {
+		p.logger.Warn("runner finished with no job phase timing; leaving backoff counters unchanged",
+			"vm", vmName,
+		)
+		return
+	}
 	if isUnclaimedJobExit(result) {
 		if err := p.recordShortExit(vmName, result); err != nil {
 			p.reportFatal(err)
 		}
 		return
 	}
-	p.resetSpawnBackoff()
+	if result.JobMs >= clearShortExitJobMs {
+		p.resetSpawnBackoff()
+	}
 }
 
 func (p *Pool) resetSpawnBackoff() {
