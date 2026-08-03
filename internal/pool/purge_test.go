@@ -125,6 +125,25 @@ func TestPurgeAllReturnsErrorOnRunnerDeleteFailure(t *testing.T) {
 	}
 }
 
+func TestPurgeAllReturnsErrorOnStopFailure(t *testing.T) {
+	exec := provider.NewFakeExecutor()
+	exec.VMs["utsusemi-a"] = true
+	exec.FailNext["tart stop utsusemi-a"] = fmt.Errorf("tart stop failed")
+
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true), noopRegistrar{})
+
+	vms, _, err := p.PurgeAll(context.Background(), false)
+	if err == nil {
+		t.Fatal("expected error when vm stop fails, got nil")
+	}
+	if len(vms) != 0 {
+		t.Fatalf("deleted vm count = %d, want 0", len(vms))
+	}
+	if _, ok := exec.VMs["utsusemi-a"]; !ok {
+		t.Fatal("vm should remain when stop fails")
+	}
+}
+
 func TestPurgeAllReturnsErrorOnClearLeasesFailure(t *testing.T) {
 	exec := provider.NewFakeExecutor()
 	cfg := testPoolConfig(t)
