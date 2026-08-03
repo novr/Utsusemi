@@ -14,10 +14,11 @@ import (
 type TartProvider struct {
 	exec    CommandExecutor
 	softnet bool
+	mounts  []string
 }
 
-func NewTartProvider(exec CommandExecutor, softnet bool) *TartProvider {
-	return &TartProvider{exec: exec, softnet: softnet}
+func NewTartProvider(exec CommandExecutor, softnet bool, mounts []string) *TartProvider {
+	return &TartProvider{exec: exec, softnet: softnet, mounts: mounts}
 }
 
 func (p *TartProvider) Capabilities() Capabilities {
@@ -87,6 +88,14 @@ func (p *TartProvider) Start(ctx context.Context, name string) error {
 	args := []string{"run", name, "--no-graphics"}
 	if p.softnet {
 		args = append(args, "--net-softnet")
+	}
+	home, _ := os.UserHomeDir()
+	for _, m := range p.mounts {
+		expanded := m
+		if home != "" && strings.HasPrefix(m, "~/") {
+			expanded = home + m[1:]
+		}
+		args = append(args, "--dir="+expanded)
 	}
 	return p.exec.StartDetached(ctx, "tart", args, nil)
 }

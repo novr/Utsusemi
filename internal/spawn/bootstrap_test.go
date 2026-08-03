@@ -22,7 +22,7 @@ func TestBootstrapSpecUsesProviderRunnerArch(t *testing.T) {
 }
 
 func TestBootstrapSpecDefaultsRunnerArch(t *testing.T) {
-	spec := BootstrapSpecFor(&config.Config{RunnerVersion: "2.336.0"}, provider.NewTartProvider(provider.NewFakeExecutor(), false))
+	spec := BootstrapSpecFor(&config.Config{RunnerVersion: "2.336.0"}, provider.NewTartProvider(provider.NewFakeExecutor(), false, nil))
 	if spec.RunnerArch != "osx-arm64" {
 		t.Fatalf("runner arch = %q", spec.RunnerArch)
 	}

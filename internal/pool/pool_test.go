@@ -107,7 +107,7 @@ func newTestPoolWithPrefix(t *testing.T, cfg *config.Config, vmProvider provider
 }
 
 func TestRecordShortExitAppliesBackoff(t *testing.T) {
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false, nil), noopRegistrar{})
 
 	if err := p.recordShortExit("vm-1", spawn.Result{JobMs: 28_000, TotalMs: 90_000}); err != nil {
 		t.Fatalf("recordShortExit: %v", err)
@@ -124,7 +124,7 @@ func TestRecordShortExitAppliesBackoff(t *testing.T) {
 }
 
 func TestRecordShortExitStopsAfterMaxConsecutive(t *testing.T) {
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false, nil), noopRegistrar{})
 
 	var err error
 	for i := 0; i < maxConsecutiveShortExits; i++ {
@@ -136,7 +136,7 @@ func TestRecordShortExitStopsAfterMaxConsecutive(t *testing.T) {
 }
 
 func TestHandleSpawnSuccessResetsOnLongJob(t *testing.T) {
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false, nil), noopRegistrar{})
 
 	p.mu.Lock()
 	p.shortExits = 3
@@ -156,7 +156,7 @@ func TestHandleSpawnSuccessResetsOnLongJob(t *testing.T) {
 }
 
 func TestHandleSpawnSuccessLeavesCountersForMediumJob(t *testing.T) {
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false, nil), noopRegistrar{})
 
 	p.mu.Lock()
 	p.shortExits = 2
@@ -176,7 +176,7 @@ func TestHandleSpawnSuccessLeavesCountersForMediumJob(t *testing.T) {
 }
 
 func TestHandleSpawnSuccessIgnoresMissingJobTiming(t *testing.T) {
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false, nil), noopRegistrar{})
 
 	p.mu.Lock()
 	p.shortExits = 2
@@ -192,7 +192,7 @@ func TestHandleSpawnSuccessIgnoresMissingJobTiming(t *testing.T) {
 }
 
 func TestHandleSpawnSuccessStopsAgentAfterMaxShortExits(t *testing.T) {
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false, nil), noopRegistrar{})
 
 	p.mu.Lock()
 	p.shortExits = maxConsecutiveShortExits - 1
@@ -219,7 +219,7 @@ func TestHandleSpawnSuccessStopsAgentAfterMaxShortExits(t *testing.T) {
 }
 
 func TestHandleSpawnSuccessRecordsShortExit(t *testing.T) {
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false, nil), noopRegistrar{})
 
 	p.handleSpawnSuccess("vm-1", spawn.Result{JobMs: 28_000, TotalMs: 90_000})
 
@@ -254,7 +254,7 @@ func TestPoolBackoffOnFailure(t *testing.T) {
 	exec := provider.NewFakeExecutor()
 	exec.FailClone = context.Canceled
 
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true), noopRegistrar{})
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true, nil), noopRegistrar{})
 
 	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
 	defer cancel()
@@ -278,7 +278,7 @@ func TestReconcileSkipsRunningVMs(t *testing.T) {
 			{ID: 2, Name: "utsusemi-live"},
 		},
 	}
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true), reg)
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true, nil), reg)
 
 	if err := p.reclaim(context.Background(), false); err != nil {
 		t.Fatal(err)
@@ -305,7 +305,7 @@ func TestReconcileSkipsInFlightVMs(t *testing.T) {
 	reg := &trackingRegistrar{
 		runners: []registrar.Runner{{ID: 9, Name: "utsusemi-busy"}},
 	}
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true), reg)
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true, nil), reg)
 	p.inFlightVMs["utsusemi-busy"] = struct{}{}
 
 	if err := p.reclaim(context.Background(), false); err != nil {
@@ -327,7 +327,7 @@ func TestStartupHardReclaimDeletesStaleRunningVM(t *testing.T) {
 
 	cfg := testPoolConfig(t)
 	cfg.ReclaimPolicy = config.ReclaimHard
-	p := newTestPool(t, cfg, provider.NewTartProvider(exec, true), noopRegistrar{})
+	p := newTestPool(t, cfg, provider.NewTartProvider(exec, true, nil), noopRegistrar{})
 
 	staleSession := &lease.AgentSession{ID: "old-agent", PID: 1, StartedAt: time.Now().UTC().Add(-time.Hour)}
 	if err := p.leases.WriteLease(staleSession, lease.Lease{VMName: "utsusemi-old", RunnerID: 1}); err != nil {
@@ -368,7 +368,7 @@ func TestReclaimSkipsOtherHostRunners(t *testing.T) {
 
 	cfg := testPoolConfig(t)
 	// Use Host A's effective prefix explicitly.
-	p := newTestPoolWithPrefix(t, cfg, provider.NewTartProvider(exec, true), reg, prefixA)
+	p := newTestPoolWithPrefix(t, cfg, provider.NewTartProvider(exec, true, nil), reg, prefixA)
 
 	if err := p.reclaim(context.Background(), false); err != nil {
 		t.Fatal(err)
@@ -402,7 +402,7 @@ func TestReclaimAtCapacityEvictsStaleSessionVM(t *testing.T) {
 	cfg := testPoolConfig(t)
 	cfg.ReclaimPolicy = config.ReclaimGrace
 	cfg.ReclaimGrace = config.Duration(15 * time.Minute) // grace not expired
-	p := newTestPool(t, cfg, provider.NewTartProvider(exec, false), noopRegistrar{})
+	p := newTestPool(t, cfg, provider.NewTartProvider(exec, false, nil), noopRegistrar{})
 
 	// Write a lease for the current session (should not be reclaimed).
 	if err := p.leases.WriteLease(p.session, lease.Lease{
@@ -439,7 +439,7 @@ func TestDrainAndWaitPurgesResidualVMs(t *testing.T) {
 	exec := provider.NewFakeExecutor()
 	exec.VMs["utsusemi-residual"] = true
 
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, false), noopRegistrar{})
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, false, nil), noopRegistrar{})
 
 	if err := p.drainAndWait(context.Background()); err != nil {
 		t.Fatalf("drainAndWait: %v", err)
@@ -453,7 +453,7 @@ func TestDrainAndWaitReturnsErrorOnPurgeFailure(t *testing.T) {
 	exec := provider.NewFakeExecutor()
 	exec.VMs["utsusemi-stuck"] = false
 
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, false), &failDeleteRegistrar{
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, false, nil), &failDeleteRegistrar{
 		runners: []registrar.Runner{{ID: 1, Name: "utsusemi-stuck"}},
 	})
 
@@ -466,7 +466,7 @@ func TestPoolRunReturnsDrainErrorOnShutdownPurgeFailure(t *testing.T) {
 	exec := provider.NewFakeExecutor()
 	exec.VMs["utsusemi-stuck"] = false
 
-	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, false), &failDeleteRegistrar{
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, false, nil), &failDeleteRegistrar{
 		runners: []registrar.Runner{{ID: 1, Name: "utsusemi-stuck"}},
 	})
 

@@ -29,7 +29,7 @@ func TestTartHomeDefaultsToUserDir(t *testing.T) {
 
 func TestStartUsesSoftnetFlag(t *testing.T) {
 	exec := NewFakeExecutor()
-	p := NewTartProvider(exec, true)
+	p := NewTartProvider(exec, true, nil)
 	if err := p.Start(context.Background(), "vm-1"); err != nil {
 		t.Fatal(err)
 	}
@@ -50,7 +50,7 @@ func TestStartUsesSoftnetFlag(t *testing.T) {
 
 func TestStartWithoutSoftnet(t *testing.T) {
 	exec := NewFakeExecutor()
-	p := NewTartProvider(exec, false)
+	p := NewTartProvider(exec, false, nil)
 	if err := p.Start(context.Background(), "vm-1"); err != nil {
 		t.Fatal(err)
 	}
@@ -66,9 +66,35 @@ func TestStartWithoutSoftnet(t *testing.T) {
 	}
 }
 
+func TestStartWithMounts(t *testing.T) {
+	home, err := os.UserHomeDir()
+	if err != nil {
+		t.Fatal(err)
+	}
+	exec := NewFakeExecutor()
+	p := NewTartProvider(exec, false, []string{"~/utsusemi-cache", "~/toolchains:ro"})
+	if err := p.Start(context.Background(), "vm-1"); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{
+		"run", "vm-1", "--no-graphics",
+		"--dir=" + filepath.Join(home, "utsusemi-cache"),
+		"--dir=" + filepath.Join(home, "toolchains:ro"),
+	}
+	got := exec.Calls[0].Args
+	if len(got) != len(want) {
+		t.Fatalf("args = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("args[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
 func TestDeleteOmitsForceFlag(t *testing.T) {
 	exec := NewFakeExecutor()
-	p := NewTartProvider(exec, false)
+	p := NewTartProvider(exec, false, nil)
 	if err := p.Delete(context.Background(), "vm-1"); err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +112,7 @@ func TestDeleteOmitsForceFlag(t *testing.T) {
 
 func TestExecStdinOmitsSeparator(t *testing.T) {
 	exec := NewFakeExecutor()
-	p := NewTartProvider(exec, false)
+	p := NewTartProvider(exec, false, nil)
 	if err := p.ExecStdin(context.Background(), "vm-1", "bash", []string{"-c", "true"}, nil, nil); err != nil {
 		t.Fatal(err)
 	}
@@ -104,7 +130,7 @@ func TestExecStdinOmitsSeparator(t *testing.T) {
 
 func TestExecStdinAttachesInputAndForwardsEnv(t *testing.T) {
 	exec := NewFakeExecutor()
-	p := NewTartProvider(exec, false)
+	p := NewTartProvider(exec, false, nil)
 	env := map[string]string{"RUNNER_VERSION": "2.336.0"}
 	if err := p.ExecStdin(context.Background(), "vm-1", "bash", []string{"-c", "true"}, []byte("jit"), env); err != nil {
 		t.Fatal(err)
@@ -173,7 +199,7 @@ func TestTartProviderAvailableChecksVersion(t *testing.T) {
 	installFakeTart(t)
 	exec := NewFakeExecutor()
 	exec.SetVersionOutput("2.34.0\n")
-	p := NewTartProvider(exec, false)
+	p := NewTartProvider(exec, false, nil)
 	if err := p.Available(); err != nil {
 		t.Fatalf("Available: %v", err)
 	}
@@ -186,7 +212,7 @@ func TestTartProviderAvailableRejectsOldVersion(t *testing.T) {
 	installFakeTart(t)
 	exec := NewFakeExecutor()
 	exec.SetVersionOutput("2.32.1")
-	p := NewTartProvider(exec, false)
+	p := NewTartProvider(exec, false, nil)
 	err := p.Available()
 	if err == nil || !strings.Contains(err.Error(), "openai/tools") {
 		t.Fatalf("Available: %v", err)
