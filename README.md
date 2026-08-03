@@ -76,6 +76,16 @@ brew services stop utsusemi   # before re-configuring
 | GitHub refresh token | 6 months idle | Each automatic refresh (~23 days while running) |
 | GitHub user access token | 8 hours | Not stored |
 
+#### Broker
+
+`hosted_app` mode routes host credential issuance and refresh through a broker service (`broker_url`).
+
+**Availability.** A running agent holds a 30-day host credential locally; the broker is only contacted during `configure app` and at refresh time (≤7 days remaining). If the broker is unreachable at refresh, the existing credential continues to work until it expires. A monitoring system that watches `utsusemi validate` exit code will surface the failure before the credential window closes.
+
+**Self-hosting.** `broker_url` is configurable; point it at your own deployment to remove the dependency on the hosted service. The broker implementation is not currently published.
+
+**Data.** During the exchange the broker receives a short-lived GitHub user access token (8 h lifetime) and the target identifier (org or repo name). It uses these to mint a scoped host credential and does not retain them. The refresh token is stored only in the local keychain and is never sent to the broker.
+
 ### Fine-grained PAT
 
 Repository (`Administration: Read and write`):
