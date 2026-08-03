@@ -130,11 +130,20 @@ curl -fsSL -o actions-runner.tar.gz \
   "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-osx-arm64-${RUNNER_VERSION}.tar.gz"
 tar xzf actions-runner.tar.gz && rm actions-runner.tar.gz
 echo "${RUNNER_VERSION}" > .runner-version
+sync   # flush writes before tart stop; skipping this silently loses recent changes
 ```
 
 Keep `runner_version` in `config.yaml` in sync with the pre-installed version. When you upgrade the runner, rebuild the base image and update `config.yaml` together.
 
 > **Warning:** do not assume the runner version bundled in your base image is acceptable to GitHub. GitHub periodically deprecates old runner versions; a JIT runner that is too old will register and then exit immediately (after ~28 s) without ever claiming a job, causing the pool to respawn with growing backoffs until the agent stops. Always install a current runner from [github.com/actions/runner/releases](https://github.com/actions/runner/releases) and set `runner_version` in `config.yaml` to match. If you see repeated `runner finished quickly without claiming a job` warnings in the logs, this is the likely cause.
+
+> **Note:** The runner's `.env` file is consumed by the service wrapper (`svc.sh`), not by `run.sh --jitconfig`. Utsusemi invokes `run.sh` directly, so `.env` is never read. Expose environment variables to jobs at the workflow level instead:
+> ```yaml
+> jobs:
+>   build:
+>     env:
+>       ANDROID_HOME: /opt/homebrew/share/android-commandlinetools
+> ```
 
 ## Multi-host setup
 
