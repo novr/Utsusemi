@@ -2,15 +2,18 @@ package status
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"time"
 
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/credentialview"
+	"github.com/novr/utsusemi/internal/hostid"
 	"github.com/novr/utsusemi/internal/instancelock"
 	"github.com/novr/utsusemi/internal/keychain"
 	"github.com/novr/utsusemi/internal/lease"
 	"github.com/novr/utsusemi/internal/provider"
+	"github.com/novr/utsusemi/internal/spawn"
 	"github.com/novr/utsusemi/internal/target"
 	"github.com/novr/utsusemi/internal/timefmt"
 )
@@ -31,15 +34,43 @@ type Input struct {
 }
 
 type Report struct {
-	Target     string                `json:"target"`
-	ConfigPath string                `json:"config_path,omitempty"`
-	StateDir   string                `json:"state_dir"`
-	Agent      AgentInfo             `json:"agent"`
-	Jobs       []Job                 `json:"jobs"`
-	VMs        VMsInfo               `json:"vms"`
-	Warming    []string              `json:"warming"`
-	Health     HealthInfo            `json:"health"`
-	Credential credentialview.Info   `json:"credential"`
+	Target        string              `json:"target"`
+	ConfigPath    string              `json:"config_path,omitempty"`
+	StateDir      string              `json:"state_dir"`
+	Host          HostInfo            `json:"host"`
+	RunnerVersion RunnerVersionInfo   `json:"runner_version"`
+	Spawn         *SpawnInfo          `json:"spawn,omitempty"`
+	Agent         AgentInfo           `json:"agent"`
+	Jobs          []Job               `json:"jobs"`
+	VMs           VMsInfo             `json:"vms"`
+	Warming       []string            `json:"warming"`
+	Health        HealthInfo          `json:"health"`
+	Credential    credentialview.Info `json:"credential"`
+}
+
+type HostInfo struct {
+	ID              string   `json:"id"`
+	Hostname        string   `json:"hostname"`
+	LocalHostName   string   `json:"local_host_name,omitempty"`
+	EffectivePrefix string   `json:"effective_prefix"`
+	Warnings        []string `json:"warnings,omitempty"`
+}
+
+type RunnerVersionInfo struct {
+	Configured  string `json:"configured"`
+	LastSpawn   string `json:"last_spawn,omitempty"`
+	Status      string `json:"status"`
+}
+
+type SpawnInfo struct {
+	At          string `json:"at"`
+	Clone       string `json:"clone"`
+	Boot        string `json:"boot"`
+	Register    string `json:"register"`
+	ColdStart   string `json:"cold_start"`
+	Job         string `json:"job"`
+	Total       string `json:"total"`
+	Success     bool   `json:"success"`
 }
 
 type AgentInfo struct {
@@ -119,16 +150,49 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 		return Report{}, err
 	}
 
+	host := hostid.Collect(stateDir, in.Cfg.VMNamePrefix)
+	runnerInfo := RunnerVersionInfo{
+		Configured: in.Cfg.RunnerVersion,
+		Status:     "ok",
+	}
+	var spawnInfo *SpawnInfo
+	if last, ok := spawn.LoadLastSpawn(stateDir); ok {
+		runnerInfo.LastSpawn = last.RunnerVersion
+		if last.RunnerVersion != in.Cfg.RunnerVersion {
+			runnerInfo.Status = "config changed; rebuild base image and restart agent"
+		}
+		spawnInfo = &SpawnInfo{
+			At:        last.At.UTC().Format(time.RFC3339),
+			Clone:     formatMs(last.CloneMs),
+			Boot:      formatMs(last.BootMs),
+			Register:  formatMs(last.RegisterMs),
+			ColdStart: formatMs(last.ColdStartMs),
+			Job:       formatMs(last.JobMs),
+			Total:     formatMs(last.TotalMs),
+			Success:   last.Success,
+		}
+	}
+
 	return Report{
-		Target:     in.Target.DisplayString(),
-		StateDir:   stateDir,
-		Agent:      agent,
-		Jobs:       emptyJobs(jobs),
-		VMs:        vmInfo,
-		Warming:    emptyWarming(warming),
-		Health:     health,
-		Credential: cred,
+		Target:        in.Target.DisplayString(),
+		StateDir:      stateDir,
+		Host:          HostInfo{ID: host.ID, Hostname: host.Hostname, LocalHostName: host.LocalHostName, EffectivePrefix: host.EffectivePrefix, Warnings: host.Warnings},
+		RunnerVersion: runnerInfo,
+		Spawn:         spawnInfo,
+		Agent:         agent,
+		Jobs:          emptyJobs(jobs),
+		VMs:           vmInfo,
+		Warming:       emptyWarming(warming),
+		Health:        health,
+		Credential:    cred,
 	}, nil
+}
+
+func formatMs(ms int64) string {
+	if ms < 1000 {
+		return fmt.Sprintf("%dms", ms)
+	}
+	return timefmt.Age(time.Duration(ms) * time.Millisecond)
 }
 
 func classifyAgent(session *lease.AgentSession, lockHeld bool) AgentInfo {

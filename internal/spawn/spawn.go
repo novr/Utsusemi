@@ -46,6 +46,17 @@ func (s *Spawner) SetSession(session *lease.AgentSession) {
 func (s *Spawner) Run(ctx context.Context, vmName string) error {
 	cfg := s.opts.Config
 	log := s.opts.Logger.With("vm", vmName)
+	spawnStart := time.Now()
+	metrics := LastSpawn{
+		At:            spawnStart.UTC(),
+		VMName:        vmName,
+		RunnerVersion: cfg.RunnerVersion,
+	}
+	defer func() {
+		if err := SaveLastSpawn(cfg.StateDir, metrics); err != nil {
+			log.Warn("save spawn metrics failed", "error", err)
+		}
+	}()
 
 	freeGB, err := s.opts.Provider.FreeDiskGB(ctx)
 	if err != nil {
@@ -58,14 +69,18 @@ func (s *Spawner) Run(ctx context.Context, vmName string) error {
 	spawnCtx, cancel := context.WithTimeout(ctx, cfg.SpawnTimeout.Duration())
 	defer cancel()
 
+	phase := time.Now()
 	log.Info("cloning base image", "image", cfg.BaseImage)
 	if err := s.opts.Provider.Clone(spawnCtx, cfg.BaseImage, vmName); err != nil {
 		return fmt.Errorf("clone: %w", err)
 	}
+	metrics.CloneMs = time.Since(phase).Milliseconds()
+	log.Info("spawn phase complete", "phase", "clone", "duration_ms", metrics.CloneMs)
 	defer func() {
 		_ = s.opts.Provider.Delete(context.Background(), vmName)
 	}()
 
+	phase = time.Now()
 	log.Info("starting vm")
 	if err := s.opts.Provider.Start(spawnCtx, vmName); err != nil {
 		return fmt.Errorf("start: %w", err)
@@ -73,12 +88,17 @@ func (s *Spawner) Run(ctx context.Context, vmName string) error {
 	if err := waitForRunning(spawnCtx, s.opts.Provider, vmName); err != nil {
 		return fmt.Errorf("wait for vm: %w", err)
 	}
+	metrics.BootMs = time.Since(phase).Milliseconds()
+	log.Info("spawn phase complete", "phase", "boot", "duration_ms", metrics.BootMs)
 
+	phase = time.Now()
 	log.Info("registering runner with GitHub")
 	jit, err := s.opts.Registrar.CreateJIT(spawnCtx, s.opts.Target, cfg.Labels, vmName)
 	if err != nil {
 		return fmt.Errorf("create jit: %w", err)
 	}
+	metrics.RegisterMs = time.Since(phase).Milliseconds()
+	log.Info("spawn phase complete", "phase", "register", "duration_ms", metrics.RegisterMs)
 	runnerID := jit.Runner.ID
 	runnerRegistered := true
 	defer func() {
@@ -102,9 +122,11 @@ func (s *Spawner) Run(ctx context.Context, vmName string) error {
 	jobCtx, jobCancel := context.WithTimeout(ctx, cfg.JobTimeout.Duration())
 	defer jobCancel()
 
-	log.Info("waiting for job", "runner_id", runnerID, "runner_version", cfg.RunnerVersion)
+	log.Info("waiting for job", "runner_id", runnerID, "runner_version", cfg.RunnerVersion,
+		"cold_start_ms", metrics.CloneMs+metrics.BootMs+metrics.RegisterMs)
 	env := BootstrapEnv(cfg, s.opts.Provider)
 	execDone := make(chan error, 1)
+	jobPhase := time.Now()
 	go func() {
 		execDone <- s.opts.Provider.ExecStdin(jobCtx, vmName, "bash", []string{"-c", bootstrapScript}, []byte(jit.Encoded), env)
 	}()
@@ -119,10 +141,14 @@ func (s *Spawner) Run(ctx context.Context, vmName string) error {
 			_ = s.opts.Provider.Stop(context.Background(), vmName)
 			return jobCtx.Err()
 		case err := <-execDone:
+			metrics.JobMs = time.Since(jobPhase).Milliseconds()
+			log.Info("spawn phase complete", "phase", "job", "duration_ms", metrics.JobMs,
+				"total_ms", time.Since(spawnStart).Milliseconds())
 			if err != nil {
 				return fmt.Errorf("runner exec: %w", err)
 			}
 			runnerRegistered = false
+			metrics.Success = true
 			return nil
 		case <-ticker.C:
 			running, err := s.opts.Provider.IsRunning(jobCtx, vmName)
@@ -133,10 +159,12 @@ func (s *Spawner) Run(ctx context.Context, vmName string) error {
 			if !running {
 				select {
 				case err := <-execDone:
+					metrics.JobMs = time.Since(jobPhase).Milliseconds()
 					if err != nil && !errors.Is(err, context.Canceled) {
 						return fmt.Errorf("runner exec: %w", err)
 					}
 					runnerRegistered = false
+					metrics.Success = true
 					return nil
 				case <-time.After(30 * time.Second):
 					return fmt.Errorf("vm stopped before runner exec finished")

@@ -154,6 +154,7 @@ by that host are named `{vm_name_prefix}{host_id}-{random}`. Reclaim and
 ```bash
 utsusemi --version
 utsusemi validate
+utsusemi doctor
 utsusemi status
 utsusemi list
 utsusemi run
