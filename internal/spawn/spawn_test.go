@@ -97,6 +97,28 @@ func bootstrapTestEnv(home string, extra ...string) []string {
 	return append(env, extra...)
 }
 
+func writeRunnerListenerStub(t *testing.T, home, version string) {
+	t.Helper()
+	binDir := filepath.Join(home, "bin")
+	if err := os.MkdirAll(binDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	stub := "#!/bin/bash\nif [ \"$1\" = \"--version\" ]; then\n  echo " + version + "\nfi\n"
+	if err := os.WriteFile(filepath.Join(binDir, "Runner.Listener"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func installFailingCurl(t *testing.T) string {
+	t.Helper()
+	fakebin := t.TempDir()
+	fakeCurl := "#!/bin/bash\necho bootstrap must not invoke curl >&2\nexit 9\n"
+	if err := os.WriteFile(filepath.Join(fakebin, "curl"), []byte(fakeCurl), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	return fakebin
+}
+
 func TestBootstrapForwardsStdinJITToRunner(t *testing.T) {
 	home := t.TempDir()
 	recorded := filepath.Join(home, "args.txt")
@@ -104,10 +126,7 @@ func TestBootstrapForwardsStdinJITToRunner(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(home, "run.sh"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	// Version sentinel must be present so bootstrap skips the download.
-	if err := os.WriteFile(filepath.Join(home, ".runner-version"), []byte("2.336.0"), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	writeRunnerListenerStub(t, home, "2.336.0")
 
 	cmd := exec.Command("bash", "-c", bootstrapScript)
 	cmd.Env = bootstrapTestEnv(home)
@@ -125,11 +144,34 @@ func TestBootstrapForwardsStdinJITToRunner(t *testing.T) {
 	}
 }
 
-// TestBootstrapSkipsDownloadWhenInstalled verifies that a matching runner
-// installation causes bootstrap to skip the curl download entirely.
+// TestBootstrapSkipsDownloadWhenInstalled verifies stock image layout
+// (Runner.Listener present, no .runner-version sentinel) skips download.
 func TestBootstrapSkipsDownloadWhenInstalled(t *testing.T) {
 	home := t.TempDir()
-	stub := "#!/bin/bash\n" // no-op run.sh
+	stub := "#!/bin/bash\n"
+	if err := os.WriteFile(filepath.Join(home, "run.sh"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeRunnerListenerStub(t, home, "2.336.0")
+
+	cmd := exec.Command("bash", "-c", bootstrapScript)
+	cmd.Env = bootstrapTestEnv(home, "PATH="+installFailingCurl(t)+":"+os.Getenv("PATH"))
+	cmd.Stdin = strings.NewReader("encoded-jit")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("bootstrap failed: %v: %s", err, out)
+	}
+	if !strings.Contains(string(out), "skipping download") {
+		t.Errorf("expected 'skipping download' in output, got: %s", out)
+	}
+	if _, err := os.Stat(filepath.Join(home, ".runner-version")); err == nil {
+		t.Error("expected no .runner-version when skip is driven by Runner.Listener")
+	}
+}
+
+func TestBootstrapSkipsDownloadWhenSentinelMatches(t *testing.T) {
+	home := t.TempDir()
+	stub := "#!/bin/bash\n"
 	if err := os.WriteFile(filepath.Join(home, "run.sh"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -149,20 +191,36 @@ func TestBootstrapSkipsDownloadWhenInstalled(t *testing.T) {
 	}
 }
 
-// TestBootstrapRedownloadsOnVersionMismatch verifies that a stale runner
-// (version in .runner-version does not match RUNNER_VERSION) causes bootstrap
-// to re-install and update .runner-version.
-func TestBootstrapRedownloadsOnVersionMismatch(t *testing.T) {
+func TestBootstrapSkipsDownloadWithVersionPrefix(t *testing.T) {
 	home := t.TempDir()
-
-	// Stale runner at an older version.
 	stub := "#!/bin/bash\n"
 	if err := os.WriteFile(filepath.Join(home, "run.sh"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(home, ".runner-version"), []byte("2.335.0"), 0o644); err != nil {
+	writeRunnerListenerStub(t, home, "v2.336.0")
+
+	cmd := exec.Command("bash", "-c", bootstrapScript)
+	cmd.Env = bootstrapTestEnv(home, "PATH="+installFailingCurl(t)+":"+os.Getenv("PATH"))
+	cmd.Stdin = strings.NewReader("encoded-jit")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("bootstrap failed: %v: %s", err, out)
+	}
+	if !strings.Contains(string(out), "skipping download") {
+		t.Errorf("expected 'skipping download' in output, got: %s", out)
+	}
+}
+
+// TestBootstrapRedownloadsOnVersionMismatch verifies that a stale runner binary
+// causes bootstrap to re-install and write .runner-version.
+func TestBootstrapRedownloadsOnVersionMismatch(t *testing.T) {
+	home := t.TempDir()
+
+	stub := "#!/bin/bash\n"
+	if err := os.WriteFile(filepath.Join(home, "run.sh"), []byte(stub), 0o755); err != nil {
 		t.Fatal(err)
 	}
+	writeRunnerListenerStub(t, home, "2.335.0")
 
 	// Provide fake curl and tar so the download step succeeds without network.
 	fakebin := t.TempDir()

@@ -233,19 +233,19 @@ func TestCollectDrainingVM(t *testing.T) {
 	report, err := Collect(context.Background(), testInput(cfg, &fakeProvider{
 		vms: []provider.VM{
 			{Name: "utsusemi-busy", Running: true},
-			{Name: "utsusemi-warm", Running: true},
+			{Name: "utsusemi-drain", Running: true},
 		},
 		freeGB: 100,
 	}))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(report.Draining) != 1 || report.Draining[0] != "utsusemi-warm" {
+	if len(report.Draining) != 1 || report.Draining[0] != "utsusemi-drain" {
 		t.Fatalf("draining=%v", report.Draining)
 	}
 }
 
-func TestCollectOrphanVMNotWarming(t *testing.T) {
+func TestCollectOrphanVMNotDraining(t *testing.T) {
 	dir := t.TempDir()
 	lockPath := filepath.Join(dir, "utsusemi.lock")
 	lock, err := instancelock.Acquire(lockPath)
@@ -277,6 +277,20 @@ func TestCollectOrphanVMNotWarming(t *testing.T) {
 	}
 	if len(report.Draining) != 0 {
 		t.Fatalf("draining=%v, want orphan lease VM excluded", report.Draining)
+	}
+}
+
+func TestReportJSONUsesDrainingKey(t *testing.T) {
+	data, err := json.Marshal(Report{Draining: []string{"utsusemi-drain"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := string(data)
+	if !strings.Contains(out, `"draining":["utsusemi-drain"]`) {
+		t.Fatalf("json = %s", out)
+	}
+	if strings.Contains(out, `"warming"`) {
+		t.Fatalf("json still uses warming key: %s", out)
 	}
 }
 

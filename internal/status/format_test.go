@@ -18,9 +18,9 @@ func TestFormatTextRunning(t *testing.T) {
 		Jobs: []Job{
 			{VMName: "utsusemi-a1b2", RunnerID: 42, Age: "12m"},
 		},
-		VMs:     VMsInfo{Running: 1, Total: 1, PoolSize: 4},
+		VMs:      VMsInfo{Running: 1, Total: 1, PoolSize: 4},
 		Draining: nil,
-		Health:  HealthInfo{FreeDiskGB: 42.1, Status: "ok"},
+		Health:   HealthInfo{FreeDiskGB: 42.1, Status: "ok"},
 		Credential: credentialview.Info{
 			Mode:       "hosted_app",
 			Present:    true,
@@ -34,12 +34,34 @@ func TestFormatTextRunning(t *testing.T) {
 		"agent: running (pid 12345, uptime 2h15m)",
 		"jobs: 1",
 		"utsusemi-a1b2 runner=42",
+		"draining: 0",
 		"disk: 42.1 GB free — ok",
 		"credential: user octocat",
 	} {
 		if !strings.Contains(out, want) {
 			t.Fatalf("output missing %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "warming:") {
+		t.Fatalf("output still uses warming label:\n%s", out)
+	}
+}
+
+func TestFormatTextDrainingVMs(t *testing.T) {
+	out := FormatText(Report{
+		Target:   "org:my-org (group 1)",
+		Agent:    AgentInfo{State: AgentRunning, PID: 1},
+		VMs:      VMsInfo{Running: 2, Total: 2, PoolSize: 1},
+		Draining: []string{"utsusemi-drain-a", "utsusemi-drain-b"},
+		Health:   HealthInfo{FreeDiskGB: 42.1, Status: "ok"},
+		Credential: credentialview.Info{
+			Mode:    "github_pat",
+			Present: true,
+		},
+	})
+	want := "draining: 2 (utsusemi-drain-a, utsusemi-drain-b)"
+	if !strings.Contains(out, want) {
+		t.Fatalf("output missing %q:\n%s", want, out)
 	}
 }
 
@@ -83,6 +105,9 @@ func TestFormatTextStoppedWarning(t *testing.T) {
 		Credential: credentialview.Info{Mode: "github_pat"},
 	})
 	if !strings.Contains(out, "warning: agent.json present but utsusemi is not running") {
+		t.Fatalf("unexpected output:\n%s", out)
+	}
+	if !strings.Contains(out, "draining: 0") {
 		t.Fatalf("unexpected output:\n%s", out)
 	}
 }
