@@ -192,6 +192,12 @@ func (p *Pool) tick(ctx context.Context) {
 				p.reportFatal(err)
 				return
 			}
+			p.mu.Lock()
+			draining := p.drain
+			p.mu.Unlock()
+			if draining && errors.Is(err, context.Canceled) {
+				return
+			}
 			p.recordFailure(err)
 			p.logger.Warn("spawn failed", "vm", vmName, "error", err)
 			return

@@ -19,7 +19,7 @@ func TestFormatTextRunning(t *testing.T) {
 			{VMName: "utsusemi-a1b2", RunnerID: 42, Age: "12m"},
 		},
 		VMs:     VMsInfo{Running: 1, Total: 1, PoolSize: 4},
-		Warming: nil,
+		Draining: nil,
 		Health:  HealthInfo{FreeDiskGB: 42.1, Status: "ok"},
 		Credential: credentialview.Info{
 			Mode:       "hosted_app",
@@ -78,7 +78,7 @@ func TestFormatTextStoppedWarning(t *testing.T) {
 			Warning: "agent.json present but utsusemi is not running",
 		},
 		Jobs:       []Job{},
-		Warming:    []string{},
+		Draining:   []string{},
 		Health:     HealthInfo{FreeDiskGB: 42.1, Status: "ok"},
 		Credential: credentialview.Info{Mode: "github_pat"},
 	})

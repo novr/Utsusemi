@@ -70,6 +70,9 @@ func (p *Pool) reclaim(ctx context.Context, startupHard bool) error {
 	policy := p.cfg.ReclaimPolicy
 	grace := p.cfg.ReclaimGrace.Duration()
 
+	maxConcurrent := p.provider.Capabilities().MaxConcurrent
+	atCap := maxConcurrent > 0 && len(runningVMs) >= maxConcurrent
+
 	for _, vm := range vms {
 		if _, ok := inFlight[vm.Name]; ok {
 			continue
@@ -83,7 +86,10 @@ func (p *Pool) reclaim(ctx context.Context, startupHard bool) error {
 
 		if vm.Running {
 			aggressive := startupHard && policy == config.ReclaimHard
-			if !aggressive && !lease.ShouldReclaimRunning(leasePtr, p.session, policy, grace, now) {
+			// When the provider is at capacity, eagerly reclaim stale-session VMs
+			// so they don't block new jobs even while still within the grace window.
+			cappedOut := atCap && hasLease && lease.IsStale(leasePtr, p.session)
+			if !aggressive && !cappedOut && !lease.ShouldReclaimRunning(leasePtr, p.session, policy, grace, now) {
 				continue
 			}
 		}
