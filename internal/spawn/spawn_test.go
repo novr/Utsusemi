@@ -57,7 +57,7 @@ func TestSpawnPassesJITOnStdin(t *testing.T) {
 
 	done := make(chan struct{})
 	go func() {
-		_ = spawner.Run(context.Background(), "utsusemi-test")
+		_, _ = spawner.Run(context.Background(), "utsusemi-test")
 		close(done)
 	}()
 

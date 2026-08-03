@@ -12,6 +12,7 @@ import (
 	"github.com/novr/utsusemi/internal/lease"
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/registrar"
+	"github.com/novr/utsusemi/internal/spawn"
 	"github.com/novr/utsusemi/internal/target"
 )
 
@@ -103,6 +104,150 @@ func newTestPoolWithPrefix(t *testing.T, cfg *config.Config, vmProvider provider
 	}
 	p.session = session
 	return p
+}
+
+func TestRecordShortExitAppliesBackoff(t *testing.T) {
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+
+	if err := p.recordShortExit("vm-1", spawn.Result{JobMs: 28_000, TotalMs: 90_000}); err != nil {
+		t.Fatalf("recordShortExit: %v", err)
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.shortExits != 1 {
+		t.Fatalf("shortExits = %d, want 1", p.shortExits)
+	}
+	if backoff := time.Until(p.backoffUntil); backoff < 29*time.Second {
+		t.Fatalf("backoff = %v, want at least 29s", backoff)
+	}
+}
+
+func TestRecordShortExitStopsAfterMaxConsecutive(t *testing.T) {
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+
+	var err error
+	for i := 0; i < maxConsecutiveShortExits; i++ {
+		err = p.recordShortExit("vm-1", spawn.Result{JobMs: 28_000, TotalMs: 90_000})
+	}
+	if err == nil {
+		t.Fatal("expected stop error after max consecutive short exits")
+	}
+}
+
+func TestHandleSpawnSuccessResetsOnLongJob(t *testing.T) {
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+
+	p.mu.Lock()
+	p.shortExits = 3
+	p.backoffUntil = time.Now().Add(time.Minute)
+	p.mu.Unlock()
+
+	p.handleSpawnSuccess("vm-1", spawn.Result{JobMs: 120_000, TotalMs: 180_000})
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.shortExits != 0 {
+		t.Fatalf("shortExits = %d, want 0 after long job", p.shortExits)
+	}
+	if !p.backoffUntil.IsZero() {
+		t.Fatalf("backoffUntil = %v, want zero", p.backoffUntil)
+	}
+}
+
+func TestHandleSpawnSuccessLeavesCountersForMediumJob(t *testing.T) {
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+
+	p.mu.Lock()
+	p.shortExits = 2
+	p.backoffUntil = time.Now().Add(time.Minute)
+	p.mu.Unlock()
+
+	p.handleSpawnSuccess("vm-1", spawn.Result{JobMs: 45_000, TotalMs: 105_000})
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.shortExits != 2 {
+		t.Fatalf("shortExits = %d, want unchanged", p.shortExits)
+	}
+	if p.backoffUntil.IsZero() {
+		t.Fatal("backoffUntil should remain set")
+	}
+}
+
+func TestHandleSpawnSuccessIgnoresMissingJobTiming(t *testing.T) {
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+
+	p.mu.Lock()
+	p.shortExits = 2
+	p.mu.Unlock()
+
+	p.handleSpawnSuccess("vm-1", spawn.Result{})
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.shortExits != 2 {
+		t.Fatalf("shortExits = %d, want unchanged", p.shortExits)
+	}
+}
+
+func TestHandleSpawnSuccessStopsAgentAfterMaxShortExits(t *testing.T) {
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+
+	p.mu.Lock()
+	p.shortExits = maxConsecutiveShortExits - 1
+	p.mu.Unlock()
+
+	p.handleSpawnSuccess("vm-1", spawn.Result{JobMs: 28_000, TotalMs: 90_000})
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if !p.shutdown {
+		t.Fatal("expected shutdown flag")
+	}
+	if p.fatalErr == nil {
+		t.Fatal("expected fatal error")
+	}
+	select {
+	case err := <-p.fatalCh:
+		if err == nil {
+			t.Fatal("expected fatal error on channel")
+		}
+	default:
+		t.Fatal("expected fatal error on channel")
+	}
+}
+
+func TestHandleSpawnSuccessRecordsShortExit(t *testing.T) {
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+
+	p.handleSpawnSuccess("vm-1", spawn.Result{JobMs: 28_000, TotalMs: 90_000})
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.shortExits != 1 {
+		t.Fatalf("shortExits = %d, want 1", p.shortExits)
+	}
+}
+
+func TestIsUnclaimedJobExit(t *testing.T) {
+	tests := []struct {
+		result spawn.Result
+		want   bool
+	}{
+		{spawn.Result{JobMs: 28_000, TotalMs: 90_000}, true},
+		{spawn.Result{JobMs: 37_999, TotalMs: 120_000}, true},
+		{spawn.Result{JobMs: 21_999, TotalMs: 90_000}, false},
+		{spawn.Result{JobMs: 38_000, TotalMs: 120_000}, false},
+		{spawn.Result{JobMs: 45_000, TotalMs: 105_000}, false},
+		{spawn.Result{JobMs: 120_000, TotalMs: 180_000}, false},
+		{spawn.Result{JobMs: 0, TotalMs: 90_000}, false},
+	}
+	for _, tt := range tests {
+		if got := isUnclaimedJobExit(tt.result); got != tt.want {
+			t.Errorf("isUnclaimedJobExit(%+v) = %v, want %v", tt.result, got, tt.want)
+		}
+	}
 }
 
 func TestPoolBackoffOnFailure(t *testing.T) {

@@ -133,6 +133,8 @@ Bootstrap reads `.runner-version` and skips the download when the installed vers
 
 Keep `runner_version` in `config.yaml` in sync with the pre-installed version. When you upgrade the runner, rebuild the base image and update `config.yaml` together.
 
+> **Warning:** do not assume the runner version bundled in your base image is acceptable to GitHub. GitHub periodically deprecates old runner versions; a JIT runner that is too old will register and then exit immediately (after ~28 s) without ever claiming a job, causing the pool to respawn with growing backoffs until the agent stops. Always install a current runner from [github.com/actions/runner/releases](https://github.com/actions/runner/releases) and set `runner_version` in `config.yaml` to match. If you see repeated `runner finished quickly without claiming a job` warnings in the logs, this is the likely cause.
+
 ## Multi-host setup
 
 You can run Utsusemi on multiple Mac hosts pointing at the same GitHub org or
