@@ -147,6 +147,62 @@ func TestRequireTartVersionRejectsOlder(t *testing.T) {
 	}
 }
 
+func TestVersionAtLeast(t *testing.T) {
+	tests := []struct {
+		got  string
+		min  string
+		want bool
+	}{
+		{"2.34.0", "2.34.0", true},
+		{"2.34.1", "2.34.0", true},
+		{"2.34", "2.34.0", false},
+		{"2.33.9", "2.34.0", false},
+		{"2.33.0", "2.34.0", false},
+		{"", "2.34.0", false},
+		{"v2.34.0", "2.34.0", false},
+		{"2.34.0-dev", "2.34.0", true},
+	}
+	for _, tt := range tests {
+		if got := versionAtLeast(tt.got, tt.min); got != tt.want {
+			t.Errorf("versionAtLeast(%q, %q) = %v, want %v", tt.got, tt.min, got, tt.want)
+		}
+	}
+}
+
+func TestTartProviderAvailableChecksVersion(t *testing.T) {
+	installFakeTart(t)
+	exec := NewFakeExecutor()
+	exec.SetVersionOutput("2.34.0\n")
+	p := NewTartProvider(exec, false)
+	if err := p.Available(); err != nil {
+		t.Fatalf("Available: %v", err)
+	}
+	if len(exec.Calls) != 1 || exec.Calls[0].Name != "tart" || len(exec.Calls[0].Args) != 1 || exec.Calls[0].Args[0] != "--version" {
+		t.Fatalf("calls = %+v", exec.Calls)
+	}
+}
+
+func TestTartProviderAvailableRejectsOldVersion(t *testing.T) {
+	installFakeTart(t)
+	exec := NewFakeExecutor()
+	exec.SetVersionOutput("2.32.1")
+	p := NewTartProvider(exec, false)
+	err := p.Available()
+	if err == nil || !strings.Contains(err.Error(), "openai/tools") {
+		t.Fatalf("Available: %v", err)
+	}
+}
+
+func installFakeTart(t *testing.T) {
+	t.Helper()
+	dir := t.TempDir()
+	tartPath := filepath.Join(dir, "tart")
+	if err := os.WriteFile(tartPath, []byte("#!/bin/sh\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", dir)
+}
+
 func TestFreeDiskGBWalksMissingPath(t *testing.T) {
 	dir := t.TempDir()
 	missing := filepath.Join(dir, "does-not-exist", "nested")
