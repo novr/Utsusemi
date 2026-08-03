@@ -72,9 +72,9 @@ func FormatText(r Report) string {
 	} else {
 		fmt.Fprintf(&b, "vms: %d running, %d total (pool_size %d)\n", r.VMs.Running, r.VMs.Total, r.VMs.PoolSize)
 	}
-	fmt.Fprintf(&b, "warming: %d", len(r.Warming))
-	if len(r.Warming) > 0 {
-		fmt.Fprintf(&b, " (%s)", strings.Join(r.Warming, ", "))
+	fmt.Fprintf(&b, "draining: %d", len(r.Draining))
+	if len(r.Draining) > 0 {
+		fmt.Fprintf(&b, " (%s)", strings.Join(r.Draining, ", "))
 	}
 	b.WriteByte('\n')
 

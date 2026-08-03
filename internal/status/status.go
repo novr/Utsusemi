@@ -43,7 +43,7 @@ type Report struct {
 	Agent         AgentInfo           `json:"agent"`
 	Jobs          []Job               `json:"jobs"`
 	VMs           VMsInfo             `json:"vms"`
-	Warming       []string            `json:"warming"`
+	Draining      []string            `json:"draining"`
 	Health        HealthInfo          `json:"health"`
 	Credential    credentialview.Info `json:"credential"`
 }
@@ -125,7 +125,7 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 	if err != nil {
 		return Report{}, err
 	}
-	vmInfo, warming := summarizeVMs(vms, in.Cfg.PoolSize, jobs, agent.State, leases)
+	vmInfo, draining := summarizeVMs(vms, in.Cfg.PoolSize, jobs, agent.State, leases)
 	vmInfo.MaxConcurrent = in.Provider.Capabilities().MaxConcurrent
 
 	freeGB, err := in.Provider.FreeDiskGB(ctx)
@@ -182,7 +182,7 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 		Agent:         agent,
 		Jobs:          emptyJobs(jobs),
 		VMs:           vmInfo,
-		Warming:       emptyWarming(warming),
+		Draining:      emptyDraining(draining),
 		Health:        health,
 		Credential:    cred,
 	}, nil
@@ -261,7 +261,7 @@ func summarizeVMs(vms []provider.VM, poolSize int, jobs []Job, agentState AgentS
 			active[job.VMName] = struct{}{}
 		}
 	}
-	var warming []string
+	var draining []string
 	for _, vm := range vms {
 		info.Total++
 		if !vm.Running {
@@ -277,9 +277,9 @@ func summarizeVMs(vms []provider.VM, poolSize int, jobs []Job, agentState AgentS
 		if _, ok := leased[vm.Name]; ok {
 			continue
 		}
-		warming = append(warming, vm.Name)
+		draining = append(draining, vm.Name)
 	}
-	return info, warming
+	return info, draining
 }
 
 func emptyJobs(jobs []Job) []Job {
@@ -289,9 +289,9 @@ func emptyJobs(jobs []Job) []Job {
 	return jobs
 }
 
-func emptyWarming(warming []string) []string {
-	if warming == nil {
+func emptyDraining(draining []string) []string {
+	if draining == nil {
 		return []string{}
 	}
-	return warming
+	return draining
 }
