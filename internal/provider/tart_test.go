@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -116,6 +117,32 @@ func TestExecStdinAttachesInputAndForwardsEnv(t *testing.T) {
 	for i := range want {
 		if got[i] != want[i] {
 			t.Fatalf("args = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestRequireTartVersionAcceptsMinimum(t *testing.T) {
+	if err := requireTartVersion("2.34.0"); err != nil {
+		t.Fatalf("unexpected error for 2.34.0: %v", err)
+	}
+}
+
+func TestRequireTartVersionAcceptsNewer(t *testing.T) {
+	for _, v := range []string{"2.34.1", "2.35.0", "3.0.0"} {
+		if err := requireTartVersion(v); err != nil {
+			t.Fatalf("unexpected error for %s: %v", v, err)
+		}
+	}
+}
+
+func TestRequireTartVersionRejectsOlder(t *testing.T) {
+	for _, v := range []string{"2.32.1", "2.33.9", "1.99.99"} {
+		err := requireTartVersion(v)
+		if err == nil {
+			t.Fatalf("expected error for %s, got nil", v)
+		}
+		if !strings.Contains(err.Error(), "openai/tools") {
+			t.Fatalf("error for %s missing upgrade hint: %v", v, err)
 		}
 	}
 }
