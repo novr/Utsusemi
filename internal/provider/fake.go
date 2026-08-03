@@ -115,3 +115,7 @@ func (f *FakeExecutor) listJSONLocked() []byte {
 func (f *FakeExecutor) SetListOutput(output string) {
 	f.Outputs[f.key("tart", []string{"list", "--source", "local", "--format", "json"})] = []byte(output)
 }
+
+func (f *FakeExecutor) SetVersionOutput(version string) {
+	f.Outputs[f.key("tart", []string{"--version"})] = []byte(version)
+}

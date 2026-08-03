@@ -2,6 +2,8 @@
 
 ## Quick start
 
+Install [Tart](#requirements) first, then:
+
 ```bash
 brew tap novr/taps
 brew trust novr/taps
@@ -15,7 +17,7 @@ utsusemi run
 ## Requirements
 
 - Apple Silicon Mac, macOS 15+
-- [Tart](https://tart.run/) 2.34+ — install via `brew tap openai/tools && brew trust openai/tools && brew install openai/tools/tart`
+- [Tart](https://tart.run/) 2.34+ — install via `brew tap openai/tools && brew trust openai/tools && brew install openai/tools/tart`. The minimum matches the current `openai/tools` distribution (the `tart exec -i` fix shipped in 2.33.0, but the stale `cirruslabs/cli` tap stops at 2.32.1). Upgrading from `cirruslabs/cli` may require `brew uninstall softnet` first if softnet was installed from that tap.
 
 ## Paths
 

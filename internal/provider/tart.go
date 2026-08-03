@@ -33,7 +33,7 @@ func (p *TartProvider) Available() error {
 	if _, err := exec.LookPath("tart"); err != nil {
 		return fmt.Errorf("tart not found in PATH; install with `%s`", tartInstallCmd)
 	}
-	if err := checkTartVersion(); err != nil {
+	if err := p.checkTartVersion(context.Background()); err != nil {
 		return err
 	}
 	if p.softnet {
@@ -44,8 +44,8 @@ func (p *TartProvider) Available() error {
 	return nil
 }
 
-func checkTartVersion() error {
-	out, err := exec.Command("tart", "--version").Output()
+func (p *TartProvider) checkTartVersion(ctx context.Context) error {
+	out, err := p.exec.Output(ctx, "tart", []string{"--version"})
 	if err != nil {
 		return fmt.Errorf("tart --version: %w", err)
 	}
