@@ -142,7 +142,7 @@ Edit `config.yaml` after `configure` (not written by `configure`).
 
 #### Directory shares (host → VM)
 
-`mounts` is a list of host paths passed to Tart's `--dir` flag. Paths starting with `~/` (or `name:~/…` in Tart's tagged form) are expanded to the home directory of the user running `utsusemi` (the same user as `brew services`). Empty entries are ignored. `utsusemi status` shows the resolved paths; `utsusemi doctor` warns when a configured path is missing on disk.
+`mounts` is a list of host paths passed to Tart's `--dir` flag. `~/` and Tart's `name:~/…` form expand to the home directory of the user running `utsusemi` (the same user as `brew services`). Use `utsusemi status` to see resolved paths and `utsusemi doctor` to catch missing directories before a job starts.
 
 ```yaml
 mounts:

@@ -130,32 +130,32 @@ func checkMounts(cfg *config.Config, add func(string, Status, string)) {
 	}
 	var missing []string
 	for _, d := range dirs {
-		path := provider.MountHostPath(d)
+		path := provider.HostPathFromDir(d)
 		if _, err := os.Stat(path); err != nil {
 			missing = append(missing, path)
 		}
 	}
-	switch len(missing) {
-	case 0:
-		add("mounts", StatusOK, fmt.Sprintf("%d configured", len(dirs)))
-	default:
+	if len(missing) > 0 {
 		add("mounts", StatusWarn, fmt.Sprintf("%d configured; missing on host: %s", len(dirs), strings.Join(missing, ", ")))
+		return
 	}
+	add("mounts", StatusOK, fmt.Sprintf("%d configured", len(dirs)))
 }
 
 func checkRunnerVersion(cfg *config.Config, add func(string, Status, string)) {
-	if strings.TrimSpace(cfg.RunnerVersion) == "" {
+	snap := spawn.LoadRunnerVersionSnapshot(cfg.RunnerVersion, cfg.StateDir)
+	if snap.Configured == "" {
 		add("runner_version", StatusFail, "runner_version is empty")
 		return
 	}
-	msg := "configured " + cfg.RunnerVersion
-	if last, ok := spawn.LoadLastSpawn(cfg.StateDir); ok {
-		msg += fmt.Sprintf("; last successful spawn used %s", last.RunnerVersion)
-		if last.RunnerVersion != cfg.RunnerVersion {
+	msg := "configured " + snap.Configured
+	if snap.HasMetrics {
+		msg += fmt.Sprintf("; last successful spawn used %s", snap.LastMetrics.RunnerVersion)
+		if snap.Mismatch() {
 			add("runner_version", StatusWarn, msg+"; rebuild the base image and restart the agent after changing runner_version")
 			return
 		}
-		msg += fmt.Sprintf(" (cold_start %dms)", last.ColdStartMs)
+		msg += fmt.Sprintf(" (cold_start %dms)", snap.LastMetrics.ColdStartMs)
 	} else {
 		msg += "; no successful spawn metrics yet"
 	}

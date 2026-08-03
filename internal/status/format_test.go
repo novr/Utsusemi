@@ -15,6 +15,7 @@ func TestFormatTextRunning(t *testing.T) {
 			PID:    12345,
 			Uptime: "2h15m",
 		},
+		Mounts: []string{"/Users/me/cache", "/Users/me/toolchains:ro"},
 		Jobs: []Job{
 			{VMName: "utsusemi-a1b2", RunnerID: 42, Age: "12m"},
 		},
@@ -35,6 +36,7 @@ func TestFormatTextRunning(t *testing.T) {
 		"jobs: 1",
 		"utsusemi-a1b2 runner=42",
 		"draining: 0",
+		"mounts: /Users/me/cache, /Users/me/toolchains:ro",
 		"disk: 42.1 GB free — ok",
 		"credential: user octocat",
 	} {
@@ -109,22 +111,5 @@ func TestFormatTextStoppedWarning(t *testing.T) {
 	}
 	if !strings.Contains(out, "draining: 0") {
 		t.Fatalf("unexpected output:\n%s", out)
-	}
-}
-
-func TestFormatTextMounts(t *testing.T) {
-	out := FormatText(Report{
-		Target: "repo:owner/app",
-		Agent:  AgentInfo{State: AgentStopped},
-		Mounts: []string{"/Users/me/cache", "/Users/me/toolchains:ro"},
-		Health: HealthInfo{FreeDiskGB: 42.1, Status: "ok"},
-		Credential: credentialview.Info{
-			Mode:    "github_pat",
-			Present: true,
-		},
-	})
-	want := "mounts: /Users/me/cache, /Users/me/toolchains:ro"
-	if !strings.Contains(out, want) {
-		t.Fatalf("output missing %q:\n%s", want, out)
 	}
 }

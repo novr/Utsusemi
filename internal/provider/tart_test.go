@@ -67,20 +67,15 @@ func TestStartWithoutSoftnet(t *testing.T) {
 }
 
 func TestStartWithMounts(t *testing.T) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		t.Fatal(err)
-	}
 	exec := NewFakeExecutor()
-	p := NewTartProvider(exec, false, []string{"~/utsusemi-cache", "~/toolchains:ro", "", "share:~/named:ro"})
+	p := NewTartProvider(exec, false, []string{"/host/cache:ro", "/host/tools"})
 	if err := p.Start(context.Background(), "vm-1"); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{
 		"run", "vm-1", "--no-graphics",
-		"--dir=" + filepath.Join(home, "utsusemi-cache"),
-		"--dir=" + filepath.Join(home, "toolchains:ro"),
-		"--dir=share:" + filepath.Join(home, "named:ro"),
+		"--dir=/host/cache:ro",
+		"--dir=/host/tools",
 	}
 	got := exec.Calls[0].Args
 	if len(got) != len(want) {

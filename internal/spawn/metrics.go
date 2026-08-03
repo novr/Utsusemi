@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 )
 
@@ -22,11 +23,35 @@ type LastSpawn struct {
 	Success       bool      `json:"success"`
 }
 
+func (m LastSpawn) coldStartMs() int64 {
+	return m.CloneMs + m.BootMs + m.RegisterMs
+}
+
+// RunnerVersionSnapshot compares configured runner_version with the last successful spawn metrics.
+type RunnerVersionSnapshot struct {
+	Configured  string
+	LastMetrics LastSpawn
+	HasMetrics  bool
+}
+
+func LoadRunnerVersionSnapshot(configured, stateDir string) RunnerVersionSnapshot {
+	snap := RunnerVersionSnapshot{Configured: strings.TrimSpace(configured)}
+	if last, ok := LoadLastSpawn(stateDir); ok {
+		snap.LastMetrics = last
+		snap.HasMetrics = true
+	}
+	return snap
+}
+
+func (s RunnerVersionSnapshot) Mismatch() bool {
+	return s.HasMetrics && s.LastMetrics.RunnerVersion != s.Configured
+}
+
 func SaveLastSpawn(stateDir string, m LastSpawn) error {
 	if stateDir == "" || !m.Success {
 		return nil
 	}
-	m.ColdStartMs = m.CloneMs + m.BootMs + m.RegisterMs
+	m.ColdStartMs = m.coldStartMs()
 	m.TotalMs = m.ColdStartMs + m.JobMs
 	data, err := json.Marshal(m)
 	if err != nil {
