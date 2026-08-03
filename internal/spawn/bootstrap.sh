@@ -11,12 +11,21 @@ fi
 mkdir -p "$RUNNER_HOME"
 cd "$RUNNER_HOME"
 
+normalize_version() {
+  local v="${1:-}"
+  v="${v#"${v%%[![:space:]]*}"}"
+  v="${v%"${v##*[![:space:]]}"}"
+  v="${v#v}"
+  printf '%s' "$v"
+}
+
 # Skip download when the runner at the requested version is already installed.
 # Prefer asking the binary directly; fall back to the sentinel file written by
 # previous installs. This lets stock cirruslabs images (which ship Runner.Listener
 # but not the sentinel) work without a custom bake step.
-installed="$(./bin/Runner.Listener --version 2>/dev/null || cat ./.runner-version 2>/dev/null || true)"
-if [ -f ./run.sh ] && [ "$installed" = "${RUNNER_VERSION}" ]; then
+installed="$(normalize_version "$(./bin/Runner.Listener --version 2>/dev/null || cat ./.runner-version 2>/dev/null || true)")"
+requested="$(normalize_version "${RUNNER_VERSION}")"
+if [ -f ./run.sh ] && [ -n "$installed" ] && [ "$installed" = "$requested" ]; then
   echo "bootstrap: runner v${RUNNER_VERSION} already installed, skipping download" >&2
 else
   echo "bootstrap: installing runner v${RUNNER_VERSION}" >&2

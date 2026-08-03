@@ -119,7 +119,7 @@ To eliminate that latency, pre-install the runner in the base image.
 
 **Stock cirruslabs images** (`ghcr.io/cirruslabs/macos-*-xcode`) already ship the runner at `/Users/admin/actions-runner`. Bootstrap detects the installed version by running `Runner.Listener --version` and skips the download automatically — no custom bake step required. Just set `runner_version` in `config.yaml` to match what the image ships.
 
-**Custom images** — if `Runner.Listener` is not on `PATH`, bootstrap falls back to a `.runner-version` sentinel file:
+**Custom images** — if `./bin/Runner.Listener` is missing under `RUNNER_HOME` (default `/Users/admin/actions-runner`), bootstrap falls back to a `.runner-version` sentinel file:
 
 ```bash
 # Run once inside the base image VM, then snapshot / push the image.
