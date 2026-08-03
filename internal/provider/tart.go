@@ -89,13 +89,12 @@ func (p *TartProvider) Start(ctx context.Context, name string) error {
 	if p.softnet {
 		args = append(args, "--net-softnet")
 	}
-	home, _ := os.UserHomeDir()
-	for _, m := range p.mounts {
-		expanded := m
-		if home != "" && strings.HasPrefix(m, "~/") {
-			expanded = home + m[1:]
-		}
-		args = append(args, "--dir="+expanded)
+	dirs, err := ResolveMountDirs(p.mounts)
+	if err != nil {
+		return err
+	}
+	for _, d := range dirs {
+		args = append(args, "--dir="+d)
 	}
 	return p.exec.StartDetached(ctx, "tart", args, nil)
 }

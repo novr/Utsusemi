@@ -26,6 +26,9 @@ func FormatText(r Report) string {
 		fmt.Fprintf(&b, "spawn: clone %s, boot %s, register %s, cold_start %s, job %s, total %s (%s)\n",
 			r.Spawn.Clone, r.Spawn.Boot, r.Spawn.Register, r.Spawn.ColdStart, r.Spawn.Job, r.Spawn.Total, r.Spawn.At)
 	}
+	if len(r.Mounts) > 0 {
+		fmt.Fprintf(&b, "mounts: %s\n", strings.Join(r.Mounts, ", "))
+	}
 	fmt.Fprintf(&b, "agent: %s", r.Agent.State)
 	if r.Agent.PID > 0 {
 		fmt.Fprintf(&b, " (pid %d", r.Agent.PID)

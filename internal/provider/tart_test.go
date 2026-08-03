@@ -72,7 +72,7 @@ func TestStartWithMounts(t *testing.T) {
 		t.Fatal(err)
 	}
 	exec := NewFakeExecutor()
-	p := NewTartProvider(exec, false, []string{"~/utsusemi-cache", "~/toolchains:ro"})
+	p := NewTartProvider(exec, false, []string{"~/utsusemi-cache", "~/toolchains:ro", "", "share:~/named:ro"})
 	if err := p.Start(context.Background(), "vm-1"); err != nil {
 		t.Fatal(err)
 	}
@@ -80,6 +80,7 @@ func TestStartWithMounts(t *testing.T) {
 		"run", "vm-1", "--no-graphics",
 		"--dir=" + filepath.Join(home, "utsusemi-cache"),
 		"--dir=" + filepath.Join(home, "toolchains:ro"),
+		"--dir=share:" + filepath.Join(home, "named:ro"),
 	}
 	got := exec.Calls[0].Args
 	if len(got) != len(want) {

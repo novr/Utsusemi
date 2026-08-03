@@ -10,3 +10,7 @@ pool_size: 1
 # softnet defaults to false (macOS NAT); set true and see Softnet docs
 # https://github.com/cirruslabs/softnet
 # softnet: true
+# mounts: host directories shared into VMs via tart --dir (see README)
+# mounts:
+#   - ~/utsusemi-cache/swiftpm
+#   - ~/utsusemi-toolchains:ro
