@@ -128,6 +128,12 @@ func (p *Pool) drainAndWait() error {
 	p.drain = true
 	p.mu.Unlock()
 	p.inFlight.Wait()
+	// Clean up any VMs that outlived the drain (e.g. grace-window VMs from a
+	// previous session that reclaim never reached before shutdown).
+	vms, _, err := p.purgeAllManaged(context.Background(), false)
+	if len(vms) > 0 || err != nil {
+		p.logger.Info("shutdown cleanup", "vms_deleted", len(vms), "error", err)
+	}
 	return nil
 }
 

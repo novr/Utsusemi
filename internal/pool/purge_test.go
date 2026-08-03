@@ -2,12 +2,29 @@ package pool
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/novr/utsusemi/internal/lease"
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/registrar"
+	"github.com/novr/utsusemi/internal/target"
 )
+
+type failDeleteRegistrar struct {
+	runners []registrar.Runner
+}
+
+func (r *failDeleteRegistrar) CreateJIT(_ context.Context, _ target.Target, _ []string, name string) (registrar.JITConfig, error) {
+	return registrar.JITConfig{Encoded: "jit", Runner: registrar.Runner{ID: 1, Name: name}}, nil
+}
+func (r *failDeleteRegistrar) DeleteRunner(_ context.Context, _ target.Target, _ int64) error {
+	return fmt.Errorf("api 502: github api error")
+}
+func (r *failDeleteRegistrar) ListRunners(_ context.Context, _ target.Target, _ string) ([]registrar.Runner, error) {
+	return r.runners, nil
+}
+func (r *failDeleteRegistrar) ValidateCredential(_ context.Context, _, _ string) error { return nil }
 
 func TestPurgeAllDryRun(t *testing.T) {
 	exec := provider.NewFakeExecutor()
@@ -79,5 +96,29 @@ func TestPurgeAllDeletesManagedResources(t *testing.T) {
 	}
 	if len(leaseMap) != 0 {
 		t.Fatalf("leases=%v", leaseMap)
+	}
+}
+
+func TestPurgeAllReturnsErrorOnRunnerDeleteFailure(t *testing.T) {
+	exec := provider.NewFakeExecutor()
+	exec.VMs["utsusemi-a"] = false
+
+	reg := &failDeleteRegistrar{
+		runners: []registrar.Runner{{ID: 1, Name: "utsusemi-a"}},
+	}
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true), reg)
+
+	vms, runnerIDs, err := p.PurgeAll(context.Background(), false)
+	if err == nil {
+		t.Fatal("expected error when runner deletion fails, got nil")
+	}
+	if len(vms) != 1 {
+		t.Fatalf("deleted vm count = %d, want 1", len(vms))
+	}
+	if len(runnerIDs) != 0 {
+		t.Fatalf("deleted runner count = %d, want 0", len(runnerIDs))
+	}
+	if len(exec.VMs) != 0 {
+		t.Fatalf("expected vm to be deleted: %#v", exec.VMs)
 	}
 }
