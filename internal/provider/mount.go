@@ -6,14 +6,11 @@ import (
 	"strings"
 )
 
-func mountNeedsHome(m string) bool {
+func hasTildeHome(m string) bool {
 	return strings.HasPrefix(m, "~/") || strings.Contains(m, ":~/")
 }
 
-func expandMountDir(mount, home string) string {
-	if home == "" {
-		return mount
-	}
+func expandTilde(mount, home string) string {
 	if strings.HasPrefix(mount, "~/") {
 		return home + mount[1:]
 	}
@@ -25,39 +22,46 @@ func expandMountDir(mount, home string) string {
 
 // ResolveMountDirs expands ~/ in mount entries for tart --dir flags.
 func ResolveMountDirs(mounts []string) ([]string, error) {
-	needsHome := false
-	cleaned := make([]string, 0, len(mounts))
+	var (
+		home    string
+		homeSet bool
+	)
+	getHome := func() (string, error) {
+		if homeSet {
+			return home, nil
+		}
+		var err error
+		home, err = os.UserHomeDir()
+		homeSet = true
+		if err != nil {
+			return "", fmt.Errorf("resolve home directory for mounts: %w", err)
+		}
+		return home, nil
+	}
+
+	out := make([]string, 0, len(mounts))
 	for _, m := range mounts {
 		m = strings.TrimSpace(m)
 		if m == "" {
 			continue
 		}
-		cleaned = append(cleaned, m)
-		if mountNeedsHome(m) {
-			needsHome = true
+		if hasTildeHome(m) {
+			h, err := getHome()
+			if err != nil {
+				return nil, err
+			}
+			m = expandTilde(m, h)
 		}
-	}
-	home := ""
-	if needsHome {
-		var err error
-		home, err = os.UserHomeDir()
-		if err != nil {
-			return nil, fmt.Errorf("resolve home directory for mounts: %w", err)
-		}
-	}
-	out := make([]string, 0, len(cleaned))
-	for _, m := range cleaned {
-		out = append(out, expandMountDir(m, home))
+		out = append(out, m)
 	}
 	return out, nil
 }
 
-// MountHostPath returns the host filesystem path from a resolved tart --dir value.
-func MountHostPath(dir string) string {
+// HostPathFromDir extracts the host filesystem path from a resolved tart --dir value.
+func HostPathFromDir(dir string) string {
 	path := dir
 	if i := strings.Index(path, ":"); i >= 0 {
-		candidate := path[i+1:]
-		if strings.HasPrefix(candidate, "/") {
+		if candidate := path[i+1:]; strings.HasPrefix(candidate, "/") {
 			path = candidate
 		}
 	}

@@ -7,7 +7,7 @@ type Result struct {
 }
 
 func resultFromMetrics(m LastSpawn) Result {
-	coldStart := m.CloneMs + m.BootMs + m.RegisterMs
+	coldStart := m.coldStartMs()
 	return Result{
 		JobMs:       m.JobMs,
 		ColdStartMs: coldStart,

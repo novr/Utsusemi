@@ -1,26 +1,58 @@
 package provider
 
-import "testing"
+import (
+	"path/filepath"
+	"testing"
+)
 
-func TestExpandMountDir(t *testing.T) {
-	home := "/Users/test"
+func TestResolveMountDirs(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
 	tests := []struct {
-		in, want string
+		name string
+		in   []string
+		want []string
 	}{
-		{"~/cache", "/Users/test/cache"},
-		{"~/toolchains:ro", "/Users/test/toolchains:ro"},
-		{"share:~/cache:ro", "share:/Users/test/cache:ro"},
-		{"/abs/path", "/abs/path"},
-		{"/abs/path:ro", "/abs/path:ro"},
+		{
+			name: "expands tilde and tagged form",
+			in:   []string{"~/cache", "~/toolchains:ro", "share:~/named:ro"},
+			want: []string{
+				filepath.Join(home, "cache"),
+				filepath.Join(home, "toolchains:ro"),
+				"share:" + filepath.Join(home, "named:ro"),
+			},
+		},
+		{
+			name: "skips empty",
+			in:   []string{"", "  ", "~/cache"},
+			want: []string{filepath.Join(home, "cache")},
+		},
+		{
+			name: "passes absolute paths",
+			in:   []string{"/abs/path", "/abs/path:ro"},
+			want: []string{"/abs/path", "/abs/path:ro"},
+		},
 	}
 	for _, tc := range tests {
-		if got := expandMountDir(tc.in, home); got != tc.want {
-			t.Errorf("expandMountDir(%q) = %q, want %q", tc.in, got, tc.want)
-		}
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := ResolveMountDirs(tc.in)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(got) != len(tc.want) {
+				t.Fatalf("got %v, want %v", got, tc.want)
+			}
+			for i := range tc.want {
+				if got[i] != tc.want[i] {
+					t.Fatalf("got[%d] = %q, want %q", i, got[i], tc.want[i])
+				}
+			}
+		})
 	}
 }
 
-func TestMountHostPath(t *testing.T) {
+func TestHostPathFromDir(t *testing.T) {
 	tests := []struct {
 		in, want string
 	}{
@@ -30,21 +62,8 @@ func TestMountHostPath(t *testing.T) {
 		{"/Users/test/cache:tag=foo", "/Users/test/cache"},
 	}
 	for _, tc := range tests {
-		if got := MountHostPath(tc.in); got != tc.want {
-			t.Errorf("MountHostPath(%q) = %q, want %q", tc.in, got, tc.want)
+		if got := HostPathFromDir(tc.in); got != tc.want {
+			t.Errorf("HostPathFromDir(%q) = %q, want %q", tc.in, got, tc.want)
 		}
-	}
-}
-
-func TestResolveMountDirsSkipsEmpty(t *testing.T) {
-	dirs, err := ResolveMountDirs([]string{"", "  ", "~/cache"})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if len(dirs) != 1 {
-		t.Fatalf("dirs = %v, want one entry", dirs)
-	}
-	if !mountNeedsHome("~/cache") {
-		t.Fatal("expected ~/cache to need home")
 	}
 }

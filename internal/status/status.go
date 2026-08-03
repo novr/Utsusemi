@@ -152,22 +152,20 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 	}
 
 	host := hostid.Collect(stateDir, in.Cfg.VMNamePrefix)
+	versionSnap := spawn.LoadRunnerVersionSnapshot(in.Cfg.RunnerVersion, stateDir)
 	runnerInfo := RunnerVersionInfo{
-		Configured: in.Cfg.RunnerVersion,
+		Configured: versionSnap.Configured,
 		Status:     "ok",
 	}
-	var mounts []string
-	if len(in.Cfg.Mounts) > 0 {
-		resolved, err := provider.ResolveMountDirs(in.Cfg.Mounts)
-		if err != nil {
-			return Report{}, err
-		}
-		mounts = resolved
+	mounts, err := provider.ResolveMountDirs(in.Cfg.Mounts)
+	if err != nil {
+		return Report{}, err
 	}
 	var spawnInfo *SpawnInfo
-	if last, ok := spawn.LoadLastSpawn(stateDir); ok {
+	if versionSnap.HasMetrics {
+		last := versionSnap.LastMetrics
 		runnerInfo.LastSpawn = last.RunnerVersion
-		if last.RunnerVersion != in.Cfg.RunnerVersion {
+		if versionSnap.Mismatch() {
 			runnerInfo.Status = "config changed; rebuild base image and restart agent"
 		}
 		spawnInfo = &SpawnInfo{

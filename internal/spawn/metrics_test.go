@@ -42,3 +42,23 @@ func TestSaveLastSpawnSkipsFailed(t *testing.T) {
 		t.Fatal("failed spawn should not be persisted")
 	}
 }
+
+func TestRunnerVersionSnapshot(t *testing.T) {
+	dir := t.TempDir()
+	snap := LoadRunnerVersionSnapshot("2.336.0", dir)
+	if snap.HasMetrics || snap.Mismatch() {
+		t.Fatalf("unexpected snapshot: %+v", snap)
+	}
+
+	if err := SaveLastSpawn(dir, LastSpawn{
+		RunnerVersion: "2.335.0",
+		CloneMs:       1,
+		Success:       true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	snap = LoadRunnerVersionSnapshot("2.336.0", dir)
+	if !snap.HasMetrics || !snap.Mismatch() {
+		t.Fatalf("expected mismatch: %+v", snap)
+	}
+}
