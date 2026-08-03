@@ -32,6 +32,7 @@ type Pool struct {
 	mu           sync.Mutex
 	active       int
 	failures     int
+	shortExits   int
 	backoffUntil time.Time
 	shutdown     bool
 	drain        bool
@@ -184,11 +185,17 @@ func (p *Pool) tick(ctx context.Context) {
 			p.logger.Warn("spawn failed", "vm", vmName, "error", err)
 			return
 		}
-		p.logger.Info("runner finished", "vm", vmName, "duration_ms", time.Since(spawnStart).Milliseconds())
-		p.mu.Lock()
-		p.failures = 0
-		p.backoffUntil = time.Time{}
-		p.mu.Unlock()
+		duration := time.Since(spawnStart)
+		p.logger.Info("runner finished", "vm", vmName, "duration_ms", duration.Milliseconds())
+		if duration < minJobDuration {
+			p.recordShortExit(vmName, duration)
+		} else {
+			p.mu.Lock()
+			p.failures = 0
+			p.shortExits = 0
+			p.backoffUntil = time.Time{}
+			p.mu.Unlock()
+		}
 	}()
 }
 
@@ -208,6 +215,30 @@ func (p *Pool) reportFatal(err error) {
 	case p.fatalCh <- err:
 	default:
 	}
+}
+
+// minJobDuration is the threshold below which a nil-exit spawn is considered
+// suspiciously short (runner likely timed out without claiming a job).
+// GitHub JIT runners that receive no job exit with code 0 after ~28 s; cold
+// start (clone+boot+register) typically adds another 60–90 s, so any total
+// duration well under 3 minutes almost certainly means no job was claimed.
+const minJobDuration = 3 * time.Minute
+
+func (p *Pool) recordShortExit(vmName string, duration time.Duration) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.shortExits++
+	backoff := time.Duration(p.shortExits) * 30 * time.Second
+	if backoff > 5*time.Minute {
+		backoff = 5 * time.Minute
+	}
+	p.backoffUntil = time.Now().Add(backoff)
+	p.logger.Warn("runner finished quickly without claiming a job; check that runner_version is current",
+		"vm", vmName,
+		"duration_ms", duration.Milliseconds(),
+		"consecutive_short_exits", p.shortExits,
+		"backoff", backoff,
+	)
 }
 
 func (p *Pool) recordFailure(err error) {

@@ -105,6 +105,42 @@ func newTestPoolWithPrefix(t *testing.T, cfg *config.Config, vmProvider provider
 	return p
 }
 
+func TestRecordShortExitAppliesBackoff(t *testing.T) {
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+
+	p.recordShortExit("vm-1", 10*time.Second)
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.shortExits != 1 {
+		t.Fatalf("shortExits = %d, want 1", p.shortExits)
+	}
+	if !time.Now().Before(p.backoffUntil) {
+		t.Fatal("backoffUntil should be in the future")
+	}
+}
+
+func TestRecordShortExitResetsOnLongRun(t *testing.T) {
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false), noopRegistrar{})
+
+	p.mu.Lock()
+	p.shortExits = 3
+	p.mu.Unlock()
+
+	// Simulate a long-running spawn completing successfully.
+	p.mu.Lock()
+	p.failures = 0
+	p.shortExits = 0
+	p.backoffUntil = time.Time{}
+	p.mu.Unlock()
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.shortExits != 0 {
+		t.Fatalf("shortExits = %d, want 0 after long run", p.shortExits)
+	}
+}
+
 func TestPoolBackoffOnFailure(t *testing.T) {
 	exec := provider.NewFakeExecutor()
 	exec.FailClone = context.Canceled
