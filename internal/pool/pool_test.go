@@ -434,3 +434,59 @@ func TestReclaimAtCapacityEvictsStaleSessionVM(t *testing.T) {
 		t.Fatal("current-session VM should not be reclaimed")
 	}
 }
+
+func TestDrainAndWaitPurgesResidualVMs(t *testing.T) {
+	exec := provider.NewFakeExecutor()
+	exec.VMs["utsusemi-residual"] = true
+
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, false), noopRegistrar{})
+
+	if err := p.drainAndWait(context.Background()); err != nil {
+		t.Fatalf("drainAndWait: %v", err)
+	}
+	if _, ok := exec.VMs["utsusemi-residual"]; ok {
+		t.Fatal("residual VM should have been purged by drainAndWait")
+	}
+}
+
+func TestDrainAndWaitReturnsErrorOnPurgeFailure(t *testing.T) {
+	exec := provider.NewFakeExecutor()
+	exec.VMs["utsusemi-stuck"] = false
+
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, false), &failDeleteRegistrar{
+		runners: []registrar.Runner{{ID: 1, Name: "utsusemi-stuck"}},
+	})
+
+	if err := p.drainAndWait(context.Background()); err == nil {
+		t.Fatal("drainAndWait should return an error when shutdown purge fails")
+	}
+}
+
+func TestPoolRunReturnsDrainErrorOnShutdownPurgeFailure(t *testing.T) {
+	exec := provider.NewFakeExecutor()
+	exec.VMs["utsusemi-stuck"] = false
+
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, false), &failDeleteRegistrar{
+		runners: []registrar.Runner{{ID: 1, Name: "utsusemi-stuck"}},
+	})
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	done := make(chan error, 1)
+	go func() {
+		done <- p.Run(ctx)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case err := <-done:
+		if err == nil {
+			t.Fatal("Run should return an error when shutdown purge fails")
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("timeout waiting for pool shutdown")
+	}
+}

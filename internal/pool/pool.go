@@ -103,15 +103,13 @@ func (p *Pool) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return p.drainAndWait(ctx)
 		case err := <-p.fatalCh:
-			_ = p.drainAndWait(ctx)
-			return err
+			return errors.Join(err, p.drainAndWait(ctx))
 		case <-ticker.C:
 			p.tick(ctx)
 		case <-reconcileTicker.C:
 			if err := p.reclaim(ctx, false); err != nil {
 				if registrar.IsUnauthorized(err) {
-					_ = p.drainAndWait(ctx)
-					return err
+					return errors.Join(err, p.drainAndWait(ctx))
 				}
 				p.logger.Warn("reconciliation failed", "error", err)
 			}
@@ -143,7 +141,7 @@ func (p *Pool) drainAndWait(ctx context.Context) error {
 	case len(vms) > 0:
 		p.logger.Info("shutdown cleanup", "vms_deleted", len(vms))
 	}
-	return nil
+	return err
 }
 
 func (p *Pool) tick(ctx context.Context) {
