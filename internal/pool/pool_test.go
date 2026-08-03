@@ -390,3 +390,47 @@ func TestReclaimSkipsOtherHostRunners(t *testing.T) {
 		t.Errorf("expected only runner 10 deleted, got deleted=%v", reg.deleted)
 	}
 }
+
+// TestReclaimAtCapacityEvictsStaleSessionVM verifies that when the provider is
+// at its MaxConcurrent limit, a VM whose lease belongs to a previous session is
+// reclaimed immediately even if the grace window has not expired yet.
+func TestReclaimAtCapacityEvictsStaleSessionVM(t *testing.T) {
+	exec := provider.NewFakeExecutor()
+	exec.VMs["utsusemi-stale"] = true // stale-session VM, still running
+	exec.VMs["utsusemi-live"] = true  // current-session VM, must stay
+
+	cfg := testPoolConfig(t)
+	cfg.ReclaimPolicy = config.ReclaimGrace
+	cfg.ReclaimGrace = config.Duration(15 * time.Minute) // grace not expired
+	p := newTestPool(t, cfg, provider.NewTartProvider(exec, false), noopRegistrar{})
+
+	// Write a lease for the current session (should not be reclaimed).
+	if err := p.leases.WriteLease(p.session, lease.Lease{
+		VMName:    "utsusemi-live",
+		RunnerID:  2,
+		StartedAt: time.Now().UTC(),
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	// Write a lease for a previous session (stale; within grace but at cap → evict).
+	staleSession := &lease.AgentSession{ID: "old-agent", PID: 1, StartedAt: time.Now().UTC().Add(-time.Hour)}
+	if err := p.leases.WriteLease(staleSession, lease.Lease{
+		VMName:    "utsusemi-stale",
+		RunnerID:  1,
+		StartedAt: time.Now().UTC().Add(-5 * time.Minute), // within grace window
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := p.reclaim(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, ok := exec.VMs["utsusemi-stale"]; ok {
+		t.Fatal("stale-session VM at capacity should be evicted even within grace window")
+	}
+	if _, ok := exec.VMs["utsusemi-live"]; !ok {
+		t.Fatal("current-session VM should not be reclaimed")
+	}
+}
