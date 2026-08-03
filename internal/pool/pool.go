@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -178,6 +179,12 @@ func (p *Pool) tick(ctx context.Context) {
 		if result, err := p.spawner.Run(ctx, vmName); err != nil {
 			if registrar.IsUnauthorized(err) {
 				p.reportFatal(err)
+				return
+			}
+			p.mu.Lock()
+			draining := p.drain
+			p.mu.Unlock()
+			if draining && errors.Is(err, context.Canceled) {
 				return
 			}
 			p.recordFailure(err)

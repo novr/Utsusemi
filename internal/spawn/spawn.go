@@ -137,7 +137,11 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 	for {
 		select {
 		case <-jobCtx.Done():
-			log.Warn("job timeout reached")
+			if errors.Is(jobCtx.Err(), context.Canceled) {
+				log.Info("abandoning idle runner on shutdown")
+			} else {
+				log.Warn("job timeout reached")
+			}
 			_ = s.opts.Provider.Stop(context.Background(), vmName)
 			return Result{}, jobCtx.Err()
 		case err := <-execDone:
