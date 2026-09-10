@@ -49,30 +49,9 @@ func (r *GitHubPATRegistrar) CreateJIT(ctx context.Context, tgt target.Target, l
 		return JITConfig{}, err
 	}
 
-	var path string
-	var body any
-	switch tgt.Type {
-	case target.TypeOrg:
-		path = fmt.Sprintf("/orgs/%s/actions/runners/generate-jitconfig", tgt.Org)
-		body = map[string]any{
-			"name":            name,
-			"runner_group_id": tgt.RunnerGroupID,
-			"labels":          labels,
-			"work_folder":     "_work",
-			"ephemeral":       true,
-			"disable_update":  true,
-		}
-	case target.TypeRepo:
-		path = fmt.Sprintf("/repos/%s/%s/actions/runners/generate-jitconfig", tgt.Owner, tgt.Repo)
-		body = map[string]any{
-			"name":           name,
-			"labels":         labels,
-			"work_folder":    "_work",
-			"ephemeral":      true,
-			"disable_update": true,
-		}
-	default:
-		return JITConfig{}, fmt.Errorf("unsupported target type")
+	path, body, err := jitConfigRequest(tgt, labels, name)
+	if err != nil {
+		return JITConfig{}, err
 	}
 
 	payload, err := json.Marshal(body)
@@ -149,6 +128,34 @@ type listResponse struct {
 		ID   int64  `json:"id"`
 		Name string `json:"name"`
 	} `json:"runners"`
+}
+
+func jitConfigRequest(tgt target.Target, labels []string, name string) (string, map[string]any, error) {
+	var path string
+	group := tgt.RunnerGroupID
+	switch tgt.Type {
+	case target.TypeOrg:
+		if group <= 0 {
+			return "", nil, fmt.Errorf("org target requires runner_group_id")
+		}
+		path = fmt.Sprintf("/orgs/%s/actions/runners/generate-jitconfig", tgt.Org)
+	case target.TypeRepo:
+		if group <= 0 {
+			group = 1
+		}
+		path = fmt.Sprintf("/repos/%s/%s/actions/runners/generate-jitconfig", tgt.Owner, tgt.Repo)
+	default:
+		return "", nil, fmt.Errorf("unsupported target type")
+	}
+	body := map[string]any{
+		"name":            name,
+		"runner_group_id": group,
+		"labels":          labels,
+		"work_folder":     "_work",
+		"ephemeral":       true,
+		"disable_update":  true,
+	}
+	return path, body, nil
 }
 
 func listPath(tgt target.Target) (string, error) {

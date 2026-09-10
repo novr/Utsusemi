@@ -44,7 +44,7 @@ utsusemi configure token [flags]
 
 Shared flags: `--base-image`, `--pool-size`, `--labels`, `--runner-version`, `--output`, `--force`.
 
-Organization: `--runner-group-id` (default `1`).
+`--runner-group-id` (default `1`) for organization and repository targets.
 
 Existing config: prompt on TTY; `--force` for non-interactive.
 
