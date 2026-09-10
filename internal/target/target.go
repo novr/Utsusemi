@@ -47,10 +47,15 @@ func FromConfig(cfg ConfigYAML) (Target, error) {
 		if err != nil {
 			return Target{}, err
 		}
+		group := cfg.RunnerGroupID
+		if group <= 0 {
+			group = 1
+		}
 		return Target{
-			Type:  TypeRepo,
-			Owner: owner,
-			Repo:  repo,
+			Type:          TypeRepo,
+			Owner:         owner,
+			Repo:          repo,
+			RunnerGroupID: group,
 		}, nil
 	default:
 		return Target{}, fmt.Errorf("target.org or target.repo is required")

@@ -27,8 +27,18 @@ func TestFromConfigRepo(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tgt.Type != TypeRepo || tgt.Owner != "alice" || tgt.Repo != "my-app" {
+	if tgt.Type != TypeRepo || tgt.Owner != "alice" || tgt.Repo != "my-app" || tgt.RunnerGroupID != 1 {
 		t.Fatalf("unexpected target: %+v", tgt)
+	}
+}
+
+func TestFromConfigRepoRunnerGroup(t *testing.T) {
+	tgt, err := FromConfig(ConfigYAML{Repo: "alice/my-app", RunnerGroupID: 2})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tgt.RunnerGroupID != 2 {
+		t.Fatalf("runner_group_id=%d", tgt.RunnerGroupID)
 	}
 }
 
@@ -42,6 +52,13 @@ func TestFromConfigMutuallyExclusive(t *testing.T) {
 func TestDisplayStringOrgGroup(t *testing.T) {
 	tgt := Target{Type: TypeOrg, Org: "my-org", RunnerGroupID: 1}
 	if got, want := tgt.DisplayString(), "org:my-org (group 1)"; got != want {
+		t.Fatalf("got %q want %q", got, want)
+	}
+}
+
+func TestDisplayStringRepoOmitsDefaultGroup(t *testing.T) {
+	tgt := Target{Type: TypeRepo, Owner: "alice", Repo: "app", RunnerGroupID: 1}
+	if got, want := tgt.DisplayString(), "repo:alice/app"; got != want {
 		t.Fatalf("got %q want %q", got, want)
 	}
 }

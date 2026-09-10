@@ -45,6 +45,66 @@ func TestGitHubPATRegistrarCreateJITOrg(t *testing.T) {
 	}
 }
 
+func TestJITConfigRequestRepoGroup(t *testing.T) {
+	path, body, err := jitConfigRequest(target.Target{Type: target.TypeRepo, Owner: "alice", Repo: "app"}, []string{"self-hosted"}, "n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if path != "/repos/alice/app/actions/runners/generate-jitconfig" {
+		t.Fatalf("path %s", path)
+	}
+	if body["runner_group_id"] != int64(1) {
+		t.Fatalf("default group=%v", body["runner_group_id"])
+	}
+
+	_, body, err = jitConfigRequest(target.Target{Type: target.TypeRepo, Owner: "alice", Repo: "app", RunnerGroupID: 2}, []string{"self-hosted"}, "n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if body["runner_group_id"] != int64(2) {
+		t.Fatalf("explicit group=%v", body["runner_group_id"])
+	}
+}
+
+func TestJITConfigRequestOrgRequiresGroup(t *testing.T) {
+	_, _, err := jitConfigRequest(target.Target{Type: target.TypeOrg, Org: "my-org"}, []string{"self-hosted"}, "n")
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestGitHubPATRegistrarCreateJITRepoIncludesRunnerGroup(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/alice/app/actions/runners/generate-jitconfig" {
+			t.Fatalf("path %s", r.URL.Path)
+		}
+		var body map[string]any
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		if body["runner_group_id"] != float64(1) {
+			t.Fatalf("body=%v", body)
+		}
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"encoded_jit_config": "jit",
+			"runner":             map[string]any{"id": 7, "name": "n"},
+		})
+	}))
+	defer server.Close()
+
+	store := keychain.NewMemoryStore()
+	_ = store.Set("svc", "acct", "pat")
+	reg := &GitHubPATRegistrar{api: &httpClient{client: server.Client()}, store: store, service: "svc", account: "acct"}
+	tgt := target.Target{Type: target.TypeRepo, Owner: "alice", Repo: "app"}
+	jit, err := reg.createJITWithBase(context.Background(), server.URL, tgt, []string{"self-hosted"}, "n")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if jit.Encoded != "jit" || jit.Runner.ID != 7 {
+		t.Fatalf("unexpected jit: %+v", jit)
+	}
+}
+
 func TestGitHubPATRegistrarRetryOnRateLimit(t *testing.T) {
 	attempts := 0
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

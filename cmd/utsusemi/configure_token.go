@@ -33,7 +33,7 @@ func newConfigureTokenCmd() *cobra.Command {
 			if org == "" && repo == "" {
 				return fmt.Errorf("either --org or --repo is required")
 			}
-			if org != "" && runnerGroup <= 0 {
+			if runnerGroup <= 0 {
 				runnerGroup = 1
 			}
 			if err := confirmConfigOverwrite(outputPath, force, cmd.InOrStdin(), cmd.OutOrStdout()); err != nil {
@@ -71,7 +71,7 @@ func newConfigureTokenCmd() *cobra.Command {
 	cmd.Flags().StringVar(&outputPath, "output", configPath, "config output path")
 	cmd.Flags().StringVar(&org, "org", "", "GitHub organization")
 	cmd.Flags().StringVar(&repo, "repo", "", "GitHub repository (owner/repo)")
-	cmd.Flags().Int64Var(&runnerGroup, "runner-group-id", 1, "runner group id for org target")
+	cmd.Flags().Int64Var(&runnerGroup, "runner-group-id", 1, "runner group id")
 	cmd.Flags().BoolVar(&force, "force", false, "overwrite existing config without prompting")
 	addRunnerFlags(cmd, &opts)
 	return cmd
