@@ -27,6 +27,8 @@ utsusemi run
 | State | `~/.local/state/utsusemi` |
 | Credentials | Keychain (same macOS user as setup and service) |
 
+Use `--config` or `UTSUSEMI_CONFIG` when multiple agents on one Mac must not share state (see [Personal account](#personal-account-no-org)).
+
 ## Configuration
 
 ### Setup commands
@@ -34,11 +36,12 @@ utsusemi run
 ```text
 utsusemi configure app [flags]
 utsusemi configure token [flags]
+utsusemi configure edit|path|show
 ```
 
 | | `configure app` | `configure token` |
 |--|-----------------|-------------------|
-| Auth | GitHub device flow | fine-grained PAT on stdin or `--token` |
+| Auth | GitHub device flow when needed | PAT on stdin or `--token` when provided |
 | Targets | organization | organization or repository |
 | Credential refresh | automatic | manual |
 
@@ -46,9 +49,20 @@ Shared flags: `--base-image`, `--pool-size`, `--labels`, `--runner-version`, `--
 
 `--runner-group-id` (default `1`) for organization and repository targets.
 
-Existing config: prompt on TTY; `--force` for non-interactive.
+Re-running `configure` merges **only changed flags** so hand-edited keys (`reclaim_policy`, `mounts`, …) survive. Existing config: prompt on TTY; `--force` for non-interactive.
 
-Example: [examples/config.pat.yaml](examples/config.pat.yaml).
+| Case | Rationale |
+|------|-----------|
+| `configure token` without a token | Change pool settings without rotating Keychain |
+| `configure app`, same `--org` / `--broker` | Skip device flow when the stored credential still matches |
+| `configure app --refresh` | Renew OAuth while stopped; device flow only if the refresh token is dead |
+| Credential-only `--refresh` | OAuth does not change YAML — no overwrite prompt, no `config.yaml` rewrite |
+| `edit` / `show` / `path` use `--config` only | That path is what `run` loads; `--output` is for writing elsewhere during setup |
+| `registration.mode` change | Different Keychain layout and registrar — use `configure edit` deliberately |
+
+`--runner-version latest` pins to the current [actions/runner](https://github.com/actions/runner/releases) release so JIT registration is not rejected when GitHub raises the minimum.
+
+Examples: [examples/config.template.yaml](examples/config.template.yaml), [examples/config.pat.yaml](examples/config.pat.yaml).
 
 ### GitHub App
 
@@ -67,6 +81,8 @@ Re-run when:
 ```bash
 brew services stop utsusemi   # before re-configuring
 ```
+
+While the agent is stopped: `utsusemi configure app --refresh` — same OAuth path as automatic refresh, without re-entering org/broker flags.
 
 #### Credential lifecycle
 
@@ -119,7 +135,7 @@ Free orgs include the default runner group (matches `--runner-group-id 1`), enab
 
 ### Runtime options
 
-Edit `config.yaml` after `configure` (not written by `configure`).
+Edit `config.yaml` after `configure` with `utsusemi configure edit`, or set flags on a re-run (`configure` merges changed flags only).
 
 | Key | Default | Notes |
 |-----|---------|-------|
@@ -177,6 +193,18 @@ sync   # flush writes before tart stop; skipping this silently loses recent chan
 
 Keep `runner_version` in `config.yaml` in sync with the pre-installed version. When you upgrade the runner, rebuild the base image and update `config.yaml` together.
 
+**Updating stock cirruslabs images** (`base_image` with `:latest`):
+
+```bash
+brew services stop utsusemi
+utsusemi configure app --runner-version latest   # hosted_app
+# or: utsusemi configure edit
+brew services start utsusemi   # tart pull on start
+utsusemi doctor
+```
+
+`:latest` only refreshes the Tart VM image on agent start. `runner_version` must be updated separately — otherwise bootstrap may reinstall an older runner over a newer one baked into the image.
+
 > **Warning:** do not assume the runner version bundled in your base image is acceptable to GitHub. GitHub periodically deprecates old runner versions; a JIT runner that is too old will register and then exit immediately (after ~28 s) without ever claiming a job, causing the pool to respawn with growing backoffs until the agent stops. Always install a current runner from [github.com/actions/runner/releases](https://github.com/actions/runner/releases) and set `runner_version` in `config.yaml` to match. If you see repeated `runner finished quickly without claiming a job` warnings in the logs, this is the likely cause.
 
 > **Note:** The runner's `.env` file is consumed by the service wrapper (`svc.sh`), not by `run.sh --jitconfig`. Utsusemi invokes `run.sh` directly, so `.env` is never read. Expose environment variables to jobs at the workflow level instead:
@@ -211,7 +239,7 @@ by that host are named `{vm_name_prefix}{host_id}-{random}`. Reclaim and
 ```bash
 utsusemi --version
 utsusemi validate
-utsusemi doctor
+utsusemi doctor   # runner_version behind GitHub latest → JIT exit without claiming jobs
 utsusemi status
 utsusemi list
 utsusemi run

@@ -31,6 +31,7 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 | Status | `internal/status` | Read-only aggregation + text format for `utsusemi status` |
 | Listing | `internal/listing` | VM/runner rows for `utsusemi list` |
 | Credential view | `internal/credentialview` | Keychain credential summary (no refresh) |
+| Runner releases | `internal/runnerrelease` | GitHub rejects stale runners; `latest` resolve + doctor warn |
 | Keychain | `internal/keychain` | Platform secret store |
 | Locks | `internal/instancelock` | `utsusemi.lock` (agent/clean), used with blocking flock for credential refresh |
 | Broker (cloud) | `worker/` | Host JWT issue/verify, GitHub App calls, JIT/list/delete proxy |
@@ -59,8 +60,10 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 ### CLI (`cmd/utsusemi`)
 
 - Wire dependencies only; no pool logic, Tart commands, or OAuth/device-flow implementation.
-- `configure app` → `hostcredential.DeviceFlowClient`.
-- `configure token` → raw PAT in Keychain via `saveCredential`.
+- `configure app` — device flow only when credential missing or org/broker **value** changes; `--refresh` → `EnsureFresh(force)` then device flow. Credential-only `--refresh` skips confirm/`writeConfig` because YAML is unchanged.
+- `configure token` — token optional so config-only merges do not require Keychain writes.
+- **`configure edit|path|show`** — always `configPath` (`--config`); `--output` divergence would edit a file `run` never loads. New file seeds from embedded template so `$EDITOR` never opens invalid YAML.
+- Cross-mode `configure app|token` rejected — Keychain shape and registrar differ; mode flip via `configure edit` only.
 - **`validate`** — config + credential API check (`loadValidatedRuntime`).
 - **`status`** — local ops summary via `internal/status.Collect` (`loadConfigRuntime`, no network).
 - **`list [vms|runners]`** — VM and/or runner rows via `internal/listing.Collect` (`loadValidatedRuntime`, network).
@@ -144,7 +147,7 @@ Deploy broker separately from CLI. After JWT signing or route changes, operators
 - **Runtime assembly**: `internal/app` owns provider construction (`buildProvider`), config validation, registrar setup, and `Runtime` helpers used by CLI commands.
 - **Bootstrap env**: `spawn.BootstrapEnv` sets `RUNNER_VERSION`, `RUNNER_ARCH`, and `RUNNER_HOME` for `bootstrap.sh`. `RUNNER_ARCH` comes from `VMProvider.Capabilities().RunnerArch` (Tart: `osx-arm64`).
 - Operator docs in [README.md](README.md) Operations and Provider. Alerts/notifications are out of scope.
-- **`utsusemi doctor`**: preflight via `internal/doctor` (provider, disk, credential, host_id, runner_version, mounts, multi-host). Exit 1 when any check is `fail`.
+- **`utsusemi doctor`**: preflight via `internal/doctor` (provider, disk, credential, host_id, runner_version, mounts, multi-host). `runner_version` vs GitHub `latest` is warn-only (stale → JIT failure); skip on network error. Exit 1 when any check is `fail`.
 - **Spawn metrics**: `spawn.SaveLastSpawn` writes `{StateDir}/last_spawn.json`; `status` and spawn logs expose cold-start phase timings.
 
 ### Tests and toolchain

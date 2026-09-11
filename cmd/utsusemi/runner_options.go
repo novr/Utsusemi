@@ -33,7 +33,7 @@ func (o runnerOptions) apply(cfg *config.Config) {
 func addRunnerFlags(cmd *cobra.Command, opts *runnerOptions) {
 	cmd.Flags().StringVar(&opts.labels, "labels", defaultLabels, "comma-separated runner labels")
 	cmd.Flags().StringVar(&opts.baseImage, "base-image", defaultBaseImage, "base image used to create runner VMs")
-	cmd.Flags().StringVar(&opts.runnerVer, "runner-version", defaultRunnerVersion, "actions runner version")
+	cmd.Flags().StringVar(&opts.runnerVer, "runner-version", defaultRunnerVersion, "actions runner version (use latest to resolve from GitHub)")
 	cmd.Flags().IntVar(&opts.poolSize, "pool-size", defaultPoolSize, "pool size")
 }
 

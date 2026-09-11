@@ -67,7 +67,7 @@ func TestShellCompletionTopLevelPrefix(t *testing.T) {
 
 func TestShellCompletionConfigureSubcommands(t *testing.T) {
 	out := shellCompletions(t, "configure", "")
-	assertCompletionContains(t, out, "app", "token")
+	assertCompletionContains(t, out, "app", "token", "edit", "path", "show")
 }
 
 func TestShellCompletionListTargets(t *testing.T) {

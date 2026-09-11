@@ -8,8 +8,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/novr/utsusemi/internal/app"
-	"github.com/novr/utsusemi/internal/config"
+	"github.com/novr/utsusemi/internal/credentialview"
 )
 
 func newConfigureTokenCmd() *cobra.Command {
@@ -28,41 +27,56 @@ func newConfigureTokenCmd() *cobra.Command {
 		Short: "Configure with a fine-grained personal access token",
 		Args:  cobra.NoArgs,
 		Example: `  printf '%s' "$TOKEN" | utsusemi configure token --repo owner/repo
-  utsusemi configure token --token "$TOKEN" --org my-org`,
+  utsusemi configure token --token "$TOKEN" --org my-org
+  utsusemi configure token --pool-size 2`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if org == "" && repo == "" {
-				return fmt.Errorf("either --org or --repo is required")
-			}
 			if runnerGroup <= 0 {
 				runnerGroup = 1
 			}
-			if err := confirmConfigOverwrite(outputPath, force, cmd.InOrStdin(), cmd.OutOrStdout()); err != nil {
+			path := configureOutputPath(cmd, outputPath)
+			if err := confirmConfigOverwrite(path, force, cmd.InOrStdin(), cmd.OutOrStdout()); err != nil {
 				return err
 			}
 
-			token, err := resolveToken(cmd.InOrStdin(), tokenFlag)
+			token, err := resolveTokenOptional(cmd.InOrStdin(), tokenFlag)
 			if err != nil {
 				return err
 			}
 
-			cfg := &config.Config{
-				Target: config.TargetYAML(org, repo, runnerGroup),
-				Registration: config.Registration{
-					Mode: config.ModeGitHubPAT,
+			merge, err := mergeConfigureConfig(cmd, configureMergeInput{
+				Mode:       configureModeToken,
+				OutputPath: path,
+				Target: configureTargetInput{
+					Org:         org,
+					Repo:        repo,
+					RunnerGroup: runnerGroup,
 				},
-			}
-			opts.apply(cfg)
-			config.ApplyDefaults(cfg)
-			if _, err := app.ValidateConfig(cfg); err != nil {
+				Opts: opts,
+			})
+			if err != nil {
 				return err
 			}
-			if err := saveCredential(cfg, token); err != nil {
+
+			success := configureSuccess{WroteConfig: true}
+			if token != "" {
+				if err := saveCredential(merge.Config, token); err != nil {
+					return err
+				}
+				success.CredentialUpdated = true
+			} else {
+				info, err := credentialview.Load(merge.Config, credentialStoreOrDefault())
+				if err != nil {
+					return err
+				}
+				if !info.Present {
+					success.CredentialMissing = true
+				}
+			}
+
+			if err := writeConfig(path, merge.Config); err != nil {
 				return err
 			}
-			if err := writeConfig(outputPath, cfg); err != nil {
-				return err
-			}
-			printConfigureSuccess(outputPath, "")
+			printConfigureSuccess(path, success)
 			return nil
 		},
 	}
@@ -72,13 +86,16 @@ func newConfigureTokenCmd() *cobra.Command {
 	cmd.Flags().StringVar(&org, "org", "", "GitHub organization")
 	cmd.Flags().StringVar(&repo, "repo", "", "GitHub repository (owner/repo)")
 	cmd.Flags().Int64Var(&runnerGroup, "runner-group-id", 1, "runner group id")
-	cmd.Flags().BoolVar(&force, "force", false, "overwrite existing config without prompting")
+	cmd.Flags().BoolVar(&force, "force", false, "update existing config without prompting")
 	addRunnerFlags(cmd, &opts)
 	return cmd
 }
 
-func resolveToken(stdin io.Reader, flagValue string) (string, error) {
-	readStdin := true
+func resolveTokenOptional(stdin io.Reader, flagValue string) (string, error) {
+	if token := strings.TrimSpace(flagValue); token != "" {
+		return token, nil
+	}
+	readStdin := false
 	if file, ok := stdin.(*os.File); ok {
 		info, err := file.Stat()
 		if err != nil {
@@ -98,8 +115,5 @@ func resolveToken(stdin io.Reader, flagValue string) (string, error) {
 			return token, nil
 		}
 	}
-	if token := strings.TrimSpace(flagValue); token != "" {
-		return token, nil
-	}
-	return "", fmt.Errorf("token is required via stdin or --token")
+	return "", nil
 }

@@ -7,9 +7,12 @@ import (
 func newConfigureCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "configure",
-		Short: "Write config and store credentials",
+		Short: "Configure credentials and config file",
 	}
 	cmd.AddCommand(newConfigureAppCmd())
 	cmd.AddCommand(newConfigureTokenCmd())
+	cmd.AddCommand(newConfigureEditCmd())
+	cmd.AddCommand(newConfigurePathCmd())
+	cmd.AddCommand(newConfigureShowCmd())
 	return cmd
 }
