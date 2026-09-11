@@ -1,0 +1,17 @@
+# registration.mode picks Keychain layout and registrar (one per config).
+# hosted_app: org target + broker. github_pat: org or repo (uncomment repo, clear org).
+target:
+  org: my-org
+  runner_group_id: 1
+  # repo: owner/repo
+labels: [self-hosted, macOS, tart, arm64]
+registration:
+  mode: hosted_app
+  # broker_url: https://utsusemi-broker.novrd.workers.dev
+provider: tart
+base_image: ghcr.io/cirruslabs/macos-sequoia-base:latest
+runner_version: "2.336.0"
+pool_size: 1
+# reclaim_policy: grace
+# mounts:
+#   - ~/utsusemi-cache/swiftpm

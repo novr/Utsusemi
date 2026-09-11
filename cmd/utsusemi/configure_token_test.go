@@ -1,22 +1,13 @@
 package main
 
 import (
+	"os"
 	"strings"
 	"testing"
 )
 
-func TestResolveTokenPrefersStdin(t *testing.T) {
-	got, err := resolveToken(strings.NewReader("stdin-token\n"), "flag-token")
-	if err != nil {
-		t.Fatal(err)
-	}
-	if got != "stdin-token" {
-		t.Fatalf("got %q, want stdin-token", got)
-	}
-}
-
-func TestResolveTokenFallsBackToFlag(t *testing.T) {
-	got, err := resolveToken(strings.NewReader(""), "flag-token")
+func TestResolveTokenPrefersFlag(t *testing.T) {
+	got, err := resolveTokenOptional(strings.NewReader("stdin-token\n"), "flag-token")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -25,9 +16,35 @@ func TestResolveTokenFallsBackToFlag(t *testing.T) {
 	}
 }
 
-func TestResolveTokenRequiresInput(t *testing.T) {
-	_, err := resolveToken(strings.NewReader(""), "")
-	if err == nil {
-		t.Fatal("expected error")
+func TestResolveTokenFromStdinPipe(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := w.Write([]byte("stdin-token\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := w.Close(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := resolveTokenOptional(r, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := r.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if got != "stdin-token" {
+		t.Fatalf("got %q, want stdin-token", got)
+	}
+}
+
+func TestResolveTokenOptionalEmpty(t *testing.T) {
+	got, err := resolveTokenOptional(strings.NewReader(""), "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "" {
+		t.Fatalf("got %q, want empty", got)
 	}
 }

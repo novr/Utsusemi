@@ -3,9 +3,11 @@ package doctor
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/credentialview"
@@ -14,6 +16,7 @@ import (
 	"github.com/novr/utsusemi/internal/keychain"
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/registrar"
+	"github.com/novr/utsusemi/internal/runnerrelease"
 	"github.com/novr/utsusemi/internal/spawn"
 	"github.com/novr/utsusemi/internal/target"
 )
@@ -112,7 +115,7 @@ func Collect(ctx context.Context, in Input) Report {
 		add("hostname", StatusOK, fmt.Sprintf("%s (LocalHostName: %s)", host.Hostname, orDash(host.LocalHostName)))
 	}
 
-	checkRunnerVersion(in.Cfg, add)
+	checkRunnerVersion(ctx, in.Cfg, add)
 	checkMounts(in.Cfg, add)
 	checkMultiHost(ctx, in, host, add)
 
@@ -142,7 +145,7 @@ func checkMounts(cfg *config.Config, add func(string, Status, string)) {
 	add("mounts", StatusOK, fmt.Sprintf("%d configured", len(dirs)))
 }
 
-func checkRunnerVersion(cfg *config.Config, add func(string, Status, string)) {
+func checkRunnerVersion(ctx context.Context, cfg *config.Config, add func(string, Status, string)) {
 	snap := spawn.LoadRunnerVersionSnapshot(cfg.RunnerVersion, cfg.StateDir)
 	if snap.Configured == "" {
 		add("runner_version", StatusFail, "runner_version is empty")
@@ -158,6 +161,11 @@ func checkRunnerVersion(cfg *config.Config, add func(string, Status, string)) {
 		msg += fmt.Sprintf(" (cold_start %dms)", snap.LastMetrics.ColdStartMs)
 	} else {
 		msg += "; no successful spawn metrics yet"
+	}
+	latestClient := &http.Client{Timeout: 15 * time.Second}
+	if latest, err := runnerrelease.Latest(ctx, latestClient); err == nil && runnerrelease.Older(snap.Configured, latest) {
+		add("runner_version", StatusWarn, msg+fmt.Sprintf("; latest GitHub release is %s", latest))
+		return
 	}
 	add("runner_version", StatusOK, msg)
 }

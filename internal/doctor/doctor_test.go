@@ -27,7 +27,7 @@ func TestCheckRunnerVersionMismatch(t *testing.T) {
 		t.Fatal(err)
 	}
 	checks := recordChecks(func(add checkFn) {
-		checkRunnerVersion(&config.Config{RunnerVersion: "2.336.0", StateDir: dir}, add)
+		checkRunnerVersion(context.Background(), &config.Config{RunnerVersion: "2.336.0", StateDir: dir}, add)
 	})
 	if len(checks) != 1 || checks[0].Status != StatusWarn {
 		t.Fatalf("checks=%+v", checks)

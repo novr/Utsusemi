@@ -6,7 +6,6 @@ import (
 	"github.com/novr/utsusemi/internal/agent"
 	"github.com/novr/utsusemi/internal/app"
 	"github.com/novr/utsusemi/internal/config"
-	"github.com/novr/utsusemi/internal/keychain"
 )
 
 func loadConfigRuntime(ctx context.Context) (*app.Runtime, error) {
@@ -30,6 +29,5 @@ func buildAgent(ctx context.Context) (*agent.Agent, error) {
 }
 
 func saveCredential(cfg *config.Config, secret string) error {
-	store := keychain.New()
-	return store.Set(cfg.CredentialService(), cfg.CredentialAccount(), secret)
+	return credentialStoreOrDefault().Set(cfg.CredentialService(), cfg.CredentialAccount(), secret)
 }
