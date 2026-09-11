@@ -18,19 +18,21 @@ import (
 )
 
 type Options struct {
-	Config    *config.Config
-	Target    target.Target
-	Provider  provider.VMProvider
-	Registrar registrar.RunnerRegistrar
-	Logger    *slog.Logger
+	Config      *config.Config
+	Target      target.Target
+	Provider    provider.VMProvider
+	Registrar   registrar.RunnerRegistrar
+	Logger      *slog.Logger
+	LogFilePath string
 }
 
 type Agent struct {
-	cfg      *config.Config
-	tgt      target.Target
-	provider provider.VMProvider
-	pool     *pool.Pool
-	logger   *slog.Logger
+	cfg         *config.Config
+	tgt         target.Target
+	provider    provider.VMProvider
+	pool        *pool.Pool
+	logger      *slog.Logger
+	logFilePath string
 }
 
 func New(opts Options) (*Agent, error) {
@@ -42,14 +44,19 @@ func New(opts Options) (*Agent, error) {
 	}
 	logger := opts.Logger
 	if logger == nil {
-		logger = logging.New()
+		var err error
+		logger, err = logging.New(logging.Options{})
+		if err != nil {
+			return nil, err
+		}
 	}
 	return &Agent{
-		cfg:      opts.Config,
-		tgt:      opts.Target,
-		provider: opts.Provider,
-		pool:     pool.New(opts.Config, opts.Target, opts.Provider, opts.Registrar, logger),
-		logger:   logger,
+		cfg:         opts.Config,
+		tgt:         opts.Target,
+		provider:    opts.Provider,
+		pool:        pool.New(opts.Config, opts.Target, opts.Provider, opts.Registrar, logger),
+		logger:      logger,
+		logFilePath: opts.LogFilePath,
 	}, nil
 }
 
@@ -75,13 +82,17 @@ func (a *Agent) Run(ctx context.Context) error {
 		a.pool.BeginShutdown()
 	}()
 
-	a.logger.Info("agent started",
+	startAttrs := []any{
 		"target", a.tgt.String(),
 		"pool_size", a.cfg.PoolSize,
 		"labels", a.cfg.Labels,
 		"state_dir", a.cfg.StateDir,
 		"pool_check_interval", a.cfg.PoolCheckInterval.Duration().String(),
-	)
+	}
+	if a.logFilePath != "" {
+		startAttrs = append(startAttrs, "log_file", a.logFilePath)
+	}
+	a.logger.Info("agent started", startAttrs...)
 	return a.pool.Run(ctx)
 }
 

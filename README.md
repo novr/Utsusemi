@@ -25,6 +25,7 @@ utsusemi run
 |------|---------|
 | Config | `~/.config/utsusemi/config.yaml` |
 | State | `~/.local/state/utsusemi` |
+| Agent log | `{state_dir}/agent.log` (`utsusemi run --log`; JSON lines) |
 | Credentials | Keychain (same macOS user as setup and service) |
 
 Use `--config` or `UTSUSEMI_CONFIG` when multiple agents on one Mac must not share state (see [Personal account](#personal-account-no-org)).
@@ -243,6 +244,8 @@ utsusemi doctor   # runner_version behind GitHub latest → JIT exit without cla
 utsusemi status
 utsusemi list
 utsusemi run
+utsusemi run --log              # also append to {state_dir}/agent.log
+utsusemi run --log=/path/to.log
 brew services start utsusemi
 ```
 
@@ -254,6 +257,10 @@ utsusemi clean --dry-run
 ```
 
 ### Service logs
+
+`utsusemi run --log` mirrors structured logs to `{state_dir}/agent.log` (or `--log=/path`) so foreground runs leave a trail without relying on the terminal buffer. Tart subprocess lines are captured in the file even on a TTY (console format may differ from the `  | ` prefix). `newsyslog` below applies to brew launchd logs only, not `{state_dir}/agent.log`.
+
+`brew services` also captures stdout/stderr via launchd:
 
 - `$(brew --prefix)/var/log/utsusemi.log`
 - `$(brew --prefix)/var/log/utsusemi.error.log`

@@ -2,11 +2,16 @@ package logging
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 )
+
+const agentLogFile = "agent.log"
 
 var sensitivePatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)(authorization:\s*bearer\s+)[^\s]+`),
@@ -18,21 +23,80 @@ var sensitivePatterns = []*regexp.Regexp{
 	regexp.MustCompile(`(?i)("host_jwt"\s*:\s*")[^"]+`),
 }
 
+type Options struct {
+	LogFile string
+}
+
 type redactingHandler struct {
 	inner slog.Handler
 }
 
-func New() *slog.Logger {
-	opts := &slog.HandlerOptions{Level: slog.LevelInfo}
-	var inner slog.Handler
+type fanoutHandler struct {
+	handlers []slog.Handler
+}
+
+func New(opts Options) (*slog.Logger, error) {
+	logPath := strings.TrimSpace(opts.LogFile)
+	fileLogEnabled = logPath != ""
+	handlerOpts := &slog.HandlerOptions{Level: slog.LevelInfo}
+
+	handlers := make([]slog.Handler, 0, 2)
 	if isTerminal(os.Stdout) {
-		inner = newHumanHandler(os.Stdout, slog.LevelInfo)
+		handlers = append(handlers, newHumanHandler(os.Stdout, slog.LevelInfo))
 	} else {
-		inner = slog.NewJSONHandler(os.Stdout, opts)
+		handlers = append(handlers, slog.NewJSONHandler(os.Stdout, handlerOpts))
 	}
+
+	if fileLogEnabled {
+		file, err := openLogFile(logPath)
+		if err != nil {
+			fileLogEnabled = false
+			return nil, fmt.Errorf("open log file %s: %w", logPath, err)
+		}
+		handlers = append(handlers, slog.NewJSONHandler(file, handlerOpts))
+	}
+
+	inner := fanoutHandler{handlers: handlers}
 	logger := slog.New(redactingHandler{inner: inner})
-	subprocessLogger = logger
-	return logger
+	if fileLogEnabled {
+		subprocessLogger = logger
+		slog.SetDefault(logger)
+	} else {
+		subprocessLogger = nil
+	}
+	return logger, nil
+}
+
+func ResolveLogFile(flagValue, stateDir string) (string, error) {
+	flagValue = strings.TrimSpace(flagValue)
+	if flagValue != "" && flagValue != "-" {
+		return flagValue, nil
+	}
+	path := AgentLogPath(stateDir)
+	if path == "" {
+		return "", fmt.Errorf("state_dir is empty; set state_dir in config or pass --log=/path/to.log")
+	}
+	return path, nil
+}
+
+func AgentLogPath(stateDir string) string {
+	if strings.TrimSpace(stateDir) == "" {
+		return ""
+	}
+	return filepath.Join(stateDir, agentLogFile)
+}
+
+func openLogFile(path string) (io.Writer, error) {
+	dir := filepath.Dir(path)
+	if dir != "." {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return nil, err
+		}
+	}
+	if info, err := os.Stat(path); err == nil && info.IsDir() {
+		return nil, fmt.Errorf("%s is a directory", path)
+	}
+	return os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600)
 }
 
 func isTerminal(f *os.File) bool {
@@ -41,6 +105,40 @@ func isTerminal(f *os.File) bool {
 		return false
 	}
 	return info.Mode()&os.ModeCharDevice != 0
+}
+
+func (h fanoutHandler) Enabled(ctx context.Context, level slog.Level) bool {
+	for _, handler := range h.handlers {
+		if handler.Enabled(ctx, level) {
+			return true
+		}
+	}
+	return false
+}
+
+func (h fanoutHandler) Handle(ctx context.Context, record slog.Record) error {
+	for _, handler := range h.handlers {
+		if err := handler.Handle(ctx, record.Clone()); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (h fanoutHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	out := make([]slog.Handler, len(h.handlers))
+	for i, handler := range h.handlers {
+		out[i] = handler.WithAttrs(attrs)
+	}
+	return fanoutHandler{handlers: out}
+}
+
+func (h fanoutHandler) WithGroup(name string) slog.Handler {
+	out := make([]slog.Handler, len(h.handlers))
+	for i, handler := range h.handlers {
+		out[i] = handler.WithGroup(name)
+	}
+	return fanoutHandler{handlers: out}
 }
 
 func (h redactingHandler) Enabled(ctx context.Context, level slog.Level) bool {
