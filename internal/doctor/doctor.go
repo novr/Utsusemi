@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/novr/utsusemi/internal/brokerhttp"
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/credentialview"
 	"github.com/novr/utsusemi/internal/hostid"
@@ -68,6 +69,8 @@ func Collect(ctx context.Context, in Input) Report {
 
 	add("config", StatusOK, "loaded")
 
+	checkLoopbackBroker(ctx, in.Cfg, add)
+
 	if err := in.Provider.Available(); err != nil {
 		add("provider", StatusFail, err.Error())
 	} else {
@@ -120,6 +123,21 @@ func Collect(ctx context.Context, in Input) Report {
 	checkMultiHost(ctx, in, host, add)
 
 	return Report{Checks: checks}
+}
+
+func checkLoopbackBroker(ctx context.Context, cfg *config.Config, add func(string, Status, string)) {
+	if cfg.Registration.Mode != config.ModeHostedApp {
+		return
+	}
+	url := cfg.Registration.BrokerURL
+	if !brokerhttp.IsLoopbackBrokerURL(url) {
+		return
+	}
+	if err := brokerhttp.CheckReachable(ctx, url); err != nil {
+		add("broker", StatusFail, err.Error())
+		return
+	}
+	add("broker", StatusOK, "reachable")
 }
 
 func checkMounts(cfg *config.Config, add func(string, Status, string)) {

@@ -27,6 +27,7 @@ func initRootCmd() {
 
 		rootCmd.AddCommand(newVersionCmd())
 		rootCmd.AddCommand(newRunCmd())
+		rootCmd.AddCommand(newBrokerCmd())
 		rootCmd.AddCommand(newConfigureCmd())
 		rootCmd.AddCommand(newValidateCmd())
 		rootCmd.AddCommand(newStatusCmd())

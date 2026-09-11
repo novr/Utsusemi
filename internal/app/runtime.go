@@ -5,6 +5,7 @@ import (
 	"log/slog"
 
 	"github.com/novr/utsusemi/internal/agent"
+	"github.com/novr/utsusemi/internal/brokerhttp"
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/doctor"
 	"github.com/novr/utsusemi/internal/keychain"
@@ -119,6 +120,11 @@ func LoadValidated(ctx context.Context, opts LoadOptions) (*Runtime, error) {
 	rt, err := Load(ctx, opts)
 	if err != nil {
 		return nil, err
+	}
+	if rt.Config.Registration.Mode == config.ModeHostedApp {
+		if err := brokerhttp.CheckReachable(ctx, rt.Config.Registration.BrokerURL); err != nil {
+			return nil, err
+		}
 	}
 	if err := rt.ValidateCredential(ctx); err != nil {
 		return nil, err

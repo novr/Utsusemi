@@ -1,0 +1,12 @@
+target:
+  org: my-org
+  runner_group_id: 1
+labels: [self-hosted, macOS, tart, arm64]
+registration:
+  mode: hosted_app
+  broker_url: http://127.0.0.1:8787
+  # oauth_client_id: Iv23…   # required for a private GitHub App; omit for the public Utsusemi App
+provider: tart
+base_image: ghcr.io/cirruslabs/macos-sequoia-base:latest
+runner_version: "2.336.0"
+pool_size: 1

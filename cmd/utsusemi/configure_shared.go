@@ -31,7 +31,8 @@ type configureTargetInput struct {
 }
 
 type configureAppInput struct {
-	BrokerURL string
+	BrokerURL     string
+	OAuthClientID string
 }
 
 type configureMergeInput struct {
@@ -43,10 +44,11 @@ type configureMergeInput struct {
 }
 
 type configureMergeResult struct {
-	Config          *config.Config
-	ExistingConfig  bool
-	OrgAuthChanged  bool
+	Config            *config.Config
+	ExistingConfig    bool
+	OrgAuthChanged    bool
 	BrokerAuthChanged bool
+	OAuthAuthChanged  bool
 }
 
 func mergeConfigureConfig(cmd *cobra.Command, in configureMergeInput) (configureMergeResult, error) {
@@ -73,11 +75,13 @@ func mergeConfigureConfig(cmd *cobra.Command, in configureMergeInput) (configure
 
 	orgChanged := cmd.Flags().Changed("org")
 	brokerChanged := cmd.Flags().Changed("broker")
+	oauthChanged := cmd.Flags().Changed("oauth-client-id")
 	repoChanged := cmd.Flags().Changed("repo")
 	runnerGroupChanged := cmd.Flags().Changed("runner-group-id")
 
 	prevOrg := cfg.Target.Org
 	prevBroker := cfg.Registration.BrokerURL
+	prevOAuth := cfg.Registration.OAuthClientID
 
 	if existing {
 		if orgChanged {
@@ -102,6 +106,11 @@ func mergeConfigureConfig(cmd *cobra.Command, in configureMergeInput) (configure
 			cfg.Registration.BrokerURL = in.App.BrokerURL
 		}
 		brokerAuthChanged = brokerChanged && cfg.Registration.BrokerURL != prevBroker
+		if existing && oauthChanged {
+			cfg.Registration.OAuthClientID = in.App.OAuthClientID
+		} else if !existing {
+			cfg.Registration.OAuthClientID = in.App.OAuthClientID
+		}
 	} else {
 		cfg.Registration.Mode = config.ModeGitHubPAT
 	}
@@ -114,8 +123,11 @@ func mergeConfigureConfig(cmd *cobra.Command, in configureMergeInput) (configure
 		cfg.Registration.Mode = string(in.Mode)
 		if in.Mode == configureModeApp {
 			cfg.Registration.BrokerURL = in.App.BrokerURL
+			cfg.Registration.OAuthClientID = in.App.OAuthClientID
 		}
 	}
+
+	oauthAuthChanged := oauthChanged && cfg.Registration.OAuthClientID != prevOAuth
 
 	if err := validateConfigureTarget(cfg, existing, in.Mode); err != nil {
 		return configureMergeResult{}, err
@@ -131,6 +143,7 @@ func mergeConfigureConfig(cmd *cobra.Command, in configureMergeInput) (configure
 		ExistingConfig:    existing,
 		OrgAuthChanged:    orgAuthChanged,
 		BrokerAuthChanged: brokerAuthChanged,
+		OAuthAuthChanged:  oauthAuthChanged,
 	}, nil
 }
 
@@ -225,7 +238,7 @@ func resolveRunnerVersionFlag(ctx context.Context, cmd *cobra.Command, opts *run
 }
 
 func needsAppDeviceFlow(cfg *config.Config, merge configureMergeResult) bool {
-	if merge.OrgAuthChanged || merge.BrokerAuthChanged {
+	if merge.OrgAuthChanged || merge.BrokerAuthChanged || merge.OAuthAuthChanged {
 		return true
 	}
 	info, err := credentialview.Load(cfg, credentialStoreOrDefault())
@@ -243,7 +256,7 @@ type configureSuccess struct {
 }
 
 var configureAppConfigFlagNames = []string{
-	"broker", "org", "runner-group-id",
+	"broker", "oauth-client-id", "org", "runner-group-id",
 	"labels", "base-image", "runner-version", "pool-size",
 }
 
