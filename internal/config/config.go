@@ -131,6 +131,9 @@ func applyDefaults(cfg *Config) {
 	if cfg.Registration.CredentialKeychainService == "" {
 		cfg.Registration.CredentialKeychainService = DefaultCredentialService
 	}
+	if cfg.Registration.Mode == ModeHostedApp && cfg.Registration.BrokerURL == "" {
+		cfg.Registration.BrokerURL = DefaultHostedAppBrokerURL
+	}
 }
 
 func (c *Config) CredentialService() string {

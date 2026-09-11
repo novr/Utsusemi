@@ -45,6 +45,11 @@ func newConfigureAppCmd() *cobra.Command {
 				return err
 			}
 			path := configureOutputPath(cmd, outputPath)
+			if refresh {
+				if err := ensureConfigureAppRefreshCompatible(path); err != nil {
+					return err
+				}
+			}
 			if !configureOnlyCredentialRefresh(cmd, refresh) {
 				if err := confirmConfigOverwrite(path, force, cmd.InOrStdin(), cmd.OutOrStdout()); err != nil {
 					return err

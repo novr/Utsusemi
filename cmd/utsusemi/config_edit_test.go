@@ -32,7 +32,7 @@ func TestConfigEditWritesValidatedConfig(t *testing.T) {
 	}
 
 	editor := filepath.Join(dir, "editor.sh")
-	script := "#!/bin/sh\nsed -i '' 's/pool_size: 1/pool_size: 2/' \"$1\"\n"
+	script := "#!/bin/sh\ntmp=\"$1.tmp\"\nsed 's/pool_size: 1/pool_size: 2/' \"$1\" > \"$tmp\" && mv \"$tmp\" \"$1\"\n"
 	if err := os.WriteFile(editor, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -62,7 +62,7 @@ func TestConfigEditKeepsTempOnValidationError(t *testing.T) {
 	}
 
 	editor := filepath.Join(dir, "editor.sh")
-	script := "#!/bin/sh\nsed -i '' 's/pool_size: 1/pool_size: 0/' \"$1\"\n"
+	script := "#!/bin/sh\ntmp=\"$1.tmp\"\nsed 's/pool_size: 1/pool_size: 0/' \"$1\" > \"$tmp\" && mv \"$tmp\" \"$1\"\n"
 	if err := os.WriteFile(editor, []byte(script), 0o755); err != nil {
 		t.Fatal(err)
 	}
@@ -77,6 +77,35 @@ func TestConfigEditKeepsTempOnValidationError(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), ".utsusemi-config-edit-") {
 		t.Fatalf("expected temp path in error: %v", err)
+	}
+}
+
+func TestConfigEditNewFileFromTemplate(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	editor := filepath.Join(dir, "editor.sh")
+	script := "#!/bin/sh\ntmp=\"$1.tmp\"\nsed 's/my-org/smoke-org/' \"$1\" > \"$tmp\" && mv \"$tmp\" \"$1\"\n"
+	if err := os.WriteFile(editor, []byte(script), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("EDITOR", editor)
+
+	cmd := &cobra.Command{}
+	cmd.SetOut(&bytes.Buffer{})
+	cmd.SetErr(&bytes.Buffer{})
+	if err := runConfigEdit(cmd, path); err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.Target.Org != "smoke-org" {
+		t.Fatalf("org=%q", loaded.Target.Org)
+	}
+	if loaded.Registration.BrokerURL != config.DefaultHostedAppBrokerURL {
+		t.Fatalf("broker_url=%q", loaded.Registration.BrokerURL)
 	}
 }
 

@@ -185,6 +185,22 @@ func TestTryAppOAuthRefreshRequiresCredential(t *testing.T) {
 	}
 }
 
+func TestEnsureConfigureAppRefreshCompatibleRejectsPAT(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	existing := &config.Config{
+		Target: config.TargetYAML("", "owner/repo", 1),
+		Registration: config.Registration{Mode: config.ModeGitHubPAT},
+		Provider:     "tart",
+	}
+	if err := writeConfig(path, existing); err != nil {
+		t.Fatal(err)
+	}
+	if err := ensureConfigureAppRefreshCompatible(path); err == nil {
+		t.Fatal("expected error for github_pat config")
+	}
+}
+
 func TestConfigureOnlyCredentialRefresh(t *testing.T) {
 	cmd := &cobra.Command{}
 	var refresh bool

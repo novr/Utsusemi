@@ -260,6 +260,20 @@ func configureOnlyCredentialRefresh(cmd *cobra.Command, refresh bool) bool {
 	return refresh && !configureAppConfigFlagsChanged(cmd)
 }
 
+func ensureConfigureAppRefreshCompatible(path string) error {
+	existing, cfg, err := loadExistingConfig(path)
+	if err != nil {
+		return err
+	}
+	if !existing || cfg.Registration.Mode == "" || cfg.Registration.Mode == config.ModeHostedApp {
+		return nil
+	}
+	return fmt.Errorf(
+		"configure app --refresh requires registration.mode %s (current: %s); renew credentials with configure token",
+		config.ModeHostedApp, cfg.Registration.Mode,
+	)
+}
+
 func credentialStoreOrDefault() keychain.Store {
 	if credentialStore != nil {
 		return credentialStore
