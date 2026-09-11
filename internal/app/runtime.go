@@ -25,9 +25,11 @@ type Runtime struct {
 }
 
 type LoadOptions struct {
-	ConfigPath string
-	Exec       provider.CommandExecutor
-	Logger     *slog.Logger
+	ConfigPath      string
+	Exec            provider.CommandExecutor
+	Logger          *slog.Logger
+	LogFile         string
+	ResolveAgentLog bool
 }
 
 func Load(ctx context.Context, opts LoadOptions) (*Runtime, error) {
@@ -52,7 +54,17 @@ func Load(ctx context.Context, opts LoadOptions) (*Runtime, error) {
 
 	log := opts.Logger
 	if log == nil {
-		log = logging.New()
+		logPath := ""
+		if opts.ResolveAgentLog {
+			logPath, err = logging.ResolveLogFile(opts.LogFile, cfg.StateDir)
+			if err != nil {
+				return nil, err
+			}
+		}
+		log, err = logging.New(logging.Options{LogFile: logPath})
+		if err != nil {
+			return nil, err
+		}
 	}
 	store := keychain.New()
 	reg, err := registrar.NewFromConfig(cfg, store, log)

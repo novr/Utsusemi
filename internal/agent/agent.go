@@ -42,7 +42,11 @@ func New(opts Options) (*Agent, error) {
 	}
 	logger := opts.Logger
 	if logger == nil {
-		logger = logging.New()
+		var err error
+		logger, err = logging.New(logging.Options{})
+		if err != nil {
+			return nil, err
+		}
 	}
 	return &Agent{
 		cfg:      opts.Config,

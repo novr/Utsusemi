@@ -9,7 +9,10 @@ import (
 
 const subprocessPrefix = "  | "
 
-var subprocessLogger *slog.Logger
+var (
+	subprocessLogger *slog.Logger
+	fileLogEnabled   bool
+)
 
 // IsTerminalWriter reports whether w is an interactive character device.
 func IsTerminalWriter(w io.Writer) bool {
@@ -22,10 +25,7 @@ func IsTerminalWriter(w io.Writer) bool {
 
 // SubprocessWriter formats nested command output for the current log mode.
 func SubprocessWriter(dst io.Writer) io.Writer {
-	if IsTerminalWriter(dst) {
-		return &linePrefixWriter{dst: dst, prefix: []byte(subprocessPrefix)}
-	}
-	if subprocessLogger != nil {
+	if subprocessLogger != nil && (fileLogEnabled || !IsTerminalWriter(dst)) {
 		return &slogLineWriter{logger: subprocessLogger.With("component", "subprocess")}
 	}
 	return &linePrefixWriter{dst: dst, prefix: []byte(subprocessPrefix)}

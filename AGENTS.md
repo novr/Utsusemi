@@ -31,6 +31,7 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 | Status | `internal/status` | Read-only aggregation + text format for `utsusemi status` |
 | Listing | `internal/listing` | VM/runner rows for `utsusemi list` |
 | Credential view | `internal/credentialview` | Keychain credential summary (no refresh) |
+| Logging | `internal/logging` | slog + redaction; `run --log` fans out to stdout and a JSON log file |
 | Runner releases | `internal/runnerrelease` | GitHub rejects stale runners; `latest` resolve + doctor warn |
 | Keychain | `internal/keychain` | Platform secret store |
 | Locks | `internal/instancelock` | `utsusemi.lock` (agent/clean), used with blocking flock for credential refresh |
@@ -67,6 +68,7 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 - **`validate`** — config + credential API check (`loadValidatedRuntime`).
 - **`status`** — local ops summary via `internal/status.Collect` (`loadConfigRuntime`, no network).
 - **`list [vms|runners]`** — VM and/or runner rows via `internal/listing.Collect` (`loadValidatedRuntime`, network).
+- **`run --log`** — `ResolveAgentLog` picks `{state_dir}/agent.log` when the flag has no path; file sink is JSON regardless of TTY.
 
 ### Shell completion
 

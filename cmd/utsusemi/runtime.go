@@ -20,8 +20,13 @@ func buildAgentFromRuntime(rt *app.Runtime) (*agent.Agent, error) {
 	return rt.Agent()
 }
 
-func buildAgent(ctx context.Context) (*agent.Agent, error) {
-	rt, err := loadValidatedRuntime(ctx)
+func buildAgent(ctx context.Context, logEnabled bool, logFile string) (*agent.Agent, error) {
+	opts := app.LoadOptions{ConfigPath: configPath}
+	if logEnabled {
+		opts.ResolveAgentLog = true
+		opts.LogFile = logFile
+	}
+	rt, err := app.LoadValidated(ctx, opts)
 	if err != nil {
 		return nil, err
 	}
