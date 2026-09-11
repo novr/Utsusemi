@@ -63,7 +63,17 @@ Re-running `configure` merges **only changed flags** so hand-edited keys (`recla
 
 `--runner-version latest` pins to the current [actions/runner](https://github.com/actions/runner/releases) release so JIT registration is not rejected when GitHub raises the minimum.
 
-Examples: [examples/config.template.yaml](examples/config.template.yaml), [examples/config.pat.yaml](examples/config.pat.yaml).
+Examples: [examples/config.template.yaml](examples/config.template.yaml), [examples/config.pat.yaml](examples/config.pat.yaml), [examples/config.local-broker.yaml](examples/config.local-broker.yaml).
+
+### Choosing authentication
+
+| Target | GitHub IP allowlist | Use |
+|--------|---------------------|-----|
+| Repository | Does not matter | PAT (`configure token --repo`). A GitHub App is not required. |
+| Organization | None | Hosted GitHub App (`configure app`) |
+| Organization | Enabled | PAT first (`configure token --org`). App mode needs **your** GitHub App **and** a broker whose outbound IP GitHub allows (this Mac running `utsusemi broker`, or another host you control). The hosted Cloudflare broker cannot pin its egress IP. |
+
+Org JIT still needs an org admin to install a GitHub App. Repo Admin on a member org is enough for repo PAT runners, not org runners.
 
 ### GitHub App
 
@@ -99,7 +109,24 @@ While the agent is stopped: `utsusemi configure app --refresh` — same OAuth pa
 
 **Availability.** A running agent holds a 30-day host credential locally; the broker is only contacted during `configure app` and at refresh time (≤7 days remaining). If the broker is unreachable at refresh, the existing credential continues to work until it expires. A monitoring system that watches `utsusemi validate` exit code will surface the failure before the credential window closes.
 
-**Self-hosting.** `broker_url` is configurable; point it at your own deployment to remove the dependency on the hosted service. The broker implementation is not currently published.
+**Local broker.** For an allowlisted org, or to stop depending on the hosted Workers deployment, run a loopback broker on this Mac. It talks to `api.github.com` from this host (or the VPN/egress IP GitHub already allows). Bind is IPv4 `127.0.0.1` only.
+
+1. Create a GitHub App (org owner). Enable GitHub Actions, including org self-hosted runners, and install it on the org. Copy the App ID and download the private key PEM.
+2. Start the broker (leave this process running; it does **not** replace `utsusemi run`):
+
+```bash
+utsusemi broker --app-id 123456 --app-private-key-file ./app.pem
+```
+
+App ID, PEM, and the host-JWT signing key are stored in Keychain (`utsusemi-broker`). They are not written to `config.yaml`. Later starts can omit the flags.
+
+3. Point `hosted_app` at loopback and (for your App) pass the App’s OAuth client ID:
+
+```bash
+utsusemi configure app --org my-org --broker http://127.0.0.1:8787 --oauth-client-id Iv23…
+```
+
+`validate` / `run` / `doctor` fail if `broker_url` is loopback and nothing is listening. Example: [examples/config.local-broker.yaml](examples/config.local-broker.yaml).
 
 **Data.** During the exchange the broker receives a short-lived GitHub user access token (8 h lifetime) and the target identifier (org or repo name). It uses these to mint a scoped host credential and does not retain them. The refresh token is stored only in the local keychain and is never sent to the broker.
 

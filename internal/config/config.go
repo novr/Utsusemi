@@ -15,9 +15,9 @@ const (
 	ModeGitHubPAT = "github_pat"
 	ModeHostedApp = "hosted_app"
 
-	ReclaimSoft = "soft"
+	ReclaimSoft  = "soft"
 	ReclaimGrace = "grace"
-	ReclaimHard = "hard"
+	ReclaimHard  = "hard"
 
 	DefaultPoolCheckInterval      = 30 * time.Second
 	DefaultReconciliationInterval = 5 * time.Minute
@@ -61,8 +61,9 @@ func (d *Duration) UnmarshalYAML(value *yaml.Node) error {
 }
 
 type Registration struct {
-	Mode                    string `yaml:"mode"`
-	BrokerURL               string `yaml:"broker_url,omitempty"`
+	Mode                      string `yaml:"mode"`
+	OAuthClientID             string `yaml:"oauth_client_id,omitempty"`
+	BrokerURL                 string `yaml:"broker_url,omitempty"`
 	CredentialKeychainService string `yaml:"credential_keychain_service,omitempty"`
 }
 

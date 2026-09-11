@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -21,18 +22,19 @@ import (
 
 func newConfigureAppCmd() *cobra.Command {
 	var (
-		brokerURL   string
-		org         string
-		runnerGroup int64
-		outputPath  string
-		force       bool
-		refresh     bool
-		opts        runnerOptions
+		oauthClientID string
+		brokerURL     string
+		org           string
+		runnerGroup   int64
+		outputPath    string
+		force         bool
+		refresh       bool
+		opts          runnerOptions
 	)
 
 	cmd := &cobra.Command{
-		Use:     "app",
-		Short:   "Configure with the Utsusemi GitHub App",
+		Use:   "app",
+		Short: "Configure with the Utsusemi GitHub App",
 		Example: `  utsusemi configure app --org my-org
   utsusemi configure app --pool-size 2
   utsusemi configure app --runner-version latest
@@ -64,7 +66,8 @@ func newConfigureAppCmd() *cobra.Command {
 					RunnerGroup: runnerGroup,
 				},
 				App: configureAppInput{
-					BrokerURL: brokerURL,
+					BrokerURL:     brokerURL,
+					OAuthClientID: strings.TrimSpace(oauthClientID),
 				},
 				Opts: opts,
 			})
@@ -109,6 +112,7 @@ func newConfigureAppCmd() *cobra.Command {
 	}
 
 	cmd.Flags().StringVar(&brokerURL, "broker", config.DefaultHostedAppBrokerURL, "broker base URL")
+	cmd.Flags().StringVar(&oauthClientID, "oauth-client-id", "", "GitHub App OAuth client ID (defaults to the public Utsusemi App)")
 	cmd.Flags().StringVar(&org, "org", "", "GitHub organization")
 	cmd.Flags().Int64Var(&runnerGroup, "runner-group-id", 1, "runner group id for org target")
 	cmd.Flags().StringVar(&outputPath, "output", configPath, "config output path")
@@ -128,12 +132,13 @@ func tryAppOAuthRefresh(ctx context.Context, cfg *config.Config) (string, error)
 	}
 	store := credentialStoreOrDefault()
 	mgr := hostcredential.NewManager(hostcredential.ManagerOptions{
-		Store:      store,
-		Service:    cfg.CredentialService(),
-		Account:    cfg.CredentialAccount(),
-		BrokerURL:  cfg.Registration.BrokerURL,
-		LockPath:   filepath.Join(cfg.StateDir, "credential.refresh.lock"),
-		HTTPClient: &http.Client{Timeout: 30 * time.Second},
+		Store:         store,
+		Service:       cfg.CredentialService(),
+		Account:       cfg.CredentialAccount(),
+		BrokerURL:     cfg.Registration.BrokerURL,
+		OAuthClientID: cfg.Registration.OAuthClientID,
+		LockPath:      filepath.Join(cfg.StateDir, "credential.refresh.lock"),
+		HTTPClient:    &http.Client{Timeout: 30 * time.Second},
 	})
 	if _, err := mgr.EnsureFresh(ctx, tgt, true); err != nil {
 		return "", err
@@ -159,7 +164,7 @@ func runAppDeviceFlow(cmd *cobra.Command, cfg *config.Config) (string, string, e
 	}
 
 	flowClient := &hostcredential.DeviceFlowClient{}
-	flow, err := flowClient.Authorize(cmd.Context(), hostcredential.PublicAppClientID, hostcredential.DeviceFlowPrompt{
+	flow, err := flowClient.Authorize(cmd.Context(), hostcredential.ResolveOAuthClientID(cfg.Registration.OAuthClientID), hostcredential.DeviceFlowPrompt{
 		WriteUserCode: func(userCode, verificationURI string) {
 			fmt.Fprintf(cmd.OutOrStdout(), "GitHub device code: %s\n", userCode)
 			fmt.Fprintf(cmd.OutOrStdout(), "Verification URL: %s\n", verificationURI)

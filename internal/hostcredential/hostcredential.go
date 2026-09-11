@@ -10,6 +10,14 @@ import (
 	"github.com/novr/utsusemi/internal/target"
 )
 
+func ResolveOAuthClientID(id string) string {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return PublicAppClientID
+	}
+	return id
+}
+
 const (
 	PublicAppClientID        = "Iv23ctWrJ3Yq0JDLEa85"
 	BundleVersion            = 1

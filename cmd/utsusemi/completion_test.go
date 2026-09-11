@@ -56,7 +56,7 @@ func assertCompletionContains(t *testing.T, output string, want ...string) {
 func TestShellCompletionTopLevel(t *testing.T) {
 	out := shellCompletions(t, "")
 	assertCompletionContains(t, out,
-		"run", "validate", "status", "doctor", "list", "configure", "clean", "version",
+		"run", "broker", "validate", "status", "doctor", "list", "configure", "clean", "version",
 	)
 }
 

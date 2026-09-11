@@ -34,13 +34,14 @@ func NewBrokerRegistrar(store keychain.Store, cfg *config.Config, logger *slog.L
 		logger:  logger,
 	}
 	reg.credentials = hostcredential.NewManager(hostcredential.ManagerOptions{
-		Store:      store,
-		Service:    cfg.CredentialService(),
-		Account:    cfg.CredentialAccount(),
-		BrokerURL:  baseURL,
-		LockPath:   filepath.Join(cfg.StateDir, "credential.refresh.lock"),
-		HTTPClient: client,
-		OnFailure:  reg.logCredentialFailure,
+		Store:         store,
+		Service:       cfg.CredentialService(),
+		Account:       cfg.CredentialAccount(),
+		BrokerURL:     baseURL,
+		OAuthClientID: cfg.Registration.OAuthClientID,
+		LockPath:      filepath.Join(cfg.StateDir, "credential.refresh.lock"),
+		HTTPClient:    client,
+		OnFailure:     reg.logCredentialFailure,
 	})
 	return reg
 }
@@ -59,7 +60,7 @@ func (r *BrokerRegistrar) ValidateCredential(ctx context.Context, service, accou
 			"target": targetBody,
 			"prefix": "",
 		}
-		return r.post(ctx, brokerRunnersListPath, token, reqBody, &struct {
+		return r.post(ctx, BrokerRunnersListPath, token, reqBody, &struct {
 			Runners []Runner `json:"runners"`
 		}{})
 	})
@@ -80,7 +81,7 @@ func (r *BrokerRegistrar) CreateJIT(ctx context.Context, tgt target.Target, labe
 	}
 	var resp jitResponse
 	err = r.requestWithCredential(ctx, tgt, func(token string) error {
-		return r.post(ctx, brokerJITConfigPath, token, reqBody, &resp)
+		return r.post(ctx, BrokerJITConfigPath, token, reqBody, &resp)
 	})
 	if err != nil {
 		return JITConfig{}, err
@@ -102,7 +103,7 @@ func (r *BrokerRegistrar) DeleteRunner(ctx context.Context, tgt target.Target, r
 	if err != nil {
 		return err
 	}
-	path := brokerRunnerPath(runnerID)
+	path := BrokerRunnerPath(runnerID)
 	reqBody := map[string]any{"target": targetBody}
 	return r.requestWithCredential(ctx, tgt, func(token string) error {
 		return r.delete(ctx, path, token, reqBody)
@@ -125,7 +126,7 @@ func (r *BrokerRegistrar) ListRunners(ctx context.Context, tgt target.Target, pr
 		Runners []Runner `json:"runners"`
 	}
 	err = r.requestWithCredential(ctx, tgt, func(token string) error {
-		return r.post(ctx, brokerRunnersListPath, token, reqBody, &resp)
+		return r.post(ctx, BrokerRunnersListPath, token, reqBody, &resp)
 	})
 	if err != nil {
 		return nil, err

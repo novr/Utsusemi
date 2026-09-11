@@ -25,6 +25,7 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 | PAT mode | `internal/registrar/pat.go` | GitHub REST with PAT from Keychain |
 | Broker mode | `internal/registrar/broker.go` | Broker HTTP; `requestWithCredential` + `hostcredential.Manager` |
 | Host credentials | `internal/hostcredential` | Bundle (hosted app), device flow, OAuth refresh, exchange, `EnsureFresh` |
+| Local broker | `internal/brokerhttp` | Loopback HTTP (`127.0.0.1`); Worker-compatible routes |
 | Targets | `internal/target` | Org/repo target types, parsing, `RequireOrg`, lowercase org |
 | Config | `internal/config` | YAML model, defaults, `Validate`, `ValidateBrokerURL` |
 | Leases | `internal/lease` | On-disk VM ↔ runner ↔ agent session |
@@ -61,11 +62,12 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 ### CLI (`cmd/utsusemi`)
 
 - Wire dependencies only; no pool logic, Tart commands, or OAuth/device-flow implementation.
-- `configure app` — device flow only when credential missing or org/broker **value** changes; `--refresh` → `EnsureFresh(force)` then device flow. Credential-only `--refresh` skips confirm/`writeConfig` because YAML is unchanged.
+- `configure app` — device flow only when credential missing or org/broker/oauth-client-id **value** changes; `--refresh` → `EnsureFresh(force)` then device flow. Credential-only `--refresh` skips confirm/`writeConfig` because YAML is unchanged.
 - `configure token` — token optional so config-only merges do not require Keychain writes.
 - **`configure edit|path|show`** — always `configPath` (`--config`); `--output` divergence would edit a file `run` never loads. New file seeds from embedded template so `$EDITOR` never opens invalid YAML.
 - Cross-mode `configure app|token` rejected — Keychain shape and registrar differ; mode flip via `configure edit` only.
-- **`validate`** — config + credential API check (`loadValidatedRuntime`).
+- **`broker`** — local GitHub App broker on `127.0.0.1`; does **not** take `utsusemi.lock` (run it beside `utsusemi run`).
+- **`validate`** — config + credential API check (`loadValidatedRuntime`). Loopback `broker_url` must be reachable first.
 - **`status`** — local ops summary via `internal/status.Collect` (`loadConfigRuntime`, no network).
 - **`list [vms|runners]`** — VM and/or runner rows via `internal/listing.Collect` (`loadValidatedRuntime`, network).
 - **`run --log`** — `ResolveAgentLog` picks `{state_dir}/agent.log` when the flag has no path; file sink is JSON regardless of TTY.
@@ -81,6 +83,7 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 |------|-------------------|
 | `hosted_app` | JSON bundle (`hostcredential.Bundle` v1): host JWT, refresh token, GitHub user |
 | `github_pat` | Raw PAT string |
+| Local broker | JSON (`utsusemi-broker`): GitHub App ID, App PEM, Ed25519 host-JWT signing key |
 
 Hosted app rules:
 
@@ -93,6 +96,7 @@ Hosted app rules:
 ### Registration modes
 
 - `hosted_app` requires an **organization** target (`config.Validate`).
+- Optional `registration.oauth_client_id` for a private App; empty uses `hostcredential.PublicAppClientID`.
 - `github_pat` supports organization or repository targets.
 - New backends: implement `RunnerRegistrar`; do not branch on `registration.mode` in `pool` or `spawn`.
 
@@ -130,7 +134,10 @@ Keep aligned across:
 
 - `hostcredential.CredentialExchangePath`
 - `internal/registrar/paths.go`
+- `internal/brokerhttp`
 - `worker/src/routes.ts`
+
+Worker and `utsusemi broker` are separate deployments. The local broker holds App PEM in Keychain; the Worker stays stateless.
 
 Worker:
 
@@ -149,7 +156,7 @@ Deploy broker separately from CLI. After JWT signing or route changes, operators
 - **Runtime assembly**: `internal/app` owns provider construction (`buildProvider`), config validation, registrar setup, and `Runtime` helpers used by CLI commands.
 - **Bootstrap env**: `spawn.BootstrapEnv` sets `RUNNER_VERSION`, `RUNNER_ARCH`, and `RUNNER_HOME` for `bootstrap.sh`. `RUNNER_ARCH` comes from `VMProvider.Capabilities().RunnerArch` (Tart: `osx-arm64`).
 - Operator docs in [README.md](README.md) Operations and Provider. Alerts/notifications are out of scope.
-- **`utsusemi doctor`**: preflight via `internal/doctor` (provider, disk, credential, host_id, runner_version, mounts, multi-host). `runner_version` vs GitHub `latest` is warn-only (stale → JIT failure); skip on network error. Exit 1 when any check is `fail`.
+- **`utsusemi doctor`**: preflight via `internal/doctor` (provider, disk, loopback broker, credential, host_id, runner_version, mounts, multi-host). `runner_version` vs GitHub `latest` is warn-only (stale → JIT failure); skip on network error. Exit 1 when any check is `fail`.
 - **Spawn metrics**: `spawn.SaveLastSpawn` writes `{StateDir}/last_spawn.json`; `status` and spawn logs expose cold-start phase timings.
 
 ### Tests and toolchain

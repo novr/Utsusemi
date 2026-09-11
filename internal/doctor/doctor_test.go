@@ -34,6 +34,31 @@ func TestCheckRunnerVersionMismatch(t *testing.T) {
 	}
 }
 
+func TestCheckLoopbackBroker(t *testing.T) {
+	checks := recordChecks(func(add checkFn) {
+		checkLoopbackBroker(context.Background(), &config.Config{
+			Registration: config.Registration{
+				Mode:      config.ModeHostedApp,
+				BrokerURL: "http://127.0.0.1:1",
+			},
+		}, add)
+	})
+	if len(checks) != 1 || checks[0].Status != StatusFail || checks[0].Name != "broker" {
+		t.Fatalf("checks=%+v", checks)
+	}
+	hosted := recordChecks(func(add checkFn) {
+		checkLoopbackBroker(context.Background(), &config.Config{
+			Registration: config.Registration{
+				Mode:      config.ModeHostedApp,
+				BrokerURL: "https://utsusemi-broker.novrd.workers.dev",
+			},
+		}, add)
+	})
+	if len(hosted) != 0 {
+		t.Fatalf("hosted=%+v", hosted)
+	}
+}
+
 func TestCheckMounts(t *testing.T) {
 	existing := t.TempDir()
 	tests := []struct {

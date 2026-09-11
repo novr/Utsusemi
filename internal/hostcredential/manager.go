@@ -19,38 +19,41 @@ type CredentialStore interface {
 type OnRefreshFailure func(stage, githubUser string, err error)
 
 type Manager struct {
-	store      CredentialStore
-	service    string
-	account    string
-	brokerURL  string
-	lockPath   string
-	oauth      *OAuthClient
-	httpClient *http.Client
-	onFailure  OnRefreshFailure
-	refreshMu  sync.Mutex
+	store         CredentialStore
+	service       string
+	account       string
+	brokerURL     string
+	oauthClientID string
+	lockPath      string
+	oauth         *OAuthClient
+	httpClient    *http.Client
+	onFailure     OnRefreshFailure
+	refreshMu     sync.Mutex
 }
 
 type ManagerOptions struct {
-	Store      CredentialStore
-	Service    string
-	Account    string
-	BrokerURL  string
-	LockPath   string
-	OAuth      *OAuthClient
-	HTTPClient *http.Client
-	OnFailure  OnRefreshFailure
+	Store         CredentialStore
+	Service       string
+	Account       string
+	BrokerURL     string
+	OAuthClientID string
+	LockPath      string
+	OAuth         *OAuthClient
+	HTTPClient    *http.Client
+	OnFailure     OnRefreshFailure
 }
 
 func NewManager(opts ManagerOptions) *Manager {
 	return &Manager{
-		store:      opts.Store,
-		service:    opts.Service,
-		account:    opts.Account,
-		brokerURL:  strings.TrimRight(opts.BrokerURL, "/"),
-		lockPath:   opts.LockPath,
-		oauth:      opts.OAuth,
-		httpClient: opts.HTTPClient,
-		onFailure:  opts.OnFailure,
+		store:         opts.Store,
+		service:       opts.Service,
+		account:       opts.Account,
+		brokerURL:     strings.TrimRight(opts.BrokerURL, "/"),
+		oauthClientID: opts.OAuthClientID,
+		lockPath:      opts.LockPath,
+		oauth:         opts.OAuth,
+		httpClient:    opts.HTTPClient,
+		onFailure:     opts.OnFailure,
 	}
 }
 
@@ -114,7 +117,7 @@ func (m *Manager) EnsureFresh(ctx context.Context, tgt target.Target, force bool
 		}
 	}
 
-	refreshed, err := m.oauthClient().RefreshGitHubToken(ctx, PublicAppClientID, loaded.RefreshToken)
+	refreshed, err := m.oauthClient().RefreshGitHubToken(ctx, ResolveOAuthClientID(m.oauthClientID), loaded.RefreshToken)
 	if err != nil {
 		m.fail("refresh", loaded.GitHubUser, err)
 		return "", UserRefreshError(loaded.GitHubUser, err)

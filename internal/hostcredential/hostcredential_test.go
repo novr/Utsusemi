@@ -21,6 +21,15 @@ func testJWT(exp time.Time) string {
 	return header + "." + payloadB64 + ".sig"
 }
 
+func TestResolveOAuthClientID(t *testing.T) {
+	if got := ResolveOAuthClientID(""); got != PublicAppClientID {
+		t.Fatalf("empty: %s", got)
+	}
+	if got := ResolveOAuthClientID(" Iv23custom "); got != "Iv23custom" {
+		t.Fatalf("custom: %s", got)
+	}
+}
+
 func TestLoadBundle(t *testing.T) {
 	raw, err := NewBundle("eyJ.a.b", "refresh-1", "octocat")
 	if err != nil {
