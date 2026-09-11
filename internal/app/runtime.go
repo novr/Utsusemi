@@ -17,11 +17,12 @@ import (
 )
 
 type Runtime struct {
-	Config    *config.Config
-	Target    target.Target
-	Provider  provider.VMProvider
-	Registrar registrar.RunnerRegistrar
-	Logger    *slog.Logger
+	Config     *config.Config
+	Target     target.Target
+	Provider   provider.VMProvider
+	Registrar  registrar.RunnerRegistrar
+	Logger     *slog.Logger
+	LogFilePath string
 }
 
 type LoadOptions struct {
@@ -53,6 +54,7 @@ func Load(ctx context.Context, opts LoadOptions) (*Runtime, error) {
 	}
 
 	log := opts.Logger
+	logFilePath := ""
 	if log == nil {
 		logPath := ""
 		if opts.ResolveAgentLog {
@@ -60,6 +62,7 @@ func Load(ctx context.Context, opts LoadOptions) (*Runtime, error) {
 			if err != nil {
 				return nil, err
 			}
+			logFilePath = logPath
 		}
 		log, err = logging.New(logging.Options{LogFile: logPath})
 		if err != nil {
@@ -73,15 +76,46 @@ func Load(ctx context.Context, opts LoadOptions) (*Runtime, error) {
 	}
 
 	return &Runtime{
-		Config:    cfg,
-		Target:    tgt,
-		Provider:  vmProvider,
-		Registrar: reg,
-		Logger:    log,
+		Config:      cfg,
+		Target:      tgt,
+		Provider:    vmProvider,
+		Registrar:   reg,
+		Logger:      log,
+		LogFilePath: logFilePath,
 	}, nil
 }
 
 func LoadValidated(ctx context.Context, opts LoadOptions) (*Runtime, error) {
+	if opts.ResolveAgentLog {
+		savedLogFile := opts.LogFile
+		opts.ResolveAgentLog = false
+		opts.LogFile = ""
+		rt, err := Load(ctx, opts)
+		if err != nil {
+			return nil, err
+		}
+		if err := rt.ValidateCredential(ctx); err != nil {
+			return nil, err
+		}
+		logPath, err := logging.ResolveLogFile(savedLogFile, rt.Config.StateDir)
+		if err != nil {
+			return nil, err
+		}
+		logger, err := logging.New(logging.Options{LogFile: logPath})
+		if err != nil {
+			return nil, err
+		}
+		store := keychain.New()
+		reg, err := registrar.NewFromConfig(rt.Config, store, logger)
+		if err != nil {
+			return nil, err
+		}
+		rt.Logger = logger
+		rt.Registrar = reg
+		rt.LogFilePath = logPath
+		return rt, nil
+	}
+
 	rt, err := Load(ctx, opts)
 	if err != nil {
 		return nil, err
@@ -127,10 +161,11 @@ func (r *Runtime) DoctorInput(store keychain.Store) doctor.Input {
 
 func (r *Runtime) Agent() (*agent.Agent, error) {
 	return agent.New(agent.Options{
-		Config:    r.Config,
-		Target:    r.Target,
-		Provider:  r.Provider,
-		Registrar: r.Registrar,
-		Logger:    r.Logger,
+		Config:      r.Config,
+		Target:      r.Target,
+		Provider:    r.Provider,
+		Registrar:   r.Registrar,
+		Logger:      r.Logger,
+		LogFilePath: r.LogFilePath,
 	})
 }

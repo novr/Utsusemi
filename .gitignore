@@ -1,6 +1,7 @@
 /utsusemi
 /config.yaml
 /.local-smoke/
+/.local-smoke-log/
 /bin/
 /dist/
 utsusemi_*_darwin.tar.gz

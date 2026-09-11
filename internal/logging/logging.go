@@ -58,8 +58,12 @@ func New(opts Options) (*slog.Logger, error) {
 
 	inner := fanoutHandler{handlers: handlers}
 	logger := slog.New(redactingHandler{inner: inner})
-	subprocessLogger = logger
-	slog.SetDefault(logger)
+	if fileLogEnabled {
+		subprocessLogger = logger
+		slog.SetDefault(logger)
+	} else {
+		subprocessLogger = nil
+	}
 	return logger, nil
 }
 
@@ -70,7 +74,7 @@ func ResolveLogFile(flagValue, stateDir string) (string, error) {
 	}
 	path := AgentLogPath(stateDir)
 	if path == "" {
-		return "", fmt.Errorf("state_dir is empty; set state_dir in config or pass --log /path/to.log")
+		return "", fmt.Errorf("state_dir is empty; set state_dir in config or pass --log=/path/to.log")
 	}
 	return path, nil
 }

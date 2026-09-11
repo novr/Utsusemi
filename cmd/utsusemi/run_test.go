@@ -34,3 +34,13 @@ func TestRunLogFlagExplicitPath(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestRunRejectsPositionalArgs(t *testing.T) {
+	cmd := newRunCmd()
+	if err := cmd.ParseFlags([]string{"--log"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := cmd.ValidateArgs([]string{"/tmp/custom.log"}); err == nil {
+		t.Fatal("expected positional args to be rejected")
+	}
+}

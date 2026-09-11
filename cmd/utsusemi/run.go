@@ -10,6 +10,7 @@ func newRunCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Run the utsusemi agent",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ag, err := buildAgent(cmd.Context(), cmd.Flags().Changed("log"), logFile)
 			if err != nil {
@@ -19,7 +20,7 @@ func newRunCmd() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().StringVar(&logFile, "log", "", "append structured logs to file (default: {state_dir}/agent.log)")
+	cmd.Flags().StringVar(&logFile, "log", "", "append structured logs to file (default: {state_dir}/agent.log; use --log=/path for a custom file)")
 	cmd.Flags().Lookup("log").NoOptDefVal = "-"
 	return cmd
 }
