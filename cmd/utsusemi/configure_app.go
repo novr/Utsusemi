@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/novr/utsusemi/internal/brokerhttp"
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/credentialview"
 	"github.com/novr/utsusemi/internal/hostcredential"
@@ -77,6 +78,12 @@ func newConfigureAppCmd() *cobra.Command {
 
 			success := configureSuccess{WroteConfig: true}
 			refreshed := false
+			if (refresh || needsAppDeviceFlow(merge.Config, merge)) &&
+				brokerhttp.IsLoopbackBrokerURL(merge.Config.Registration.BrokerURL) {
+				if err := brokerhttp.CheckReachable(cmd.Context(), merge.Config.Registration.BrokerURL); err != nil {
+					return err
+				}
+			}
 			if refresh {
 				githubUser, err := tryAppOAuthRefresh(cmd.Context(), merge.Config)
 				if err == nil {

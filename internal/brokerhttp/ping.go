@@ -14,8 +14,7 @@ func IsLoopbackBrokerURL(raw string) bool {
 	if err != nil || u.Host == "" {
 		return false
 	}
-	host := u.Hostname()
-	return host == "127.0.0.1" || strings.EqualFold(host, "localhost")
+	return u.Hostname() == "127.0.0.1"
 }
 
 func CheckReachable(ctx context.Context, brokerURL string) error {

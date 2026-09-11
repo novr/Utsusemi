@@ -124,6 +124,25 @@ func TestValidatePoolSizeLimitIsProviderScoped(t *testing.T) {
 	}
 }
 
+func TestValidateBrokerURL(t *testing.T) {
+	if err := ValidateBrokerURL("https://broker.example"); err != nil {
+		t.Fatal(err)
+	}
+	if err := ValidateBrokerURL("http://127.0.0.1:8787"); err != nil {
+		t.Fatal(err)
+	}
+	err := ValidateBrokerURL("http://localhost:8787")
+	if err == nil {
+		t.Fatal("expected localhost rejection")
+	}
+	if !strings.Contains(err.Error(), "127.0.0.1") {
+		t.Fatalf("error=%v", err)
+	}
+	if err := ValidateBrokerURL("http://broker.example"); err == nil {
+		t.Fatal("expected http rejection")
+	}
+}
+
 func TestValidateHostedAppBrokerURL(t *testing.T) {
 	base := &Config{
 		Target:        target.ConfigYAML{Org: "my-org", RunnerGroupID: 1},

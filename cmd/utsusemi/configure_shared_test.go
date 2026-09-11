@@ -115,6 +115,31 @@ func TestNeedsAppDeviceFlowSkipsWhenCredentialPresent(t *testing.T) {
 	}
 }
 
+func TestNeedsAppDeviceFlowWhenOAuthClientChanged(t *testing.T) {
+	store := keychain.NewMemoryStore()
+	credentialStore = store
+	defer func() { credentialStore = nil }()
+
+	cfg := &config.Config{
+		Target: config.TargetYAML("my-org", "", 1),
+		Registration: config.Registration{
+			Mode:                    config.ModeHostedApp,
+			CredentialKeychainService: config.DefaultCredentialService,
+		},
+	}
+	bundle, err := hostcredential.NewBundle("eyJhbGciOiJFUzI1NiJ9.eyJleHAiOjk5OTk5OTk5OTl9.c2ln", "refresh-1", "octocat")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.Set(cfg.CredentialService(), cfg.CredentialAccount(), bundle); err != nil {
+		t.Fatal(err)
+	}
+
+	if !needsAppDeviceFlow(cfg, configureMergeResult{OAuthAuthChanged: true}) {
+		t.Fatal("expected device flow when oauth client id changed")
+	}
+}
+
 func TestNeedsAppDeviceFlowWhenOrgChanged(t *testing.T) {
 	store := keychain.NewMemoryStore()
 	credentialStore = store

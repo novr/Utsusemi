@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net/url"
 	"slices"
 	"strings"
 
@@ -83,12 +84,25 @@ func Validate(cfg *Config, p provider.VMProvider) (target.Target, error) {
 	return tgt, nil
 }
 
-// ValidateBrokerURL checks hosted app broker URLs (https, or local dev http).
+// ValidateBrokerURL checks hosted app broker URLs (https, or loopback http).
 func ValidateBrokerURL(brokerURL string) error {
-	if strings.HasPrefix(brokerURL, "https://") ||
-		strings.HasPrefix(brokerURL, "http://127.0.0.1") ||
-		strings.HasPrefix(brokerURL, "http://localhost") {
-		return nil
+	u, err := url.Parse(strings.TrimSpace(brokerURL))
+	if err != nil || u.Scheme == "" || u.Host == "" {
+		return fmt.Errorf("registration.broker_url must use https")
 	}
-	return fmt.Errorf("registration.broker_url must use https")
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		host := u.Hostname()
+		if host == "127.0.0.1" {
+			return nil
+		}
+		if strings.EqualFold(host, "localhost") {
+			return fmt.Errorf("registration.broker_url must use http://127.0.0.1 for a local broker (not localhost)")
+		}
+		return fmt.Errorf("registration.broker_url must use https")
+	default:
+		return fmt.Errorf("registration.broker_url must use https")
+	}
 }

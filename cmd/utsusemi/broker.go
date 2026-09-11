@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net"
 	"net/http"
@@ -50,7 +51,9 @@ func newBrokerCmd() *cobra.Command {
 			defer stop()
 			go func() {
 				<-ctx.Done()
-				_ = srv.Close()
+				shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+				defer cancel()
+				_ = srv.Shutdown(shutdownCtx)
 			}()
 			fmt.Fprintf(cmd.OutOrStdout(), "utsusemi broker listening on http://%s\n", addr)
 			err = srv.Serve(ln)
