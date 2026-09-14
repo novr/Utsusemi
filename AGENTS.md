@@ -37,6 +37,7 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 | Keychain | `internal/keychain` | Platform secret store |
 | Locks | `internal/instancelock` | `utsusemi.lock` (agent/clean), used with blocking flock for credential refresh |
 | Broker (cloud) | `worker/` | Host JWT issue/verify, GitHub App calls, JIT/list/delete proxy |
+| Broker (Oracle) | `deploy/oracle/` | Always Free A1 + Caddy; linux/arm64 `utsusemi broker` on loopback; secrets on disk |
 | Release | `.github/workflows` | macOS binary, GitHub release, Homebrew formula dispatch |
 | Homebrew formula | `novr/homebrew-taps` | `Formula/utsusemi.rb` (separate repo) |
 
@@ -137,7 +138,7 @@ Keep aligned across:
 - `internal/brokerhttp`
 - `worker/src/routes.ts`
 
-Worker and `utsusemi broker` are separate deployments. The local broker holds App PEM in Keychain; the Worker stays stateless.
+Worker, `utsusemi broker` (macOS Keychain or Linux env/files), and `deploy/oracle` are separate deployments. Do not generate a new host JWT signing key for the hosted Oracle broker; reuse the Workers key. Linux broker secrets use `GITHUB_APP_ID`, `UTSUSEMI_*_KEY_FILE` or inline `GITHUB_APP_PRIVATE_KEY` / `CREDENTIAL_SIGNING_PRIVATE_KEY` (see `internal/brokerhttp/secrets.go`).
 
 Worker:
 

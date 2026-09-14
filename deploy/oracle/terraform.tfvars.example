@@ -1,0 +1,12 @@
+region                  = "ap-tokyo-1"
+compartment_id          = "ocid1.compartment.oc1..example"
+availability_domain     = "Uocm:AP-TOKYO-1-AD-1"
+subnet_id               = "ocid1.subnet.oc1.ap-tokyo-1.example"
+image_ocid              = "ocid1.image.oc1.ap-tokyo-1.example" # Ubuntu 22.04 aarch64
+ssh_user                = "ubuntu"
+reserved_public_ip_ocid = "ocid1.publicip.oc1.ap-tokyo-1.example"
+operator_ssh_cidr       = "203.0.113.10/32"
+broker_fqdn             = "utsusemi-broker.example.com"
+utsusemi_version        = "0.5.0"
+# utsusemi_binary_url   = "https://example.com/utsusemi_0.5.0_linux_arm64.tar.gz"
+ssh_public_key          = "ssh-ed25519 AAAA... operator@laptop"

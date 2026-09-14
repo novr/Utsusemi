@@ -5,37 +5,41 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"os"
 	"os/signal"
-	"strings"
 	"syscall"
 	"time"
 
 	"github.com/novr/utsusemi/internal/brokerhttp"
-	"github.com/novr/utsusemi/internal/config"
-	"github.com/novr/utsusemi/internal/keychain"
 	"github.com/spf13/cobra"
 )
 
 func newBrokerCmd() *cobra.Command {
 	var (
-		listen     string
-		appID      string
-		appKeyFile string
-		issuer     string
-		jwtVersion string
+		listen         string
+		appID          string
+		appKeyFile     string
+		signingKeyFile string
+		envFile        string
+		issuer         string
+		jwtVersion     string
 	)
 	cmd := &cobra.Command{
 		Use:   "broker",
-		Short: "Run a local GitHub App broker on 127.0.0.1",
+		Short: "Run a GitHub App broker on 127.0.0.1",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			addr, err := brokerhttp.ParseListen(listen)
 			if err != nil {
 				return err
 			}
-			store := keychain.New()
-			secrets, err := loadOrStoreBrokerSecrets(store, appID, appKeyFile, issuer, jwtVersion)
+			secrets, err := brokerhttp.LoadBrokerSecrets(brokerhttp.SourceConfig{
+				AppID:             appID,
+				AppPrivateKeyFile: appKeyFile,
+				SigningKeyFile:    signingKeyFile,
+				EnvFile:           envFile,
+				JWTIssuer:         issuer,
+				JWTVersion:        jwtVersion,
+			})
 			if err != nil {
 				return err
 			}
@@ -64,42 +68,11 @@ func newBrokerCmd() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&listen, "listen", brokerhttp.DefaultListen, "listen address (127.0.0.1 only)")
-	cmd.Flags().StringVar(&appID, "app-id", "", "GitHub App ID (required on first run)")
-	cmd.Flags().StringVar(&appKeyFile, "app-private-key-file", "", "GitHub App private key PEM file (required on first run)")
-	cmd.Flags().StringVar(&issuer, "jwt-issuer", brokerhttp.DefaultJWTIssuer, "host JWT issuer")
-	cmd.Flags().StringVar(&jwtVersion, "jwt-version", brokerhttp.DefaultJWTVersion, "host JWT version")
+	cmd.Flags().StringVar(&appID, "app-id", "", "GitHub App ID")
+	cmd.Flags().StringVar(&appKeyFile, "app-private-key-file", "", "GitHub App private key PEM file")
+	cmd.Flags().StringVar(&signingKeyFile, "credential-signing-key-file", "", "host JWT signing key PEM file (required on Linux)")
+	cmd.Flags().StringVar(&envFile, "env-file", "", "optional KEY=VALUE file (e.g. systemd EnvironmentFile)")
+	cmd.Flags().StringVar(&issuer, "jwt-issuer", "", "host JWT issuer (default: utsusemi-broker)")
+	cmd.Flags().StringVar(&jwtVersion, "jwt-version", "", "host JWT version (default: 1)")
 	return cmd
-}
-
-func loadOrStoreBrokerSecrets(store keychain.Store, appID, appKeyFile, issuer, jwtVersion string) (brokerhttp.Secrets, error) {
-	existing, loadErr := brokerhttp.LoadSecrets(store, brokerhttp.DefaultKeychainService, config.DefaultCredentialAccount)
-	if loadErr == nil && strings.TrimSpace(appID) == "" && appKeyFile == "" {
-		return existing, nil
-	}
-	if strings.TrimSpace(appID) == "" || appKeyFile == "" {
-		return brokerhttp.Secrets{}, fmt.Errorf("broker credentials missing; pass --app-id and --app-private-key-file")
-	}
-	pemBytes, err := os.ReadFile(appKeyFile)
-	if err != nil {
-		return brokerhttp.Secrets{}, fmt.Errorf("read app private key: %w", err)
-	}
-	secrets := brokerhttp.Secrets{}
-	if loadErr == nil {
-		secrets = existing
-	}
-	secrets.GitHubAppID = strings.TrimSpace(appID)
-	secrets.GitHubAppPrivateKey = string(pemBytes)
-	secrets.JWTIssuer = issuer
-	secrets.JWTVersion = jwtVersion
-	if strings.TrimSpace(secrets.SigningKeyPEM) == "" {
-		pem, genErr := brokerhttp.GenerateSigningKeyPEM()
-		if genErr != nil {
-			return brokerhttp.Secrets{}, genErr
-		}
-		secrets.SigningKeyPEM = pem
-	}
-	if err := brokerhttp.SaveSecrets(store, brokerhttp.DefaultKeychainService, config.DefaultCredentialAccount, secrets); err != nil {
-		return brokerhttp.Secrets{}, err
-	}
-	return secrets, nil
 }
