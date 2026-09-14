@@ -24,7 +24,7 @@ resource "oci_core_instance" "broker" {
   }
 
   create_vnic_details {
-    subnet_id        = var.subnet_id
+    subnet_id        = local.subnet_id
     assign_public_ip = false
     nsg_ids          = [oci_core_network_security_group.broker.id]
   }
@@ -48,10 +48,14 @@ data "oci_core_private_ips" "broker" {
   vnic_id = data.oci_core_vnic.broker.vnic_id
 }
 
+import {
+  to = oci_core_public_ip.broker_reserved
+  id = var.reserved_public_ip_ocid
+}
+
 resource "oci_core_public_ip" "broker_reserved" {
   compartment_id = var.compartment_id
   display_name   = "${var.instance_display_name}-reserved-ipv4"
   lifetime       = "RESERVED"
-  public_ip_id   = var.reserved_public_ip_ocid
   private_ip_id  = data.oci_core_private_ips.broker.private_ips[0].id
 }

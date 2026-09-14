@@ -10,9 +10,9 @@ State and secrets stay outside git (`terraform.tfvars`, `*.tfstate`, PEM files).
 ## Prerequisites
 
 - OCI tenancy home region with Always Free A1 capacity
-- Existing VCN public subnet (Internet Gateway route)
 - Reserved public IPv4 OCID (no ephemeral public IP on boot)
-- DNS zone you control: **A record → reserved IPv4** before Caddy can obtain a certificate
+- **A domain you control** with DNS **A record → reserved IPv4** before Caddy can obtain a certificate
+- VCN: set `create_vcn = true` (default) or supply an existing public `subnet_id`
 - GitHub org IP allow list: **reserved IPv4** (domains are not accepted)
 - Existing GitHub App PEM and **existing** host JWT signing key (same as the Workers broker; do not generate a new one)
 - A GitHub release that already ships `utsusemi_<version>_linux_arm64.tar.gz`, or set `utsusemi_binary_url` in tfvars to a custom tarball URL
@@ -22,15 +22,22 @@ State and secrets stay outside git (`terraform.tfvars`, `*.tfstate`, PEM files).
 
 ```bash
 cd deploy/oracle
+terraform init          # required once (provider lock file is committed)
+
 cp terraform.tfvars.example terraform.tfvars
 # edit OCIDs, FQDN, operator_ssh_cidr, utsusemi_version
 
-terraform init
 terraform plan
 terraform apply
 ```
 
-If apply fails with A1 capacity errors, change `availability_domain` to another AD in the same region and re-apply.
+`terraform plan` without `terraform.tfvars` prompts for every variable interactively.
+Provider auth uses `~/.oci/config` (default profile).
+
+If apply fails with **Out of host capacity** on `VM.Standard.A1.Flex`, wait and retry `terraform apply`
+(spacing retries by 15+ minutes; do not hammer the API). Multi-AD home regions can try another
+`availability_domain`; **ap-tokyo-1 has only `kIam:AP-TOKYO-1-AD-1`**. A partial apply (VCN up,
+instance missing) is safe to re-apply — Terraform only creates what is still absent.
 
 ## Post-apply
 
@@ -58,4 +65,21 @@ If apply fails with A1 capacity errors, change `availability_domain` to another 
 
 - `registration.broker_url` must be the **hostname** (`https://broker.example.com`), not `https://<IPv4>`.
 - Broker listens on loopback only; Caddy is the only public entrypoint.
-- SSH (22) is restricted to `operator_ssh_cidr` in tfvars.
+- SSH (22) is restricted to `operator_ssh_cidr` in the NSG. When `create_vcn = true`, the subnet uses a
+  permissive security list so NSG rules are effective (OCI requires both to allow traffic).
+- `registration.broker_url` must be `https://` with a hostname; bare `https://<IPv4>` is rejected by
+  `utsusemi configure app`.
+
+## No domain yet?
+
+Caddy needs a resolvable FQDN with DNS pointing at the reserved IPv4 before it can obtain a certificate.
+
+Until you have one:
+
+1. **Terraform apply** can still create VCN + instance (set a placeholder `broker_fqdn` for the Caddyfile; Caddy will not get a cert until DNS exists).
+2. **GitHub org IP allow list** uses the **reserved IPv4** only (no domain).
+3. **`utsusemi configure app --broker`** waits until `https://<your-fqdn>` works.
+
+Minimal path: register a cheap domain, add `A` → `terraform output -raw reserved_public_ip`, update `broker_fqdn` and re-apply or edit `/etc/caddy/Caddyfile` on the instance.
+
+Without any domain, use the **Workers broker** or a **loopback broker on your Mac** (`utsusemi broker`) instead of this stack.
