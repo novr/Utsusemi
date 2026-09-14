@@ -9,7 +9,7 @@ variable "compartment_id" {
 }
 
 variable "availability_domain" {
-  description = "AD name (e.g. kIam:AP-TOKYO-1-AD-1). Multi-AD regions may help with A1 capacity; ap-tokyo-1 has only AD-1."
+  description = "AD name (e.g. kIam:AP-TOKYO-1-AD-1)."
   type        = string
 }
 
