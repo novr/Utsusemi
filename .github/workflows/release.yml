@@ -70,32 +70,36 @@ jobs:
         with:
           go-version-file: go.mod
 
-      - name: Build arm64 release binary
+      - name: Build release binaries
         shell: bash
         run: |
           set -euo pipefail
           VERSION="${{ needs.prepare.outputs.version }}"
           LDFLAGS="-s -w -X 'github.com/novr/utsusemi/internal/version.Version=${VERSION}'"
 
-          mkdir -p dist
-          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "${LDFLAGS}" -o dist/utsusemi ./cmd/utsusemi
+          mkdir -p dist/darwin-arm64 dist/linux-arm64
+          GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "${LDFLAGS}" -o dist/darwin-arm64/utsusemi ./cmd/utsusemi
+          GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "${LDFLAGS}" -o dist/linux-arm64/utsusemi ./cmd/utsusemi
 
-      - name: Package release asset
+      - name: Package release assets
         id: package
         shell: bash
         run: |
           set -euo pipefail
           VERSION="${{ needs.prepare.outputs.version }}"
           TAG="${{ needs.prepare.outputs.tag }}"
-          ASSET="utsusemi_${VERSION}_darwin.tar.gz"
+          DARWIN_ASSET="utsusemi_${VERSION}_darwin.tar.gz"
+          LINUX_ASSET="utsusemi_${VERSION}_linux_arm64.tar.gz"
 
-          tar -C dist -czf "${ASSET}" utsusemi
-          SHA256="$(shasum -a 256 "${ASSET}" | cut -d' ' -f1)"
-          echo "${SHA256}  ${ASSET}" > checksums.txt
+          tar -C dist/darwin-arm64 -czf "${DARWIN_ASSET}" utsusemi
+          tar -C dist/linux-arm64 -czf "${LINUX_ASSET}" utsusemi
+          shasum -a 256 "${DARWIN_ASSET}" "${LINUX_ASSET}" > checksums.txt
+          DARWIN_SHA256="$(grep "${DARWIN_ASSET}" checksums.txt | cut -d' ' -f1)"
           {
-            echo "asset=${ASSET}"
-            echo "sha256=${SHA256}"
-            echo "url=https://github.com/novr/utsusemi/releases/download/${TAG}/${ASSET}"
+            echo "darwin_asset=${DARWIN_ASSET}"
+            echo "linux_asset=${LINUX_ASSET}"
+            echo "sha256=${DARWIN_SHA256}"
+            echo "url=https://github.com/novr/utsusemi/releases/download/${TAG}/${DARWIN_ASSET}"
           } >> "${GITHUB_OUTPUT}"
 
       - name: Upload build artifact
@@ -103,7 +107,8 @@ jobs:
         with:
           name: release-assets-macos
           path: |
-            ${{ steps.package.outputs.asset }}
+            ${{ steps.package.outputs.darwin_asset }}
+            ${{ steps.package.outputs.linux_asset }}
             checksums.txt
 
       - name: Create or update release with macOS assets
@@ -114,11 +119,12 @@ jobs:
           set -euo pipefail
           TAG="${{ needs.prepare.outputs.tag }}"
           TITLE="${TAG}"
-          ASSET="${{ steps.package.outputs.asset }}"
+          DARWIN_ASSET="${{ steps.package.outputs.darwin_asset }}"
+          LINUX_ASSET="${{ steps.package.outputs.linux_asset }}"
           TARGET_SHA="$(git rev-parse HEAD)"
 
           if gh release view "${TAG}" >/dev/null 2>&1; then
-            gh release upload "${TAG}" "${ASSET}" checksums.txt --clobber
+            gh release upload "${TAG}" "${DARWIN_ASSET}" "${LINUX_ASSET}" checksums.txt --clobber
           else
             if [[ "${{ needs.prepare.outputs.prerelease }}" == "true" ]]; then
               PRERELEASE_FLAG="--prerelease"
@@ -127,7 +133,8 @@ jobs:
             fi
 
             gh release create "${TAG}" \
-              "${ASSET}" \
+              "${DARWIN_ASSET}" \
+              "${LINUX_ASSET}" \
               checksums.txt \
               --target "${TARGET_SHA}" \
               --generate-notes \

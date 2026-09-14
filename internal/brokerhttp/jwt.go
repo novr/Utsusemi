@@ -39,6 +39,10 @@ func GenerateSigningKeyPEM() (string, error) {
 	return string(pem.EncodeToMemory(&pem.Block{Type: "PRIVATE KEY", Bytes: der})), nil
 }
 
+func ValidateSigningKeyPEM(pemData string) (ed25519.PrivateKey, error) {
+	return parseEd25519PrivateKey(pemData)
+}
+
 func parseEd25519PrivateKey(pemData string) (ed25519.PrivateKey, error) {
 	block, _ := pem.Decode([]byte(pemData))
 	if block == nil {
