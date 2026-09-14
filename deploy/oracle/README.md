@@ -22,7 +22,7 @@ State and secrets stay outside git (`terraform.tfvars`, `*.tfstate`, PEM files).
 
 ```bash
 cd deploy/oracle
-terraform init          # required once; creates .terraform.lock.hcl
+terraform init          # required once (provider lock file is committed)
 
 cp terraform.tfvars.example terraform.tfvars
 # edit OCIDs, FQDN, operator_ssh_cidr, utsusemi_version
@@ -34,7 +34,10 @@ terraform apply
 `terraform plan` without `terraform.tfvars` prompts for every variable interactively.
 Provider auth uses `~/.oci/config` (default profile).
 
-If apply fails with A1 capacity errors, change `availability_domain` to another AD in the same region and re-apply.
+If apply fails with **Out of host capacity** on `VM.Standard.A1.Flex`, wait and retry `terraform apply`
+(spacing retries by 15+ minutes; do not hammer the API). Multi-AD home regions can try another
+`availability_domain`; **ap-tokyo-1 has only `kIam:AP-TOKYO-1-AD-1`**. A partial apply (VCN up,
+instance missing) is safe to re-apply — Terraform only creates what is still absent.
 
 ## Post-apply
 
@@ -62,11 +65,14 @@ If apply fails with A1 capacity errors, change `availability_domain` to another 
 
 - `registration.broker_url` must be the **hostname** (`https://broker.example.com`), not `https://<IPv4>`.
 - Broker listens on loopback only; Caddy is the only public entrypoint.
-- SSH (22) is restricted to `operator_ssh_cidr` in tfvars.
+- SSH (22) is restricted to `operator_ssh_cidr` in the NSG. When `create_vcn = true`, the subnet uses a
+  permissive security list so NSG rules are effective (OCI requires both to allow traffic).
+- `registration.broker_url` must be `https://` with a hostname; bare `https://<IPv4>` is rejected by
+  `utsusemi configure app`.
 
 ## No domain yet?
 
-`utsusemi` rejects `https://<IPv4>` and nip.io-style hostnames for `broker_url`; Caddy needs a real FQDN for a public TLS certificate.
+Caddy needs a resolvable FQDN with DNS pointing at the reserved IPv4 before it can obtain a certificate.
 
 Until you have one:
 

@@ -28,6 +28,24 @@ resource "oci_core_default_route_table" "broker" {
   }
 }
 
+resource "oci_core_security_list" "broker" {
+  count = var.create_vcn ? 1 : 0
+
+  compartment_id = var.compartment_id
+  vcn_id         = oci_core_vcn.broker[0].id
+  display_name   = "${var.instance_display_name}-sl"
+
+  egress_security_rules {
+    destination = "0.0.0.0/0"
+    protocol    = "all"
+  }
+
+  ingress_security_rules {
+    protocol = "all"
+    source   = "0.0.0.0/0"
+  }
+}
+
 resource "oci_core_subnet" "broker" {
   count = var.create_vcn ? 1 : 0
 
@@ -38,6 +56,7 @@ resource "oci_core_subnet" "broker" {
   dns_label                  = "broker"
   prohibit_public_ip_on_vnic = false
   route_table_id             = oci_core_vcn.broker[0].default_route_table_id
+  security_list_ids          = [oci_core_security_list.broker[0].id]
 }
 
 data "oci_core_subnet" "existing" {
