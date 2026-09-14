@@ -1,6 +1,6 @@
 resource "oci_core_network_security_group" "broker" {
   compartment_id = var.compartment_id
-  vcn_id         = data.oci_core_subnet.broker.vcn_id
+  vcn_id         = local.vcn_id
   display_name   = "${var.instance_display_name}-nsg"
 }
 
@@ -43,8 +43,4 @@ resource "oci_core_network_security_group_security_rule" "egress" {
   destination               = "0.0.0.0/0"
   destination_type          = "CIDR_BLOCK"
   description               = "GitHub API and ACME"
-}
-
-data "oci_core_subnet" "broker" {
-  subnet_id = var.subnet_id
 }

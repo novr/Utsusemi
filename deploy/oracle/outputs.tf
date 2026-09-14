@@ -22,3 +22,13 @@ output "ssh_user" {
   description = "SSH login user for the instance."
   value       = var.ssh_user
 }
+
+output "vcn_id" {
+  description = "VCN OCID (created or looked up from subnet_id)."
+  value       = local.vcn_id
+}
+
+output "subnet_id" {
+  description = "Subnet OCID used by the broker instance."
+  value       = local.subnet_id
+}

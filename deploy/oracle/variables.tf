@@ -9,13 +9,37 @@ variable "compartment_id" {
 }
 
 variable "availability_domain" {
-  description = "AD name (e.g. Uocm:AP-TOKYO-1-AD-1). Try another AD if A1 capacity is exhausted."
+  description = "AD name (e.g. kIam:AP-TOKYO-1-AD-1). Try another AD if A1 capacity is exhausted."
   type        = string
 }
 
-variable "subnet_id" {
-  description = "Existing public subnet OCID (route to Internet Gateway)."
+variable "create_vcn" {
+  description = "Create a VCN, Internet Gateway, and public subnet. Set false when reusing subnet_id."
+  type        = bool
+  default     = true
+}
+
+variable "vcn_cidr" {
+  description = "VCN CIDR when create_vcn is true."
   type        = string
+  default     = "10.42.0.0/16"
+}
+
+variable "subnet_cidr" {
+  description = "Public subnet CIDR when create_vcn is true."
+  type        = string
+  default     = "10.42.0.0/24"
+}
+
+variable "subnet_id" {
+  description = "Existing public subnet OCID. Required when create_vcn is false."
+  type        = string
+  default     = ""
+
+  validation {
+    condition     = var.create_vcn || trimspace(var.subnet_id) != ""
+    error_message = "subnet_id is required when create_vcn is false."
+  }
 }
 
 variable "image_ocid" {
