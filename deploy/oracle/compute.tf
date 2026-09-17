@@ -2,8 +2,9 @@ locals {
   ssh_authorized_keys = trimspace(var.ssh_public_key) == "" ? null : trimspace(var.ssh_public_key)
   utsusemi_binary_url = trimspace(var.utsusemi_binary_url) != "" ? trimspace(var.utsusemi_binary_url) : "https://github.com/novr/utsusemi/releases/download/v${var.utsusemi_version}/utsusemi_${var.utsusemi_version}_linux_arm64.tar.gz"
   user_data = templatefile("${path.module}/cloud-init.yaml.tpl", {
-    broker_fqdn         = var.broker_fqdn
-    utsusemi_binary_url = local.utsusemi_binary_url
+    broker_fqdn              = var.broker_fqdn
+    utsusemi_binary_url      = local.utsusemi_binary_url
+    open_broker_ports_script = indent(6, file("${path.module}/scripts/open-broker-ports.sh"))
   })
 }
 

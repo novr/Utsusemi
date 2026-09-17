@@ -71,7 +71,7 @@ Examples: [examples/config.template.yaml](examples/config.template.yaml), [examp
 |--------|---------------------|-----|
 | Repository | Does not matter | PAT (`configure token --repo`). A GitHub App is not required. |
 | Organization | None | Hosted GitHub App (`configure app`) |
-| Organization | Enabled | PAT first (`configure token --org`). App mode needs **your** GitHub App **and** a broker whose outbound IP GitHub allows (this Mac running `utsusemi broker`, or another host you control). The hosted Cloudflare broker cannot pin its egress IP. |
+| Organization | Enabled | PAT first (`configure token --org`). App mode needs a broker whose egress IP GitHub allows: the hosted broker (`configure app`, reserved IPv4 on the UtsusemiApp IP list), a loopback broker on this Mac, or your own deployment (`deploy/oracle/`). |
 
 Org JIT still needs an org admin to install a GitHub App. Repo Admin on a member org is enough for repo PAT runners, not org runners.
 

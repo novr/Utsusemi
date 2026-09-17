@@ -1,6 +1,6 @@
 #cloud-config
 package_update: true
-package_upgrade: true
+package_upgrade: false
 
 bootcmd:
   - install -d -m 0750 -o root -g root /etc/utsusemi-broker
@@ -54,7 +54,13 @@ write_files:
       JWT_ISSUER=utsusemi-broker
       JWT_VERSION=1
 
+  - path: /usr/local/sbin/utsusemi-open-broker-ports.sh
+    permissions: "0755"
+    content: |
+${open_broker_ports_script}
+
 runcmd:
+  - /usr/local/sbin/utsusemi-open-broker-ports.sh
   - bash -euxc 'curl -fsSL "${utsusemi_binary_url}" | tar -xz -C /usr/local/bin utsusemi && chmod 0755 /usr/local/bin/utsusemi'
   - bash -euxc 'install -d -m 0755 /usr/share/keyrings && curl -1sLf "https://dl.cloudsmith.io/public/caddy/stable/gpg.key" | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg && curl -1sLf "https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt" | tee /etc/apt/sources.list.d/caddy-stable.list && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::="--force-confold" caddy && caddy validate --config /etc/caddy/Caddyfile'
   - systemctl daemon-reload

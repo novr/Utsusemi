@@ -50,7 +50,7 @@ func TestCheckLoopbackBroker(t *testing.T) {
 		checkLoopbackBroker(context.Background(), &config.Config{
 			Registration: config.Registration{
 				Mode:      config.ModeHostedApp,
-				BrokerURL: "https://utsusemi-broker.novrd.workers.dev",
+				BrokerURL: config.DefaultHostedAppBrokerURL,
 			},
 		}, add)
 	})
