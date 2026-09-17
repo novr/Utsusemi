@@ -1,0 +1,19 @@
+[Unit]
+Description=utsusemi GitHub App broker
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/utsusemi-broker/env
+ConditionPathExists=/etc/utsusemi-broker/app.pem
+ConditionPathExists=/etc/utsusemi-broker/signing.pem
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/utsusemi-broker/env
+ExecStart=/usr/local/bin/utsusemi broker
+Restart=on-failure
+RestartSec=5
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+[Install]
+WantedBy=multi-user.target

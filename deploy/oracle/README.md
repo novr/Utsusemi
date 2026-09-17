@@ -63,19 +63,19 @@ instance missing) is safe to re-apply — Terraform only creates what is still a
    After repeated failed ACME attempts, Let's Encrypt may rate-limit the hostname for up to an hour;
    wait, then `sudo systemctl restart caddy`.
 
-3. Copy secrets onto the instance (not via cloud-init):
+3. Copy secrets onto the instance (not via Terraform state or cloud-init):
 
    ```bash
-   SSH_USER="$(terraform output -raw ssh_user)"
-   IP="$(terraform output -raw reserved_public_ip)"
-   ssh "${SSH_USER}@${IP}"
-   sudo cp /etc/utsusemi-broker/env.example /etc/utsusemi-broker/env
-   sudoedit /etc/utsusemi-broker/env          # set GITHUB_APP_ID
-   sudoedit /etc/utsusemi-broker/app.pem      # GitHub App private key
-   sudoedit /etc/utsusemi-broker/signing.pem  # existing Workers host-JWT signing key
-   sudo chmod 0600 /etc/utsusemi-broker/env /etc/utsusemi-broker/*.pem
-   sudo systemctl enable --now utsusemi-broker # unit waits for env + both PEM paths
+   ./scripts/deploy-secrets.sh \
+     --app-pem ~/path/to/utsusemiapp.private-key.pem \
+     --signing-pem ~/path/to/ed25519.pem \
+     --github-app-id 4404914
    ```
+
+   Reads `utsusemi_binary_url` from `terraform output` (same URL as cloud-init). Installs
+   the binary if cloud-init did not. Optional: `SSH_IDENTITY_FILE=~/.ssh/id_ecdsa` (default).
+   Re-run after instance replacement (`user_data` changes recreate the VM and wipe
+   `/etc/utsusemi-broker`).
 
 4. On each Mac: `utsusemi configure app --broker "$(terraform output -raw broker_url)"`.
 5. If the org uses a GitHub IP allow list: enable **IP allow list configuration for installed

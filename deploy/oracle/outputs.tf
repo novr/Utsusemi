@@ -18,6 +18,11 @@ output "broker_url" {
   value       = "https://${var.broker_fqdn}"
 }
 
+output "utsusemi_binary_url" {
+  description = "linux/arm64 broker tarball URL used by cloud-init."
+  value       = local.utsusemi_binary_url
+}
+
 output "ssh_user" {
   description = "SSH login user for the instance."
   value       = var.ssh_user
