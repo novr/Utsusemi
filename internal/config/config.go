@@ -28,7 +28,7 @@ const (
 	DefaultReclaimPolicy          = ReclaimGrace
 	DefaultReclaimGrace           = 15 * time.Minute
 	DefaultCredentialService      = "utsusemi-credential"
-	DefaultHostedAppBrokerURL     = "https://utsusemi-broker.novrd.workers.dev"
+	DefaultHostedAppBrokerURL     = "https://utsusemi.duckdns.org"
 	DefaultCredentialAccount      = "utsusemi"
 )
 

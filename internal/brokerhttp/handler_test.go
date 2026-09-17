@@ -35,7 +35,7 @@ func TestIsLoopbackBrokerURL(t *testing.T) {
 	if !IsLoopbackBrokerURL("http://127.0.0.1:8787") {
 		t.Fatal("127.0.0.1")
 	}
-	if IsLoopbackBrokerURL("https://utsusemi-broker.novrd.workers.dev") {
+	if IsLoopbackBrokerURL("https://broker.example.com") {
 		t.Fatal("hosted")
 	}
 }

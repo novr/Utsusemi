@@ -1,9 +1,16 @@
 locals {
   ssh_authorized_keys = trimspace(var.ssh_public_key) == "" ? null : trimspace(var.ssh_public_key)
   utsusemi_binary_url = trimspace(var.utsusemi_binary_url) != "" ? trimspace(var.utsusemi_binary_url) : "https://github.com/novr/utsusemi/releases/download/v${var.utsusemi_version}/utsusemi_${var.utsusemi_version}_linux_arm64.tar.gz"
+  # indent() skips the first line; cloud-init write_files needs every content line indented.
+  cloud_init_indent = { for path, content in {
+    "${path.module}/scripts/utsusemi-broker.service" = file("${path.module}/scripts/utsusemi-broker.service")
+    "${path.module}/scripts/open-broker-ports.sh"      = file("${path.module}/scripts/open-broker-ports.sh")
+  } : path => join("\n", [for line in split("\n", chomp(content)) : "      ${line}"]) }
   user_data = templatefile("${path.module}/cloud-init.yaml.tpl", {
-    broker_fqdn         = var.broker_fqdn
-    utsusemi_binary_url = local.utsusemi_binary_url
+    broker_fqdn              = var.broker_fqdn
+    utsusemi_binary_url      = local.utsusemi_binary_url
+    broker_systemd_unit      = local.cloud_init_indent["${path.module}/scripts/utsusemi-broker.service"]
+    open_broker_ports_script = local.cloud_init_indent["${path.module}/scripts/open-broker-ports.sh"]
   })
 }
 

@@ -7,7 +7,7 @@ target:
 labels: [self-hosted, macOS, tart, arm64]
 registration:
   mode: hosted_app
-  # broker_url: https://utsusemi-broker.novrd.workers.dev
+  # broker_url: https://utsusemi.duckdns.org
 provider: tart
 base_image: ghcr.io/cirruslabs/macos-sequoia-base:latest
 runner_version: "2.336.0"
