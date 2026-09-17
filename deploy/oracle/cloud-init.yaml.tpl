@@ -56,7 +56,7 @@ write_files:
 
 runcmd:
   - bash -euxc 'curl -fsSL "${utsusemi_binary_url}" | tar -xz -C /usr/local/bin utsusemi && chmod 0755 /usr/local/bin/utsusemi'
-  - bash -euxc 'install -d -m 0755 /usr/share/keyrings && curl -1sLf "https://dl.cloudsmith.io/public/caddy/stable/gpg.key" | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg && curl -1sLf "https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt" | tee /etc/apt/sources.list.d/caddy-stable.list && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y caddy && caddy validate --config /etc/caddy/Caddyfile'
+  - bash -euxc 'install -d -m 0755 /usr/share/keyrings && curl -1sLf "https://dl.cloudsmith.io/public/caddy/stable/gpg.key" | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg && curl -1sLf "https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt" | tee /etc/apt/sources.list.d/caddy-stable.list && apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y -o Dpkg::Options::="--force-confold" caddy && caddy validate --config /etc/caddy/Caddyfile'
   - systemctl daemon-reload
   - systemctl enable caddy
   - systemctl restart caddy
