@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/novr/utsusemi/internal/config"
@@ -260,7 +259,7 @@ func waitUntilReady(parent context.Context, log *slog.Logger, vmProvider provide
 }
 
 func isNotRunningErr(err error) bool {
-	return err != nil && strings.Contains(strings.ToLower(err.Error()), "not running")
+	return errors.Is(err, provider.ErrNotRunning)
 }
 
 func withTeardownBudget(fn func(context.Context) error) error {

@@ -175,12 +175,12 @@ func TestWaitUntilReadyGivesUpWhenNotRunning(t *testing.T) {
 	readyTimeout = time.Minute
 	readyWarnEvery = time.Hour
 
-	p := &healthCheckProvider{failLeft: 100, err: fmt.Errorf("vm x is not running")}
+	p := &healthCheckProvider{failLeft: 100, err: fmt.Errorf("%w: x", provider.ErrNotRunning)}
 	err := waitUntilReady(context.Background(), slog.Default(), p, "vm")
 	if err == nil {
 		t.Fatal("expected not-running failure")
 	}
-	if !strings.Contains(err.Error(), "not running") {
+	if !errors.Is(err, provider.ErrNotRunning) {
 		t.Fatalf("error=%v", err)
 	}
 }

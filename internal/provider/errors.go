@@ -1,6 +1,12 @@
 package provider
 
-import "strings"
+import (
+	"errors"
+	"strings"
+)
+
+// ErrNotRunning means the VM is listed as not running (guest agent not yet relevant).
+var ErrNotRunning = errors.New("vm is not running")
 
 // IsBenignMissing reports whether err indicates the VM (or path) is already gone.
 // Tart stop/delete messages are matched by substring; used so teardown/reclaim
