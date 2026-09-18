@@ -149,7 +149,7 @@ func (p *TartProvider) HealthCheck(ctx context.Context, name string) error {
 		return err
 	}
 	if !running {
-		return fmt.Errorf("vm %s is not running", name)
+		return fmt.Errorf("%w: %s", ErrNotRunning, name)
 	}
 	return p.ExecStdin(ctx, name, "bash", []string{"-c", "true"}, nil, nil)
 }

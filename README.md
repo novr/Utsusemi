@@ -25,7 +25,7 @@ utsusemi run
 |------|---------|
 | Config | `~/.config/utsusemi/config.yaml` |
 | State | `~/.local/state/utsusemi` |
-| Agent log | `{state_dir}/agent.log` (`utsusemi run --log`; JSON lines) |
+| Agent log | `{state_dir}/agent.log` (`utsusemi run --log` / `brew services`; JSON lines) |
 | Credentials | Keychain (same macOS user as setup and service) |
 
 Use `--config` or `UTSUSEMI_CONFIG` when multiple agents on one Mac must not share state (see [Personal account](#personal-account-no-org)).
@@ -170,7 +170,7 @@ Edit `config.yaml` after `configure` with `utsusemi configure edit`, or set flag
 
 | Key | Default | Notes |
 |-----|---------|-------|
-| `pool_size` | `1` | Upper bound is provider-specific (`utsusemi status` shows `max`; Tart is 2) |
+| `pool_size` | `1` | Upper bound is provider-specific (`utsusemi status` shows `max`; Tart is 2). Status `draining` is lease-less running VMs — it does **not** count toward `pool_size`. |
 | `reclaim_policy` | `grace` | `soft` — local dev; `hard` — immediate |
 | `reclaim_grace` | `15m` | When `reclaim_policy` is `grace` |
 | `reconciliation_interval` | `5m` | Reclaim interval during `run` |
@@ -184,7 +184,7 @@ Edit `config.yaml` after `configure` with `utsusemi configure edit`, or set flag
 - **base_image** / `--base-image` — pull on agent start ([Tart](https://tart.run/))
 - **min_free_disk_gb** — default `50`
 - **Keychain** — unlock: `security unlock-keychain login.keychain`; headless: `security set-keychain-settings -t 0 ~/Library/Keychains/login.keychain-db`
-- **Networking** — [Tart FAQ](https://tart.run/faq/); `softnet: true` → [Softnet](https://github.com/cirruslabs/softnet)
+- **Networking** — [Tart FAQ](https://tart.run/faq/); `softnet: true` → [Softnet](https://github.com/cirruslabs/softnet) (NAT / lease isolation). Softnet does **not** stabilize Tart guest-agent GRPC / `tart exec`.
 - **Directory shares** — `mounts` passes host directories into the VM as Tart `--dir` flags (see below)
 
 #### Directory shares (host → VM)
@@ -288,12 +288,14 @@ utsusemi clean --dry-run
 
 ### Service logs
 
-`utsusemi run --log` mirrors structured logs to `{state_dir}/agent.log` (or `--log=/path`) so foreground runs leave a trail without relying on the terminal buffer. Tart subprocess lines are captured in the file even on a TTY (console format may differ from the `  | ` prefix). `newsyslog` below applies to brew launchd logs only, not `{state_dir}/agent.log`.
+`utsusemi run --log` mirrors structured logs to `{state_dir}/agent.log` (or `--log=/path`) so foreground runs leave a trail without relying on the terminal buffer. Tart subprocess lines are captured in the file even on a TTY (console format may differ from the `  | ` prefix).
 
-`brew services` also captures stdout/stderr via launchd:
+Homebrew's launchd formula runs `utsusemi run --log` (from the next release; `brew reinstall utsusemi` to refresh an older formula), so brew services also append to `{state_dir}/agent.log`. Launchd still captures stdout/stderr separately:
 
 - `$(brew --prefix)/var/log/utsusemi.log`
 - `$(brew --prefix)/var/log/utsusemi.error.log`
+
+`newsyslog` below applies to those brew launchd logs only, not `{state_dir}/agent.log`.
 
 ```bash
 BREW_PREFIX="$(brew --prefix)"

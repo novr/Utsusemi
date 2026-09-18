@@ -18,6 +18,19 @@ import (
 //go:embed bootstrap.sh
 var bootstrapScript string
 
+// Tunables (package vars so tests can shrink timeouts).
+var (
+	readyTimeout       = 3 * time.Minute
+	readyPollInterval  = 2 * time.Second
+	readyAttemptBudget = 15 * time.Second
+	readyWarnEvery     = 30 * time.Second
+	notRunningBudget   = 45 * time.Second
+	teardownAttempts   = 3
+	teardownRetryWait  = 500 * time.Millisecond
+	teardownAttemptBud = 30 * time.Second
+	deleteRunnerTries  = 2
+)
+
 type Options struct {
 	Config    *config.Config
 	Target    target.Target
@@ -77,7 +90,7 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 	metrics.CloneMs = time.Since(phase).Milliseconds()
 	log.Info("spawn phase complete", "phase", "clone", "duration_ms", metrics.CloneMs)
 	defer func() {
-		_ = s.opts.Provider.Delete(context.Background(), vmName)
+		stopAndDeleteBestEffort(log, s.opts.Provider, vmName)
 	}()
 
 	phase = time.Now()
@@ -85,8 +98,8 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 	if err := s.opts.Provider.Start(spawnCtx, vmName); err != nil {
 		return Result{}, fmt.Errorf("start: %w", err)
 	}
-	if err := waitForRunning(spawnCtx, s.opts.Provider, vmName); err != nil {
-		return Result{}, fmt.Errorf("wait for vm: %w", err)
+	if err := waitUntilReady(spawnCtx, log, s.opts.Provider, vmName); err != nil {
+		return Result{}, fmt.Errorf("wait for vm ready: %w", err)
 	}
 	metrics.BootMs = time.Since(phase).Milliseconds()
 	log.Info("spawn phase complete", "phase", "boot", "duration_ms", metrics.BootMs)
@@ -103,7 +116,7 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 	runnerRegistered := true
 	defer func() {
 		if runnerRegistered {
-			_ = s.opts.Registrar.DeleteRunner(context.Background(), s.opts.Target, runnerID)
+			deleteRunnerBestEffort(log, s.opts.Registrar, s.opts.Target, runnerID)
 		}
 	}()
 
@@ -142,7 +155,6 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 			} else {
 				log.Warn("job timeout reached")
 			}
-			_ = s.opts.Provider.Stop(context.Background(), vmName)
 			return Result{}, jobCtx.Err()
 		case err := <-execDone:
 			metrics.JobMs = time.Since(jobPhase).Milliseconds()
@@ -180,21 +192,113 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 	}
 }
 
-func waitForRunning(ctx context.Context, vmProvider provider.VMProvider, name string) error {
-	ticker := time.NewTicker(2 * time.Second)
+// waitUntilReady polls HealthCheck until the guest agent accepts exec, or readyTimeout elapses.
+// Transient tart list/exec failures are retried so CreateJIT is not issued against an unreachable VM.
+func waitUntilReady(parent context.Context, log *slog.Logger, vmProvider provider.VMProvider, name string) error {
+	ctx, cancel := context.WithTimeout(parent, readyTimeout)
+	defer cancel()
+
+	ticker := time.NewTicker(readyPollInterval)
 	defer ticker.Stop()
+
+	started := time.Now()
+	var lastGuestErr error
+	var lastWarn time.Time
+	var notRunningSince time.Time
 	for {
-		running, err := vmProvider.IsRunning(ctx, name)
-		if err != nil {
-			return err
-		}
-		if running {
+		attemptCtx, attemptCancel := context.WithTimeout(ctx, readyAttemptBudget)
+		err := vmProvider.HealthCheck(attemptCtx, name)
+		attemptCancel()
+		if err == nil {
 			return nil
+		}
+		if ctx.Err() != nil {
+			break
+		}
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = fmt.Errorf("health check timed out after %s", readyAttemptBudget)
+			notRunningSince = time.Time{}
+		} else if isNotRunningErr(err) {
+			if notRunningSince.IsZero() {
+				notRunningSince = time.Now()
+			}
+			if time.Since(notRunningSince) >= notRunningBudget {
+				return fmt.Errorf("vm not running after %s: %w", notRunningBudget, err)
+			}
+		} else {
+			notRunningSince = time.Time{}
+		}
+		lastGuestErr = err
+		now := time.Now()
+		if lastWarn.IsZero() || now.Sub(lastWarn) >= readyWarnEvery {
+			log.Warn("vm not ready yet", "error", err, "elapsed", now.Sub(started).Round(time.Second))
+			lastWarn = now
+		} else {
+			log.Debug("vm not ready yet", "error", err)
 		}
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
 		case <-ticker.C:
+			continue
+		}
+		break
+	}
+	if ctx.Err() != nil {
+		if lastGuestErr != nil {
+			return fmt.Errorf("%w: %v", ctx.Err(), lastGuestErr)
+		}
+		return ctx.Err()
+	}
+	if lastGuestErr != nil {
+		return lastGuestErr
+	}
+	return errors.New("waitUntilReady: unexpected exit")
+}
+
+func isNotRunningErr(err error) bool {
+	return errors.Is(err, provider.ErrNotRunning)
+}
+
+func withTeardownBudget(fn func(context.Context) error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), teardownAttemptBud)
+	defer cancel()
+	return fn(ctx)
+}
+
+func stopAndDeleteBestEffort(log *slog.Logger, vmProvider provider.VMProvider, name string) {
+	var lastErr error
+	for attempt := 1; attempt <= teardownAttempts; attempt++ {
+		stopErr := withTeardownBudget(func(ctx context.Context) error {
+			return vmProvider.Stop(ctx, name)
+		})
+		if stopErr != nil && !provider.IsBenignMissing(stopErr) {
+			log.Debug("stop vm attempt failed", "error", stopErr, "attempt", attempt)
+		}
+
+		lastErr = withTeardownBudget(func(ctx context.Context) error {
+			return vmProvider.Delete(ctx, name)
+		})
+		if lastErr == nil || provider.IsBenignMissing(lastErr) {
+			return
+		}
+		if attempt < teardownAttempts {
+			time.Sleep(teardownRetryWait)
 		}
 	}
+	log.Warn("delete vm failed after retries", "error", lastErr, "attempts", teardownAttempts)
+}
+
+func deleteRunnerBestEffort(log *slog.Logger, reg registrar.RunnerRegistrar, tgt target.Target, runnerID int64) {
+	ctx := context.Background()
+	var lastErr error
+	for attempt := 1; attempt <= deleteRunnerTries; attempt++ {
+		lastErr = reg.DeleteRunner(ctx, tgt, runnerID)
+		if lastErr == nil || registrar.IsNotFound(lastErr) {
+			return
+		}
+		if attempt < deleteRunnerTries {
+			time.Sleep(teardownRetryWait)
+		}
+	}
+	log.Warn("delete runner failed after retries", "runner_id", runnerID, "error", lastErr, "attempts", deleteRunnerTries)
 }

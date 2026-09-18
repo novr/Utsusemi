@@ -121,6 +121,11 @@ func IsUnauthorized(err error) bool {
 	return ok && apiErr.StatusCode == http.StatusUnauthorized
 }
 
+func IsNotFound(err error) bool {
+	apiErr, ok := asAPIError(err)
+	return ok && apiErr.StatusCode == http.StatusNotFound
+}
+
 func asAPIError(err error) (*apiError, bool) {
 	var apiErr *apiError
 	if errors.As(err, &apiErr) {
