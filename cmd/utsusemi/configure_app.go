@@ -78,13 +78,17 @@ func newConfigureAppCmd() *cobra.Command {
 
 			success := configureSuccess{WroteConfig: true}
 			refreshed := false
-			if (refresh || needsAppDeviceFlow(merge.Config, merge)) &&
+			// Runner group is bound into the host JWT; value change needs re-exchange
+			// (same path as --refresh). Org/broker/oauth-client-id still use device flow.
+			wantRefresh := refresh || merge.RunnerGroupAuthChanged
+			wantCredential := wantRefresh || needsAppDeviceFlow(merge.Config, merge)
+			if wantCredential &&
 				brokerhttp.IsLoopbackBrokerURL(merge.Config.Registration.BrokerURL) {
 				if err := brokerhttp.CheckReachable(cmd.Context(), merge.Config.Registration.BrokerURL); err != nil {
 					return err
 				}
 			}
-			if refresh {
+			if wantRefresh {
 				githubUser, err := tryAppOAuthRefresh(cmd.Context(), merge.Config)
 				if err == nil {
 					success.CredentialUpdated = true
@@ -94,7 +98,7 @@ func newConfigureAppCmd() *cobra.Command {
 					fmt.Fprintf(cmd.ErrOrStderr(), "OAuth refresh failed: %v; starting device flow\n", err)
 				}
 			}
-			if !refreshed && (refresh || needsAppDeviceFlow(merge.Config, merge)) {
+			if !refreshed && wantCredential {
 				githubUser, credential, err := runAppDeviceFlow(cmd, merge.Config)
 				if err != nil {
 					return err

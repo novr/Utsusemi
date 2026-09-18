@@ -57,6 +57,27 @@ func TestLoadRejectsUnknownFormat(t *testing.T) {
 	}
 }
 
+func TestHostJWTTargetAndSameHostTarget(t *testing.T) {
+	jwt := makeManagerTestJWT(time.Now().Add(time.Hour), "My-Org", 3)
+	got, err := HostJWTTarget(jwt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Type != target.TypeOrg || got.Org != "my-org" || got.RunnerGroupID != 3 {
+		t.Fatalf("got=%+v", got)
+	}
+	want := target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 3}
+	if !SameHostTarget(got, want) {
+		t.Fatal("expected match")
+	}
+	if SameHostTarget(got, target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 1}) {
+		t.Fatal("expected group mismatch")
+	}
+	if _, err := HostJWTTarget(testJWT(time.Now().Add(time.Hour))); err == nil {
+		t.Fatal("expected error for jwt without target")
+	}
+}
+
 func TestNeedsRefreshThreshold(t *testing.T) {
 	fresh := testJWT(time.Now().Add(30 * 24 * time.Hour))
 	needs, err := NeedsRefresh(fresh, false)

@@ -44,11 +44,12 @@ type configureMergeInput struct {
 }
 
 type configureMergeResult struct {
-	Config            *config.Config
-	ExistingConfig    bool
-	OrgAuthChanged    bool
-	BrokerAuthChanged bool
-	OAuthAuthChanged  bool
+	Config                 *config.Config
+	ExistingConfig         bool
+	OrgAuthChanged         bool
+	BrokerAuthChanged      bool
+	OAuthAuthChanged       bool
+	RunnerGroupAuthChanged bool
 }
 
 func mergeConfigureConfig(cmd *cobra.Command, in configureMergeInput) (configureMergeResult, error) {
@@ -80,6 +81,7 @@ func mergeConfigureConfig(cmd *cobra.Command, in configureMergeInput) (configure
 	runnerGroupChanged := cmd.Flags().Changed("runner-group-id")
 
 	prevOrg := cfg.Target.Org
+	prevRunnerGroup := cfg.Target.RunnerGroupID
 	prevBroker := cfg.Registration.BrokerURL
 	prevOAuth := cfg.Registration.OAuthClientID
 
@@ -98,6 +100,7 @@ func mergeConfigureConfig(cmd *cobra.Command, in configureMergeInput) (configure
 	}
 
 	orgAuthChanged := orgChanged && cfg.Target.Org != prevOrg
+	runnerGroupAuthChanged := runnerGroupChanged && cfg.Target.RunnerGroupID != prevRunnerGroup
 	brokerAuthChanged := false
 	if in.Mode == configureModeApp {
 		if existing && brokerChanged {
@@ -139,11 +142,12 @@ func mergeConfigureConfig(cmd *cobra.Command, in configureMergeInput) (configure
 	}
 
 	return configureMergeResult{
-		Config:            cfg,
-		ExistingConfig:    existing,
-		OrgAuthChanged:    orgAuthChanged,
-		BrokerAuthChanged: brokerAuthChanged,
-		OAuthAuthChanged:  oauthAuthChanged,
+		Config:                 cfg,
+		ExistingConfig:         existing,
+		OrgAuthChanged:         orgAuthChanged,
+		BrokerAuthChanged:      brokerAuthChanged,
+		OAuthAuthChanged:       oauthAuthChanged,
+		RunnerGroupAuthChanged: runnerGroupAuthChanged,
 	}, nil
 }
 

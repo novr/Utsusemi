@@ -56,10 +56,13 @@ Re-running `configure` merges **only changed flags** so hand-edited keys (`recla
 |------|-----------|
 | `configure token` without a token | Change pool settings without rotating Keychain |
 | `configure app`, same `--org` / `--broker` | Skip device flow when the stored credential still matches |
+| `configure app --runner-group-id` (value change) | Host JWT embeds the group — re-exchange via OAuth refresh (device flow if refresh fails) |
 | `configure app --refresh` | Renew OAuth while stopped; device flow only if the refresh token is dead |
 | Credential-only `--refresh` | OAuth does not change YAML — no overwrite prompt, no `config.yaml` rewrite |
 | `edit` / `show` / `path` use `--config` only | That path is what `run` loads; `--output` is for writing elsewhere during setup |
 | `registration.mode` change | Different Keychain layout and registrar — use `configure edit` deliberately |
+
+If `configure edit` changes `org` / `runner_group_id`, the next `validate` / `run` / `list` re-exchanges the host JWT when the embedded target no longer matches. Use `configure app --refresh` to update the credential immediately.
 
 `--runner-version latest` pins to the current [actions/runner](https://github.com/actions/runner/releases) release so JIT registration is not rejected when GitHub raises the minimum.
 

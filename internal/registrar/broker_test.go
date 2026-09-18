@@ -16,11 +16,11 @@ import (
 	"github.com/novr/utsusemi/internal/target"
 )
 
-const freshHostJWT = "eyJhbGciOiJFUzI1NiJ9.eyJleHAiOjk5OTk5OTk5OTl9.c2ln"
+const freshHostJWTExp = 9999999999 // far future; payload includes org target
 
 func testFreshBundle(t *testing.T) string {
 	t.Helper()
-	bundle, err := hostcredential.NewBundle(freshHostJWT, "refresh-test", "octocat")
+	bundle, err := hostcredential.NewBundle(makeExpiringJWT(time.Unix(freshHostJWTExp, 0)), "refresh-test", "octocat")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -457,7 +457,14 @@ func TestBrokerRegistrarExchangeNotFoundNoRetryLoop(t *testing.T) {
 }
 
 func makeExpiringJWT(exp time.Time) string {
-	payload, _ := json.Marshal(map[string]int64{"exp": exp.Unix()})
+	payload, _ := json.Marshal(map[string]any{
+		"exp": exp.Unix(),
+		"target": map[string]any{
+			"type":            "org",
+			"org":             "my-org",
+			"runner_group_id": int64(1),
+		},
+	})
 	payloadB64 := base64.RawURLEncoding.EncodeToString(payload)
 	return "eyJhbGciOiJFUzI1NiJ9." + payloadB64 + ".sig"
 }
