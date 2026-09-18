@@ -81,7 +81,11 @@ func (r *GitHubPATRegistrar) DeleteRunner(ctx context.Context, tgt target.Target
 	if err != nil {
 		return err
 	}
-	return r.api.doWithRetry(ctx, http.MethodDelete, path, token, nil, nil)
+	err = r.api.doWithRetry(ctx, http.MethodDelete, path, token, nil, nil)
+	if apiErr, ok := asAPIError(err); ok && apiErr.StatusCode == http.StatusNotFound {
+		return nil
+	}
+	return err
 }
 
 func (r *GitHubPATRegistrar) ListRunners(ctx context.Context, tgt target.Target, prefix string) ([]Runner, error) {

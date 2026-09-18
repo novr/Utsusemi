@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/novr/utsusemi/internal/config"
@@ -18,12 +19,15 @@ import (
 //go:embed bootstrap.sh
 var bootstrapScript string
 
-const (
-	readyTimeout      = 3 * time.Minute
-	readyPollInterval = 2 * time.Second
-	teardownAttempts  = 3
-	teardownRetryWait = 500 * time.Millisecond
-	deleteRunnerTries = 2
+// Tunables (package vars so tests can shrink timeouts).
+var (
+	readyTimeout       = 3 * time.Minute
+	readyPollInterval  = 2 * time.Second
+	readyAttemptBudget = 15 * time.Second
+	readyWarnEvery     = 30 * time.Second
+	teardownAttempts   = 3
+	teardownRetryWait  = 500 * time.Millisecond
+	deleteRunnerTries  = 2
 )
 
 type Options struct {
@@ -197,16 +201,30 @@ func waitUntilReady(parent context.Context, log *slog.Logger, vmProvider provide
 	ticker := time.NewTicker(readyPollInterval)
 	defer ticker.Stop()
 
-	var lastErr error
+	started := time.Now()
+	var lastGuestErr error
+	var lastWarn time.Time
 	for {
-		lastErr = vmProvider.HealthCheck(ctx, name)
-		if lastErr == nil {
+		attemptCtx, attemptCancel := context.WithTimeout(ctx, readyAttemptBudget)
+		err := vmProvider.HealthCheck(attemptCtx, name)
+		attemptCancel()
+		if err == nil {
 			return nil
 		}
 		if ctx.Err() != nil {
 			break
 		}
-		log.Debug("vm not ready yet", "error", lastErr)
+		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
+			err = fmt.Errorf("health check timed out after %s", readyAttemptBudget)
+		}
+		lastGuestErr = err
+		now := time.Now()
+		if lastWarn.IsZero() || now.Sub(lastWarn) >= readyWarnEvery {
+			log.Warn("vm not ready yet", "error", err, "elapsed", now.Sub(started).Round(time.Second))
+			lastWarn = now
+		} else {
+			log.Debug("vm not ready yet", "error", err)
+		}
 		select {
 		case <-ctx.Done():
 		case <-ticker.C:
@@ -214,10 +232,16 @@ func waitUntilReady(parent context.Context, log *slog.Logger, vmProvider provide
 		}
 		break
 	}
-	if lastErr != nil {
-		return lastErr
+	if ctx.Err() != nil {
+		if lastGuestErr != nil {
+			return fmt.Errorf("%w: %v", ctx.Err(), lastGuestErr)
+		}
+		return ctx.Err()
 	}
-	return ctx.Err()
+	if lastGuestErr != nil {
+		return lastGuestErr
+	}
+	return errors.New("waitUntilReady: unexpected exit")
 }
 
 func stopAndDeleteBestEffort(log *slog.Logger, vmProvider provider.VMProvider, name string) {
@@ -227,7 +251,7 @@ func stopAndDeleteBestEffort(log *slog.Logger, vmProvider provider.VMProvider, n
 	var lastErr error
 	for attempt := 1; attempt <= teardownAttempts; attempt++ {
 		lastErr = vmProvider.Delete(ctx, name)
-		if lastErr == nil {
+		if lastErr == nil || isBenignVMGone(lastErr) {
 			return
 		}
 		if attempt < teardownAttempts {
@@ -235,6 +259,16 @@ func stopAndDeleteBestEffort(log *slog.Logger, vmProvider provider.VMProvider, n
 		}
 	}
 	log.Warn("delete vm failed after retries", "error", lastErr, "attempts", teardownAttempts)
+}
+
+func isBenignVMGone(err error) bool {
+	if err == nil {
+		return false
+	}
+	msg := strings.ToLower(err.Error())
+	return strings.Contains(msg, "does not exist") ||
+		strings.Contains(msg, "not found") ||
+		strings.Contains(msg, "no such file")
 }
 
 func deleteRunnerBestEffort(log *slog.Logger, reg registrar.RunnerRegistrar, tgt target.Target, runnerID int64) {

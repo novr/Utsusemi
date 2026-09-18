@@ -132,3 +132,30 @@ func TestGitHubPATRegistrarRetryOnRateLimit(t *testing.T) {
 		t.Fatalf("expected retry, attempts=%d", attempts)
 	}
 }
+
+func TestGitHubPATRegistrarDeleteRunnerNotFoundOK(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodDelete {
+			t.Fatalf("method %s", r.Method)
+		}
+		if r.URL.Path != "/repos/alice/app/actions/runners/9" {
+			t.Fatalf("path %s", r.URL.Path)
+		}
+		w.WriteHeader(http.StatusNotFound)
+		_, _ = w.Write([]byte(`{"message":"Not Found"}`))
+	}))
+	defer server.Close()
+
+	store := keychain.NewMemoryStore()
+	_ = store.Set("svc", "acct", "pat")
+	reg := &GitHubPATRegistrar{
+		api:     &httpClient{client: server.Client(), baseURL: server.URL},
+		store:   store,
+		service: "svc",
+		account: "acct",
+	}
+	err := reg.DeleteRunner(context.Background(), target.Target{Type: target.TypeRepo, Owner: "alice", Repo: "app"}, 9)
+	if err != nil {
+		t.Fatal(err)
+	}
+}
