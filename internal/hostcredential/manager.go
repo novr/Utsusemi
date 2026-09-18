@@ -100,6 +100,12 @@ func (m *Manager) EnsureFresh(ctx context.Context, tgt target.Target, force bool
 		return "", err
 	}
 	if !needs {
+		if jwtTgt, err := HostJWTTarget(loaded.HostJWT); err != nil || !SameHostTarget(jwtTgt, tgt) {
+			// Missing/unparseable target or org/runner_group_id drift → re-exchange.
+			needs = true
+		}
+	}
+	if !needs {
 		return loaded.HostJWT, nil
 	}
 
@@ -113,7 +119,9 @@ func (m *Manager) EnsureFresh(ctx context.Context, tgt target.Target, force bool
 			return "", err
 		}
 		if !stillNeeds {
-			return loaded.HostJWT, nil
+			if jwtTgt, err := HostJWTTarget(loaded.HostJWT); err == nil && SameHostTarget(jwtTgt, tgt) {
+				return loaded.HostJWT, nil
+			}
 		}
 	}
 

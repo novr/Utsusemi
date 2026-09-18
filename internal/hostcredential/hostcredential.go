@@ -134,6 +134,35 @@ func NeedsRefresh(hostJWT string, force bool) (bool, error) {
 	return remaining <= RefreshThreshold, nil
 }
 
+// HostJWTTarget reads the unverified JWT payload target claim. Callers use this
+// only to decide whether a local re-exchange is needed; brokers still verify signatures.
+func HostJWTTarget(hostJWT string) (target.Target, error) {
+	parts := strings.Split(hostJWT, ".")
+	if len(parts) != 3 {
+		return target.Target{}, fmt.Errorf("invalid jwt")
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return target.Target{}, fmt.Errorf("decode jwt payload: %w", err)
+	}
+	var claims struct {
+		Target map[string]any `json:"target"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return target.Target{}, fmt.Errorf("parse jwt payload: %w", err)
+	}
+	if claims.Target == nil {
+		return target.Target{}, fmt.Errorf("jwt missing target")
+	}
+	return ParseTargetMap(claims.Target)
+}
+
+func SameHostTarget(a, b target.Target) bool {
+	return a.Type == b.Type &&
+		strings.EqualFold(a.Org, b.Org) &&
+		a.RunnerGroupID == b.RunnerGroupID
+}
+
 func TargetPayload(tgt target.Target) (map[string]any, error) {
 	if err := target.RequireOrg(tgt); err != nil {
 		return nil, err

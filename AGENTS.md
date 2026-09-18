@@ -63,7 +63,7 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 ### CLI (`cmd/utsusemi`)
 
 - Wire dependencies only; no pool logic, Tart commands, or OAuth/device-flow implementation.
-- `configure app` — device flow only when credential missing or org/broker/oauth-client-id **value** changes; `--refresh` → `EnsureFresh(force)` then device flow. Credential-only `--refresh` skips confirm/`writeConfig` because YAML is unchanged.
+- `configure app` — device flow when credential missing or org/broker/oauth-client-id **value** changes; `--runner-group-id` **value** change → `EnsureFresh(force)` then device flow. `--refresh` → same EnsureFresh path. Credential-only `--refresh` skips confirm/`writeConfig` because YAML is unchanged.
 - `configure token` — token optional so config-only merges do not require Keychain writes.
 - **`configure edit|path|show`** — always `configPath` (`--config`); `--output` divergence would edit a file `run` never loads. New file seeds from embedded template so `$EDITOR` never opens invalid YAML.
 - Cross-mode `configure app|token` rejected — Keychain shape and registrar differ; mode flip via `configure edit` only.
@@ -89,7 +89,7 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 Hosted app rules:
 
 - `Load` accepts bundle JSON only; legacy bare JWT is rejected.
-- **`hostcredential.Manager`** owns refresh → exchange → Keychain update.
+- **`hostcredential.Manager`** owns refresh → exchange → Keychain update. `EnsureFresh` also re-exchanges when the host JWT `target` (org / `runner_group_id`) does not match the requested target — broker target mismatch is **403**, which is not retried by `requestWithCredential` (only **401** is).
 - After OAuth refresh, persist bundle with the **new refresh token** before exchange (refresh tokens are single-use). The partial write may still carry the previous host JWT until exchange succeeds.
 - **`BrokerRegistrar`** uses `Manager.EnsureFresh` via `requestWithCredential`; do not duplicate store/oauth/lock logic there.
 - Broker **401** → `EnsureFresh(..., force=true)` and one retry; other HTTP errors do not force refresh.

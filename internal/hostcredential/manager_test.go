@@ -14,7 +14,7 @@ import (
 )
 
 func TestManagerEnsureFreshWhenValid(t *testing.T) {
-	jwt := testJWT(time.Now().Add(30 * 24 * time.Hour))
+	jwt := makeManagerTestJWT(time.Now().Add(30*24*time.Hour), "my-org", 1)
 	bundle, err := NewBundle(jwt, "refresh-old", "octocat")
 	if err != nil {
 		t.Fatal(err)
@@ -51,12 +51,83 @@ func TestManagerEnsureFreshWhenValid(t *testing.T) {
 	}
 }
 
+func TestManagerEnsureFreshReexchangesOnRunnerGroupMismatch(t *testing.T) {
+	broker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case CredentialExchangePath:
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"credential": makeManagerTestJWT(time.Now().Add(30*24*time.Hour), "my-org", 2),
+				"target": map[string]any{
+					"type":            "org",
+					"org":             "my-org",
+					"runner_group_id": float64(2),
+				},
+			})
+		default:
+			t.Fatalf("path %s", r.URL.Path)
+		}
+	}))
+	defer broker.Close()
+
+	oauth := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"access_token":  "access",
+			"refresh_token": "refresh-new",
+		})
+	}))
+	defer oauth.Close()
+
+	jwt := makeManagerTestJWT(time.Now().Add(30*24*time.Hour), "my-org", 1)
+	bundle, err := NewBundle(jwt, "refresh-old", "octocat")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	store := keychain.NewMemoryStore()
+	_ = store.Set("svc", "acct", bundle)
+	mgr := NewManager(ManagerOptions{
+		Store:      store,
+		Service:    "svc",
+		Account:    "acct",
+		BrokerURL:  broker.URL,
+		LockPath:   t.TempDir() + "/credential.refresh.lock",
+		HTTPClient: broker.Client(),
+	})
+	mgr.SetOAuth(&OAuthClient{TokenURL: oauth.URL})
+
+	token, err := mgr.EnsureFresh(context.Background(), target.Target{Type: target.TypeOrg, Org: "my-org", RunnerGroupID: 2}, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if token == jwt {
+		t.Fatal("expected re-exchanged host JWT")
+	}
+	updated, err := store.Get("svc", "acct")
+	if err != nil {
+		t.Fatal(err)
+	}
+	loaded, err := Load(updated)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if loaded.RefreshToken != "refresh-new" {
+		t.Fatalf("refresh=%q", loaded.RefreshToken)
+	}
+	got, err := HostJWTTarget(loaded.HostJWT)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RunnerGroupID != 2 {
+		t.Fatalf("group=%d", got.RunnerGroupID)
+	}
+}
+
 func TestManagerEnsureFreshRefreshesStaleJWT(t *testing.T) {
 	broker := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch r.URL.Path {
 		case CredentialExchangePath:
 			_ = json.NewEncoder(w).Encode(map[string]any{
-				"credential": makeManagerTestJWT(time.Now().Add(30 * 24 * time.Hour)),
+				"credential": makeManagerTestJWT(time.Now().Add(30*24*time.Hour), "my-org", 1),
 				"target": map[string]any{
 					"type":            "org",
 					"org":             "my-org",
@@ -77,7 +148,7 @@ func TestManagerEnsureFreshRefreshesStaleJWT(t *testing.T) {
 	}))
 	defer oauth.Close()
 
-	jwt := makeManagerTestJWT(time.Now().Add(48 * time.Hour))
+	jwt := makeManagerTestJWT(time.Now().Add(48*time.Hour), "my-org", 1)
 	bundle, err := NewBundle(jwt, "refresh-old", "octocat")
 	if err != nil {
 		t.Fatal(err)
@@ -113,8 +184,15 @@ func TestManagerEnsureFreshRefreshesStaleJWT(t *testing.T) {
 	}
 }
 
-func makeManagerTestJWT(exp time.Time) string {
-	payload, _ := json.Marshal(map[string]int64{"exp": exp.Unix()})
+func makeManagerTestJWT(exp time.Time, org string, group int64) string {
+	payload, _ := json.Marshal(map[string]any{
+		"exp": exp.Unix(),
+		"target": map[string]any{
+			"type":            "org",
+			"org":             org,
+			"runner_group_id": group,
+		},
+	})
 	payloadB64 := base64.RawURLEncoding.EncodeToString(payload)
 	return "eyJhbGciOiJFUzI1NiJ9." + payloadB64 + ".sig"
 }

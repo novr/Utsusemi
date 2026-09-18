@@ -13,6 +13,74 @@ import (
 	"github.com/novr/utsusemi/internal/keychain"
 )
 
+func TestMergeConfigureConfigRunnerGroupAuthChanged(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	existing := &config.Config{
+		Target: config.TargetYAML("my-org", "", 1),
+		Registration: config.Registration{
+			Mode:      config.ModeHostedApp,
+			BrokerURL: config.DefaultHostedAppBrokerURL,
+		},
+		Labels:        []string{"self-hosted"},
+		Provider:      "tart",
+		BaseImage:     "ghcr.io/example/old:latest",
+		RunnerVersion: "2.336.0",
+		PoolSize:      1,
+	}
+	if err := writeConfig(path, existing); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &cobra.Command{}
+	opts := runnerOptions{}
+	addRunnerFlags(cmd, &opts)
+	var runnerGroup int64
+	cmd.Flags().Int64Var(&runnerGroup, "runner-group-id", 1, "")
+	if err := cmd.ParseFlags([]string{"--runner-group-id", "2"}); err != nil {
+		t.Fatal(err)
+	}
+
+	merge, err := mergeConfigureConfig(cmd, configureMergeInput{
+		Mode:       configureModeApp,
+		OutputPath: path,
+		Target:     configureTargetInput{Org: "my-org", RunnerGroup: 2},
+		App:        configureAppInput{BrokerURL: config.DefaultHostedAppBrokerURL},
+		Opts:       opts,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !merge.RunnerGroupAuthChanged {
+		t.Fatal("expected RunnerGroupAuthChanged when group value changes")
+	}
+	if merge.Config.Target.RunnerGroupID != 2 {
+		t.Fatalf("RunnerGroupID=%d", merge.Config.Target.RunnerGroupID)
+	}
+
+	cmdSame := &cobra.Command{}
+	optsSame := runnerOptions{}
+	addRunnerFlags(cmdSame, &optsSame)
+	var runnerGroupSame int64
+	cmdSame.Flags().Int64Var(&runnerGroupSame, "runner-group-id", 1, "")
+	if err := cmdSame.ParseFlags([]string{"--runner-group-id", "1"}); err != nil {
+		t.Fatal(err)
+	}
+	mergeSame, err := mergeConfigureConfig(cmdSame, configureMergeInput{
+		Mode:       configureModeApp,
+		OutputPath: path,
+		Target:     configureTargetInput{Org: "my-org", RunnerGroup: 1},
+		App:        configureAppInput{BrokerURL: config.DefaultHostedAppBrokerURL},
+		Opts:       optsSame,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mergeSame.RunnerGroupAuthChanged {
+		t.Fatal("expected no RunnerGroupAuthChanged when group value is unchanged")
+	}
+}
+
 func TestMergeConfigureConfigPreservesMounts(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
@@ -98,7 +166,7 @@ func TestNeedsAppDeviceFlowSkipsWhenCredentialPresent(t *testing.T) {
 	cfg := &config.Config{
 		Target: config.TargetYAML("my-org", "", 1),
 		Registration: config.Registration{
-			Mode:                    config.ModeHostedApp,
+			Mode:                      config.ModeHostedApp,
 			CredentialKeychainService: config.DefaultCredentialService,
 		},
 	}
@@ -123,7 +191,7 @@ func TestNeedsAppDeviceFlowWhenOAuthClientChanged(t *testing.T) {
 	cfg := &config.Config{
 		Target: config.TargetYAML("my-org", "", 1),
 		Registration: config.Registration{
-			Mode:                    config.ModeHostedApp,
+			Mode:                      config.ModeHostedApp,
 			CredentialKeychainService: config.DefaultCredentialService,
 		},
 	}
@@ -148,7 +216,7 @@ func TestNeedsAppDeviceFlowWhenOrgChanged(t *testing.T) {
 	cfg := &config.Config{
 		Target: config.TargetYAML("my-org", "", 1),
 		Registration: config.Registration{
-			Mode:                    config.ModeHostedApp,
+			Mode:                      config.ModeHostedApp,
 			CredentialKeychainService: config.DefaultCredentialService,
 		},
 	}
@@ -214,7 +282,7 @@ func TestEnsureConfigureAppRefreshCompatibleRejectsPAT(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	existing := &config.Config{
-		Target: config.TargetYAML("", "owner/repo", 1),
+		Target:       config.TargetYAML("", "owner/repo", 1),
 		Registration: config.Registration{Mode: config.ModeGitHubPAT},
 		Provider:     "tart",
 	}
