@@ -2,10 +2,14 @@ package spawn
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"log/slog"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -34,6 +38,103 @@ func (f *fakeRegistrar) ListRunners(ctx context.Context, tgt target.Target, pref
 
 func (f *fakeRegistrar) ValidateCredential(ctx context.Context, service, account string) error {
 	return nil
+}
+
+type healthCheckProvider struct {
+	provider.Stub
+	mu       sync.Mutex
+	failLeft int
+	calls    int
+	err      error
+}
+
+func (p *healthCheckProvider) HealthCheck(context.Context, string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.calls++
+	if p.failLeft > 0 {
+		p.failLeft--
+		if p.err != nil {
+			return p.err
+		}
+		return fmt.Errorf("not ready")
+	}
+	return nil
+}
+
+func (p *healthCheckProvider) callCount() int {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.calls
+}
+
+type deleteTrackingProvider struct {
+	provider.Stub
+	mu          sync.Mutex
+	deleteFails int
+	deleteCalls int
+	stopCalls   int
+}
+
+func (p *deleteTrackingProvider) Stop(context.Context, string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.stopCalls++
+	return fmt.Errorf("stop ignored")
+}
+
+func (p *deleteTrackingProvider) Delete(context.Context, string) error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.deleteCalls++
+	if p.deleteFails > 0 {
+		p.deleteFails--
+		return fmt.Errorf("delete busy")
+	}
+	return nil
+}
+
+func TestWaitUntilReadySucceedsAfterFailures(t *testing.T) {
+	p := &healthCheckProvider{failLeft: 2}
+	log := slog.Default()
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := waitUntilReady(ctx, log, p, "vm"); err != nil {
+		t.Fatal(err)
+	}
+	if n := p.callCount(); n < 3 {
+		t.Fatalf("HealthCheck calls=%d, want >= 3", n)
+	}
+}
+
+func TestWaitUntilReadyTimesOut(t *testing.T) {
+	p := &healthCheckProvider{failLeft: 100, err: fmt.Errorf("grpc down")}
+	log := slog.Default()
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	err := waitUntilReady(ctx, log, p, "vm")
+	if err == nil {
+		t.Fatal("expected timeout")
+	}
+	if !strings.Contains(err.Error(), "grpc down") && !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("error=%v", err)
+	}
+}
+
+func TestStopAndDeleteBestEffortRetries(t *testing.T) {
+	p := &deleteTrackingProvider{deleteFails: 2}
+	stopAndDeleteBestEffort(slog.Default(), p, "vm")
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.stopCalls != 1 {
+		t.Fatalf("stopCalls=%d", p.stopCalls)
+	}
+	if p.deleteCalls != 3 {
+		t.Fatalf("deleteCalls=%d, want 3", p.deleteCalls)
+	}
+	if p.deleteFails != 0 {
+		t.Fatalf("deleteFails left=%d", p.deleteFails)
+	}
 }
 
 func TestSpawnPassesJITOnStdin(t *testing.T) {
@@ -69,10 +170,7 @@ func TestSpawnPassesJITOnStdin(t *testing.T) {
 
 	var found bool
 	for _, call := range exec.Calls {
-		if len(call.Args) >= 2 && call.Args[0] == "exec" {
-			if string(call.Stdin) != "jit-token" {
-				t.Fatalf("stdin = %q", string(call.Stdin))
-			}
+		if len(call.Args) >= 2 && call.Args[0] == "exec" && string(call.Stdin) == "jit-token" {
 			if call.Args[len(call.Args)-2] != "-c" {
 				t.Fatalf("expected bash -c, args=%v", call.Args)
 			}
@@ -80,7 +178,7 @@ func TestSpawnPassesJITOnStdin(t *testing.T) {
 		}
 	}
 	if !found {
-		t.Fatal("exec call not found")
+		t.Fatal("exec call with jit stdin not found")
 	}
 }
 

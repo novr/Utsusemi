@@ -18,6 +18,14 @@ import (
 //go:embed bootstrap.sh
 var bootstrapScript string
 
+const (
+	readyTimeout      = 3 * time.Minute
+	readyPollInterval = 2 * time.Second
+	teardownAttempts  = 3
+	teardownRetryWait = 500 * time.Millisecond
+	deleteRunnerTries = 2
+)
+
 type Options struct {
 	Config    *config.Config
 	Target    target.Target
@@ -77,7 +85,7 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 	metrics.CloneMs = time.Since(phase).Milliseconds()
 	log.Info("spawn phase complete", "phase", "clone", "duration_ms", metrics.CloneMs)
 	defer func() {
-		_ = s.opts.Provider.Delete(context.Background(), vmName)
+		stopAndDeleteBestEffort(log, s.opts.Provider, vmName)
 	}()
 
 	phase = time.Now()
@@ -85,8 +93,8 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 	if err := s.opts.Provider.Start(spawnCtx, vmName); err != nil {
 		return Result{}, fmt.Errorf("start: %w", err)
 	}
-	if err := waitForRunning(spawnCtx, s.opts.Provider, vmName); err != nil {
-		return Result{}, fmt.Errorf("wait for vm: %w", err)
+	if err := waitUntilReady(spawnCtx, log, s.opts.Provider, vmName); err != nil {
+		return Result{}, fmt.Errorf("wait for vm ready: %w", err)
 	}
 	metrics.BootMs = time.Since(phase).Milliseconds()
 	log.Info("spawn phase complete", "phase", "boot", "duration_ms", metrics.BootMs)
@@ -103,7 +111,7 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 	runnerRegistered := true
 	defer func() {
 		if runnerRegistered {
-			_ = s.opts.Registrar.DeleteRunner(context.Background(), s.opts.Target, runnerID)
+			deleteRunnerBestEffort(log, s.opts.Registrar, s.opts.Target, runnerID)
 		}
 	}()
 
@@ -180,21 +188,66 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 	}
 }
 
-func waitForRunning(ctx context.Context, vmProvider provider.VMProvider, name string) error {
-	ticker := time.NewTicker(2 * time.Second)
+// waitUntilReady polls HealthCheck until the guest agent accepts exec, or readyTimeout elapses.
+// Transient tart list/exec failures are retried so CreateJIT is not issued against an unreachable VM.
+func waitUntilReady(parent context.Context, log *slog.Logger, vmProvider provider.VMProvider, name string) error {
+	ctx, cancel := context.WithTimeout(parent, readyTimeout)
+	defer cancel()
+
+	ticker := time.NewTicker(readyPollInterval)
 	defer ticker.Stop()
+
+	var lastErr error
 	for {
-		running, err := vmProvider.IsRunning(ctx, name)
-		if err != nil {
-			return err
-		}
-		if running {
+		lastErr = vmProvider.HealthCheck(ctx, name)
+		if lastErr == nil {
 			return nil
 		}
+		if ctx.Err() != nil {
+			break
+		}
+		log.Debug("vm not ready yet", "error", lastErr)
 		select {
 		case <-ctx.Done():
-			return ctx.Err()
 		case <-ticker.C:
+			continue
+		}
+		break
+	}
+	if lastErr != nil {
+		return lastErr
+	}
+	return ctx.Err()
+}
+
+func stopAndDeleteBestEffort(log *slog.Logger, vmProvider provider.VMProvider, name string) {
+	ctx := context.Background()
+	_ = vmProvider.Stop(ctx, name)
+
+	var lastErr error
+	for attempt := 1; attempt <= teardownAttempts; attempt++ {
+		lastErr = vmProvider.Delete(ctx, name)
+		if lastErr == nil {
+			return
+		}
+		if attempt < teardownAttempts {
+			time.Sleep(teardownRetryWait)
 		}
 	}
+	log.Warn("delete vm failed after retries", "error", lastErr, "attempts", teardownAttempts)
+}
+
+func deleteRunnerBestEffort(log *slog.Logger, reg registrar.RunnerRegistrar, tgt target.Target, runnerID int64) {
+	ctx := context.Background()
+	var lastErr error
+	for attempt := 1; attempt <= deleteRunnerTries; attempt++ {
+		lastErr = reg.DeleteRunner(ctx, tgt, runnerID)
+		if lastErr == nil {
+			return
+		}
+		if attempt < deleteRunnerTries {
+			time.Sleep(teardownRetryWait)
+		}
+	}
+	log.Warn("delete runner failed after retries", "runner_id", runnerID, "error", lastErr, "attempts", deleteRunnerTries)
 }
