@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/novr/utsusemi/internal/config"
@@ -251,7 +250,7 @@ func stopAndDeleteBestEffort(log *slog.Logger, vmProvider provider.VMProvider, n
 	var lastErr error
 	for attempt := 1; attempt <= teardownAttempts; attempt++ {
 		lastErr = vmProvider.Delete(ctx, name)
-		if lastErr == nil || isBenignVMGone(lastErr) {
+		if lastErr == nil || provider.IsBenignMissing(lastErr) {
 			return
 		}
 		if attempt < teardownAttempts {
@@ -259,16 +258,6 @@ func stopAndDeleteBestEffort(log *slog.Logger, vmProvider provider.VMProvider, n
 		}
 	}
 	log.Warn("delete vm failed after retries", "error", lastErr, "attempts", teardownAttempts)
-}
-
-func isBenignVMGone(err error) bool {
-	if err == nil {
-		return false
-	}
-	msg := strings.ToLower(err.Error())
-	return strings.Contains(msg, "does not exist") ||
-		strings.Contains(msg, "not found") ||
-		strings.Contains(msg, "no such file")
 }
 
 func deleteRunnerBestEffort(log *slog.Logger, reg registrar.RunnerRegistrar, tgt target.Target, runnerID int64) {
