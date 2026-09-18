@@ -155,9 +155,6 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 			} else {
 				log.Warn("job timeout reached")
 			}
-			_ = withTeardownBudget(func(ctx context.Context) error {
-				return s.opts.Provider.Stop(ctx, vmName)
-			})
 			return Result{}, jobCtx.Err()
 		case err := <-execDone:
 			metrics.JobMs = time.Since(jobPhase).Milliseconds()
