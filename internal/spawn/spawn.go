@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/novr/utsusemi/internal/config"
@@ -24,8 +25,10 @@ var (
 	readyPollInterval  = 2 * time.Second
 	readyAttemptBudget = 15 * time.Second
 	readyWarnEvery     = 30 * time.Second
+	notRunningBudget   = 45 * time.Second
 	teardownAttempts   = 3
 	teardownRetryWait  = 500 * time.Millisecond
+	teardownAttemptBud = 30 * time.Second
 	deleteRunnerTries  = 2
 )
 
@@ -153,7 +156,9 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 			} else {
 				log.Warn("job timeout reached")
 			}
-			_ = s.opts.Provider.Stop(context.Background(), vmName)
+			_ = withTeardownBudget(func(ctx context.Context) error {
+				return s.opts.Provider.Stop(ctx, vmName)
+			})
 			return Result{}, jobCtx.Err()
 		case err := <-execDone:
 			metrics.JobMs = time.Since(jobPhase).Milliseconds()
@@ -203,6 +208,7 @@ func waitUntilReady(parent context.Context, log *slog.Logger, vmProvider provide
 	started := time.Now()
 	var lastGuestErr error
 	var lastWarn time.Time
+	var notRunningSince time.Time
 	for {
 		attemptCtx, attemptCancel := context.WithTimeout(ctx, readyAttemptBudget)
 		err := vmProvider.HealthCheck(attemptCtx, name)
@@ -215,6 +221,16 @@ func waitUntilReady(parent context.Context, log *slog.Logger, vmProvider provide
 		}
 		if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, context.Canceled) {
 			err = fmt.Errorf("health check timed out after %s", readyAttemptBudget)
+			notRunningSince = time.Time{}
+		} else if isNotRunningErr(err) {
+			if notRunningSince.IsZero() {
+				notRunningSince = time.Now()
+			}
+			if time.Since(notRunningSince) >= notRunningBudget {
+				return fmt.Errorf("vm not running after %s: %w", notRunningBudget, err)
+			}
+		} else {
+			notRunningSince = time.Time{}
 		}
 		lastGuestErr = err
 		now := time.Now()
@@ -243,13 +259,29 @@ func waitUntilReady(parent context.Context, log *slog.Logger, vmProvider provide
 	return errors.New("waitUntilReady: unexpected exit")
 }
 
-func stopAndDeleteBestEffort(log *slog.Logger, vmProvider provider.VMProvider, name string) {
-	ctx := context.Background()
-	_ = vmProvider.Stop(ctx, name)
+func isNotRunningErr(err error) bool {
+	return err != nil && strings.Contains(strings.ToLower(err.Error()), "not running")
+}
 
+func withTeardownBudget(fn func(context.Context) error) error {
+	ctx, cancel := context.WithTimeout(context.Background(), teardownAttemptBud)
+	defer cancel()
+	return fn(ctx)
+}
+
+func stopAndDeleteBestEffort(log *slog.Logger, vmProvider provider.VMProvider, name string) {
 	var lastErr error
 	for attempt := 1; attempt <= teardownAttempts; attempt++ {
-		lastErr = vmProvider.Delete(ctx, name)
+		stopErr := withTeardownBudget(func(ctx context.Context) error {
+			return vmProvider.Stop(ctx, name)
+		})
+		if stopErr != nil && !provider.IsBenignMissing(stopErr) {
+			log.Debug("stop vm attempt failed", "error", stopErr, "attempt", attempt)
+		}
+
+		lastErr = withTeardownBudget(func(ctx context.Context) error {
+			return vmProvider.Delete(ctx, name)
+		})
 		if lastErr == nil || provider.IsBenignMissing(lastErr) {
 			return
 		}
@@ -265,7 +297,7 @@ func deleteRunnerBestEffort(log *slog.Logger, reg registrar.RunnerRegistrar, tgt
 	var lastErr error
 	for attempt := 1; attempt <= deleteRunnerTries; attempt++ {
 		lastErr = reg.DeleteRunner(ctx, tgt, runnerID)
-		if lastErr == nil {
+		if lastErr == nil || registrar.IsNotFound(lastErr) {
 			return
 		}
 		if attempt < deleteRunnerTries {

@@ -106,7 +106,11 @@ func (r *BrokerRegistrar) DeleteRunner(ctx context.Context, tgt target.Target, r
 	path := BrokerRunnerPath(runnerID)
 	reqBody := map[string]any{"target": targetBody}
 	return r.requestWithCredential(ctx, tgt, func(token string) error {
-		return r.delete(ctx, path, token, reqBody)
+		err := r.delete(ctx, path, token, reqBody)
+		if IsNotFound(err) {
+			return nil
+		}
+		return err
 	})
 }
 

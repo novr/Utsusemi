@@ -151,13 +151,14 @@ func TestWaitUntilReadyCapsHungHealthCheck(t *testing.T) {
 func TestStopAndDeleteBestEffortRetries(t *testing.T) {
 	restoreTeardownTunables(t)
 	teardownRetryWait = time.Millisecond
+	teardownAttemptBud = time.Second
 
 	p := &deleteTrackingProvider{deleteFails: 2}
 	stopAndDeleteBestEffort(slog.Default(), p, "vm")
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.stopCalls != 1 {
-		t.Fatalf("stopCalls=%d", p.stopCalls)
+	if p.stopCalls != 3 {
+		t.Fatalf("stopCalls=%d, want 3 (retry with delete)", p.stopCalls)
 	}
 	if p.deleteCalls != 3 {
 		t.Fatalf("deleteCalls=%d, want 3", p.deleteCalls)
@@ -167,8 +168,26 @@ func TestStopAndDeleteBestEffortRetries(t *testing.T) {
 	}
 }
 
+func TestWaitUntilReadyGivesUpWhenNotRunning(t *testing.T) {
+	restoreReadyTunables(t)
+	readyPollInterval = 5 * time.Millisecond
+	notRunningBudget = 40 * time.Millisecond
+	readyTimeout = time.Minute
+	readyWarnEvery = time.Hour
+
+	p := &healthCheckProvider{failLeft: 100, err: fmt.Errorf("vm x is not running")}
+	err := waitUntilReady(context.Background(), slog.Default(), p, "vm")
+	if err == nil {
+		t.Fatal("expected not-running failure")
+	}
+	if !strings.Contains(err.Error(), "not running") {
+		t.Fatalf("error=%v", err)
+	}
+}
+
 func TestStopAndDeleteBestEffortGoneIsOK(t *testing.T) {
 	restoreTeardownTunables(t)
+	teardownAttemptBud = time.Second
 	p := &goneDeleteProvider{}
 	stopAndDeleteBestEffort(slog.Default(), p, "vm")
 	if p.deleteCalls != 1 {
@@ -178,22 +197,24 @@ func TestStopAndDeleteBestEffortGoneIsOK(t *testing.T) {
 
 func restoreReadyTunables(t *testing.T) {
 	t.Helper()
-	origTimeout, origPoll, origBudget, origWarn := readyTimeout, readyPollInterval, readyAttemptBudget, readyWarnEvery
+	origTimeout, origPoll, origBudget, origWarn, origNotRun := readyTimeout, readyPollInterval, readyAttemptBudget, readyWarnEvery, notRunningBudget
 	t.Cleanup(func() {
 		readyTimeout = origTimeout
 		readyPollInterval = origPoll
 		readyAttemptBudget = origBudget
 		readyWarnEvery = origWarn
+		notRunningBudget = origNotRun
 	})
 }
 
 func restoreTeardownTunables(t *testing.T) {
 	t.Helper()
-	origAttempts, origWait, origRunner := teardownAttempts, teardownRetryWait, deleteRunnerTries
+	origAttempts, origWait, origRunner, origBud := teardownAttempts, teardownRetryWait, deleteRunnerTries, teardownAttemptBud
 	t.Cleanup(func() {
 		teardownAttempts = origAttempts
 		teardownRetryWait = origWait
 		deleteRunnerTries = origRunner
+		teardownAttemptBud = origBud
 	})
 }
 

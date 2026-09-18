@@ -12,8 +12,8 @@ func TestIsBenignMissing(t *testing.T) {
 	}{
 		{nil, false},
 		{fmt.Errorf("delete busy"), false},
-		{fmt.Errorf("VM \"x\" does not exist"), true},
-		{fmt.Errorf("Not Found"), true},
+		{fmt.Errorf("VM \"%s\" does not exist", "x"), true},
+		{fmt.Errorf("Not Found"), false},
 		{fmt.Errorf("no such file or directory"), true},
 	}
 	for _, tc := range cases {

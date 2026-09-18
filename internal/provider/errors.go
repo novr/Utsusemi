@@ -10,7 +10,8 @@ func IsBenignMissing(err error) bool {
 		return false
 	}
 	msg := strings.ToLower(err.Error())
+	// Prefer Tart's "does not exist"; keep "no such file" for path-level races.
+	// Avoid bare "not found" — too broad for unrelated failures.
 	return strings.Contains(msg, "does not exist") ||
-		strings.Contains(msg, "not found") ||
 		strings.Contains(msg, "no such file")
 }
