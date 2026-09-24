@@ -6,6 +6,7 @@ import (
 
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/provider"
+	"github.com/novr/utsusemi/internal/runnercache"
 	"github.com/novr/utsusemi/internal/target"
 )
 
@@ -33,7 +34,8 @@ func buildProvider(cfg *config.Config, exec provider.CommandExecutor, requireAva
 	}
 	switch name {
 	case "tart":
-		p := provider.NewTartProvider(exec, cfg.Softnet, cfg.Mounts)
+		mounts := runnercache.WithRunnerCacheMount(cfg.StateDir, cfg.Mounts)
+		p := provider.NewTartProvider(exec, cfg.Softnet, mounts)
 		if requireAvailable {
 			if err := p.Available(); err != nil {
 				return nil, err

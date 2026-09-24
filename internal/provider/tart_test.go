@@ -67,15 +67,17 @@ func TestStartWithoutSoftnet(t *testing.T) {
 }
 
 func TestStartWithMounts(t *testing.T) {
+	cache := t.TempDir()
+	tools := t.TempDir()
 	exec := NewFakeExecutor()
-	p := NewTartProvider(exec, false, []string{"/host/cache:ro", "/host/tools"})
+	p := NewTartProvider(exec, false, []string{cache + ":ro", tools})
 	if err := p.Start(context.Background(), "vm-1"); err != nil {
 		t.Fatal(err)
 	}
 	want := []string{
 		"run", "vm-1", "--no-graphics",
-		"--dir=/host/cache:ro",
-		"--dir=/host/tools",
+		"--dir=" + cache + ":ro",
+		"--dir=" + tools,
 	}
 	got := exec.Calls[0].Args
 	if len(got) != len(want) {

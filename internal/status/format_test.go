@@ -93,6 +93,24 @@ func TestFormatTextStaleJobs(t *testing.T) {
 	}
 }
 
+func TestFormatTextBootNotRunningBudget(t *testing.T) {
+	out := FormatText(Report{
+		Target: "org:my-org",
+		Agent:  AgentInfo{State: AgentStopped},
+		BootNotRunningBudget: &BootNotRunningInfo{
+			Count:  9,
+			LastAt: "2026-09-24T14:55:37Z",
+			LastVM: "utsusemi-x",
+		},
+		Health:     HealthInfo{FreeDiskGB: 42.1, Status: "ok"},
+		Credential: credentialview.Info{Mode: "github_pat"},
+	})
+	want := "boot_not_running_budget: count=9 last=2026-09-24T14:55:37Z vm=utsusemi-x"
+	if !strings.Contains(out, want) {
+		t.Fatalf("missing %q:\n%s", want, out)
+	}
+}
+
 func TestFormatTextStoppedWarning(t *testing.T) {
 	out := FormatText(Report{
 		Target: "org:my-org (group 1)",

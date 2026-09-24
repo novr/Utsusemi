@@ -2,6 +2,7 @@ package provider
 
 import (
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -65,5 +66,19 @@ func TestHostPathFromDir(t *testing.T) {
 		if got := HostPathFromDir(tc.in); got != tc.want {
 			t.Errorf("HostPathFromDir(%q) = %q, want %q", tc.in, got, tc.want)
 		}
+	}
+}
+
+func TestValidateMountHostPaths(t *testing.T) {
+	existing := t.TempDir()
+	if err := ValidateMountHostPaths([]string{existing, existing + ":ro"}); err != nil {
+		t.Fatal(err)
+	}
+	err := ValidateMountHostPaths([]string{"/nonexistent-utsusemi-mount-xyz"})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "missing or not a directory") {
+		t.Fatalf("error=%v", err)
 	}
 }

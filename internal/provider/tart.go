@@ -93,6 +93,9 @@ func (p *TartProvider) Start(ctx context.Context, name string) error {
 	if err != nil {
 		return err
 	}
+	if err := ValidateMountHostPaths(p.mounts); err != nil {
+		return err
+	}
 	for _, d := range dirs {
 		args = append(args, "--dir="+d)
 	}

@@ -8,7 +8,9 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"syscall"
+	"time"
 
 	"github.com/novr/utsusemi/internal/logging"
 )
@@ -51,6 +53,10 @@ func runCommandStreaming(ctx context.Context, name string, args []string, stdin 
 	return nil
 }
 
+// How long to watch a detached process for an immediate failure (e.g. tart
+// rejecting invalid --dir). Tunable for tests.
+var startDetachedGrace = 750 * time.Millisecond
+
 // The process outlives ctx, which only guards the start itself: a VM must stay
 // up for the whole job and is torn down explicitly by Stop and Delete.
 func startDetached(ctx context.Context, name string, args []string, env map[string]string) error {
@@ -67,10 +73,29 @@ func startDetached(ctx context.Context, name string, args []string, env map[stri
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("%s %v: %w: %s", name, args, err, stderr.String())
 	}
+	done := make(chan error, 1)
 	go func() {
-		_ = cmd.Wait()
+		done <- cmd.Wait()
 	}()
-	return nil
+	timer := time.NewTimer(startDetachedGrace)
+	defer timer.Stop()
+	select {
+	case err := <-done:
+		msg := strings.TrimSpace(stderr.String())
+		if err != nil {
+			if msg != "" {
+				return fmt.Errorf("%s %v: %w: %s", name, args, err, msg)
+			}
+			return fmt.Errorf("%s %v: %w", name, args, err)
+		}
+		if msg != "" {
+			return fmt.Errorf("%s %v: exited immediately: %s", name, args, msg)
+		}
+		return fmt.Errorf("%s %v: exited immediately", name, args)
+	case <-timer.C:
+		go func() { <-done }()
+		return nil
+	}
 }
 
 func outputCommand(ctx context.Context, name string, args []string) ([]byte, error) {

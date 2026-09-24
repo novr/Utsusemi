@@ -189,7 +189,7 @@ Edit `config.yaml` after `configure` with `utsusemi configure edit`, or set flag
 
 #### Directory shares (host → VM)
 
-`mounts` is a list of host paths passed to Tart's `--dir` flag. `~/` and Tart's `name:~/…` form expand to the home directory of the user running `utsusemi` (the same user as `brew services`). Use `utsusemi status` to see resolved paths and `utsusemi doctor` to catch missing directories before a job starts.
+`mounts` is a list of host paths passed to Tart's `--dir` flag. `~/` and Tart's `name:~/…` form expand to the home directory of the user running `utsusemi` (the same user as `brew services`). Each path must already exist as a directory — missing mounts make Tart refuse to start the VM. Use `utsusemi status` to see resolved paths and `utsusemi doctor` to catch missing directories before a job starts.
 
 ```yaml
 mounts:
@@ -201,12 +201,13 @@ mounts:
 >
 > The workspace path inside every VM is identical (`/Users/admin/actions-runner/_work/<repo>/<repo>`), so even build products with absolute paths baked in restore correctly from a host-side cache.
 
-#### Pre-installed runner (low-latency base image)
+#### Pre-installed runner (low-latency)
 
-By default bootstrap downloads the Actions runner tarball on every job start (~30–60 s).
-To eliminate that latency, pre-install the runner in the base image.
+On agent start, Utsusemi downloads the configured `runner_version` tarball once into `{state_dir}/runner-cache/` and mounts that directory read-only into every VM (`utsusemi-runner-cache`). Bootstrap copies from the host cache instead of hitting GitHub on each spawn — this also avoids two VMs downloading in parallel (which can stretch install to ~100 s). Changing `runner_version` takes effect after an agent restart (so the new tarball is cached).
 
-**Stock cirruslabs images** (`ghcr.io/cirruslabs/macos-*-xcode`) already ship the runner at `/Users/admin/actions-runner`. Bootstrap detects the installed version by running `Runner.Listener --version` and skips the download automatically — no custom bake step required. Just set `runner_version` in `config.yaml` to match what the image ships.
+If the base image already has the same runner version at `/Users/admin/actions-runner`, bootstrap skips install entirely (fastest path).
+
+**Stock cirruslabs images** (`ghcr.io/cirruslabs/macos-*-xcode`) already ship a runner at `/Users/admin/actions-runner`. Set `runner_version` to match the image to skip install; otherwise the host cache path above installs the configured version quickly.
 
 **Custom images** — if `./bin/Runner.Listener` is missing under `RUNNER_HOME` (default `/Users/admin/actions-runner`), bootstrap falls back to a `.runner-version` sentinel file:
 

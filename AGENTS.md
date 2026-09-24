@@ -34,6 +34,7 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 | Credential view | `internal/credentialview` | Keychain credential summary (no refresh) |
 | Logging | `internal/logging` | slog + redaction; `run --log` fans out to stdout and a JSON log file |
 | Runner releases | `internal/runnerrelease` | GitHub rejects stale runners; `latest` resolve + doctor warn |
+| Runner cache | `internal/runnercache` | Host tarball cache under `StateDir/runner-cache`; Tart `:ro` mount injection |
 | Keychain | `internal/keychain` | Platform secret store |
 | Locks | `internal/instancelock` | `utsusemi.lock` (agent/clean), used with blocking flock for credential refresh |
 | Broker (cloud) | `worker/` | Host JWT issue/verify, GitHub App calls, JIT/list/delete proxy |
@@ -155,7 +156,7 @@ Deploy broker separately from CLI. After JWT signing or route changes, operators
 - Default `reclaim_policy`: `grace` (`config.DefaultReclaimPolicy`).
 - **`pool_size` upper bound is provider-specific**: `config.Validate(cfg, VMProvider)` reads `VMProvider.Capabilities().MaxConcurrent`. Configure uses `app.ValidateConfig` (capabilities only; does not require `tart` in PATH). Run/status use `app.Load`, which also checks provider availability.
 - **Runtime assembly**: `internal/app` owns provider construction (`buildProvider`), config validation, registrar setup, and `Runtime` helpers used by CLI commands.
-- **Bootstrap env**: `spawn.BootstrapEnv` sets `RUNNER_VERSION`, `RUNNER_ARCH`, and `RUNNER_HOME` for `bootstrap.sh`. `RUNNER_ARCH` comes from `VMProvider.Capabilities().RunnerArch` (Tart: `osx-arm64`).
+- **Bootstrap env**: `spawn.BootstrapEnv` sets `RUNNER_VERSION`, `RUNNER_ARCH`, `RUNNER_HOME`, and `RUNNER_CACHE_DIR` for `bootstrap.sh`. `RUNNER_ARCH` comes from `VMProvider.Capabilities().RunnerArch` (Tart: `osx-arm64`). Host cache via `runnercache.Ensure` on agent start; mount name `utsusemi-runner-cache`.
 - Operator docs in [README.md](README.md) Operations and Provider. Alerts/notifications are out of scope.
 - **`utsusemi doctor`**: preflight via `internal/doctor` (provider, disk, loopback broker, credential, host_id, runner_version, mounts, multi-host). `runner_version` vs GitHub `latest` is warn-only (stale → JIT failure); skip on network error. Exit 1 when any check is `fail`.
 - **Spawn metrics**: `spawn.SaveLastSpawn` writes `{StateDir}/last_spawn.json`; `status` and spawn logs expose cold-start phase timings.

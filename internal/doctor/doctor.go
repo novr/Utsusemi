@@ -157,7 +157,7 @@ func checkMounts(cfg *config.Config, add func(string, Status, string)) {
 		}
 	}
 	if len(missing) > 0 {
-		add("mounts", StatusWarn, fmt.Sprintf("%d configured; missing on host: %s", len(dirs), strings.Join(missing, ", ")))
+		add("mounts", StatusFail, fmt.Sprintf("%d configured; missing on host: %s", len(dirs), strings.Join(missing, ", ")))
 		return
 	}
 	add("mounts", StatusOK, fmt.Sprintf("%d configured", len(dirs)))

@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -31,5 +32,30 @@ func TestStartDetachedRejectsCancelledContext(t *testing.T) {
 	cancel()
 	if err := startDetached(ctx, "bash", []string{"-c", "true"}, nil); err == nil {
 		t.Fatal("expected failure for an already cancelled context")
+	}
+}
+
+func TestStartDetachedReportsEarlyExit(t *testing.T) {
+	orig := startDetachedGrace
+	startDetachedGrace = 200 * time.Millisecond
+	t.Cleanup(func() { startDetachedGrace = orig })
+
+	err := startDetached(context.Background(), "bash", []string{"-c", "echo boom >&2; exit 7"}, nil)
+	if err == nil {
+		t.Fatal("expected early-exit error")
+	}
+	if !strings.Contains(err.Error(), "boom") {
+		t.Fatalf("error=%v", err)
+	}
+}
+
+func TestStartRejectsMissingMountPath(t *testing.T) {
+	exec := NewFakeExecutor()
+	p := NewTartProvider(exec, false, []string{"/nonexistent-utsusemi-mount-xyz"})
+	if err := p.Start(context.Background(), "vm-1"); err == nil {
+		t.Fatal("expected missing mount error")
+	}
+	if len(exec.Calls) != 0 {
+		t.Fatalf("tart should not start: calls=%v", exec.Calls)
 	}
 }
