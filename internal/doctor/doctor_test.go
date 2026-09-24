@@ -68,7 +68,7 @@ func TestCheckMounts(t *testing.T) {
 		wantStatus Status
 	}{
 		{name: "unset", cfg: &config.Config{}, wantChecks: 0},
-		{name: "missing", cfg: &config.Config{Mounts: []string{"/nonexistent-utsusemi-mount"}}, wantChecks: 1, wantStatus: StatusWarn},
+		{name: "missing", cfg: &config.Config{Mounts: []string{"/nonexistent-utsusemi-mount"}}, wantChecks: 1, wantStatus: StatusFail},
 		{name: "ok", cfg: &config.Config{Mounts: []string{existing}}, wantChecks: 1, wantStatus: StatusOK},
 	}
 	for _, tc := range tests {

@@ -183,6 +183,9 @@ func TestWaitUntilReadyGivesUpWhenNotRunning(t *testing.T) {
 	if !errors.Is(err, provider.ErrNotRunning) {
 		t.Fatalf("error=%v", err)
 	}
+	if !errors.Is(err, ErrBootNotRunningBudget) {
+		t.Fatalf("expected ErrBootNotRunningBudget, got %v", err)
+	}
 }
 
 func TestStopAndDeleteBestEffortGoneIsOK(t *testing.T) {
@@ -428,6 +431,127 @@ func TestBootstrapSkipsDownloadWithVersionPrefix(t *testing.T) {
 	}
 	if !strings.Contains(string(out), "skipping download") {
 		t.Errorf("expected 'skipping download' in output, got: %s", out)
+	}
+}
+
+func TestBootstrapUsesHostCacheWithoutCurl(t *testing.T) {
+	home := t.TempDir()
+	cache := t.TempDir()
+	stub := "#!/bin/bash\n"
+	if err := os.WriteFile(filepath.Join(home, "run.sh"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeRunnerListenerStub(t, home, "2.335.0")
+
+	tarball := filepath.Join(cache, "actions-runner-osx-arm64-2.336.0.tar.gz")
+	if err := os.WriteFile(tarball, []byte("unused"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	fakebin := t.TempDir()
+	fakeCurl := "#!/bin/bash\necho must not curl >&2\nexit 9\n"
+	if err := os.WriteFile(filepath.Join(fakebin, "curl"), []byte(fakeCurl), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeTar := "#!/bin/bash\n"
+	if err := os.WriteFile(filepath.Join(fakebin, "tar"), []byte(fakeTar), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("bash", "-c", bootstrapScript)
+	cmd.Env = bootstrapTestEnv(home,
+		"PATH="+fakebin+":"+os.Getenv("PATH"),
+		"RUNNER_CACHE_DIR="+cache,
+	)
+	cmd.Stdin = strings.NewReader("encoded-jit")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("bootstrap failed: %v: %s", err, out)
+	}
+	if !strings.Contains(string(out), "using host cache") {
+		t.Errorf("expected host cache log, got: %s", out)
+	}
+	if strings.Contains(string(out), "downloading from GitHub") {
+		t.Errorf("unexpected GitHub download: %s", out)
+	}
+	got, err := os.ReadFile(filepath.Join(home, ".runner-version"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.TrimSpace(string(got)) != "2.336.0" {
+		t.Fatalf(".runner-version = %q", got)
+	}
+}
+
+func TestBootstrapDownloadsWhenCacheMissing(t *testing.T) {
+	home := t.TempDir()
+	stub := "#!/bin/bash\n"
+	if err := os.WriteFile(filepath.Join(home, "run.sh"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeRunnerListenerStub(t, home, "2.335.0")
+
+	fakebin := t.TempDir()
+	fakeCurl := "#!/bin/bash\ntouch actions-runner.tar.gz\n"
+	if err := os.WriteFile(filepath.Join(fakebin, "curl"), []byte(fakeCurl), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeTar := "#!/bin/bash\n"
+	if err := os.WriteFile(filepath.Join(fakebin, "tar"), []byte(fakeTar), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("bash", "-c", bootstrapScript)
+	cmd.Env = bootstrapTestEnv(home,
+		"PATH="+fakebin+":"+os.Getenv("PATH"),
+		"RUNNER_CACHE_DIR="+t.TempDir()+"/missing-cache",
+	)
+	cmd.Stdin = strings.NewReader("encoded-jit")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("bootstrap failed: %v: %s", err, out)
+	}
+	if !strings.Contains(string(out), "downloading from GitHub") {
+		t.Errorf("expected GitHub download log, got: %s", out)
+	}
+}
+
+// Empty cache dir must not burn the virtiofs wait budget before curling.
+func TestBootstrapEmptyCacheDirDoesNotStall(t *testing.T) {
+	home := t.TempDir()
+	cache := t.TempDir() // exists, but no tarball
+	stub := "#!/bin/bash\n"
+	if err := os.WriteFile(filepath.Join(home, "run.sh"), []byte(stub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeRunnerListenerStub(t, home, "2.335.0")
+
+	fakebin := t.TempDir()
+	fakeCurl := "#!/bin/bash\ntouch actions-runner.tar.gz\n"
+	if err := os.WriteFile(filepath.Join(fakebin, "curl"), []byte(fakeCurl), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	fakeTar := "#!/bin/bash\n"
+	if err := os.WriteFile(filepath.Join(fakebin, "tar"), []byte(fakeTar), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	start := time.Now()
+	cmd := exec.Command("bash", "-c", bootstrapScript)
+	cmd.Env = bootstrapTestEnv(home,
+		"PATH="+fakebin+":"+os.Getenv("PATH"),
+		"RUNNER_CACHE_DIR="+cache,
+	)
+	cmd.Stdin = strings.NewReader("encoded-jit")
+	out, err := cmd.CombinedOutput()
+	elapsed := time.Since(start)
+	if err != nil {
+		t.Fatalf("bootstrap failed: %v: %s", err, out)
+	}
+	if elapsed >= 2*time.Second {
+		t.Fatalf("empty cache dir stalled for %s (virtiofs wait should not apply)", elapsed)
+	}
+	if !strings.Contains(string(out), "downloading from GitHub") {
+		t.Errorf("expected GitHub download, got: %s", out)
 	}
 }
 

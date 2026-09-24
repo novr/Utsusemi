@@ -13,6 +13,7 @@ import (
 	"github.com/novr/utsusemi/internal/keychain"
 	"github.com/novr/utsusemi/internal/lease"
 	"github.com/novr/utsusemi/internal/provider"
+	"github.com/novr/utsusemi/internal/runnercache"
 	"github.com/novr/utsusemi/internal/spawn"
 	"github.com/novr/utsusemi/internal/target"
 	"github.com/novr/utsusemi/internal/timefmt"
@@ -34,19 +35,26 @@ type Input struct {
 }
 
 type Report struct {
-	Target        string              `json:"target"`
-	ConfigPath    string              `json:"config_path,omitempty"`
-	StateDir      string              `json:"state_dir"`
-	Host          HostInfo            `json:"host"`
-	RunnerVersion RunnerVersionInfo   `json:"runner_version"`
-	Mounts        []string            `json:"mounts,omitempty"`
-	Spawn         *SpawnInfo          `json:"spawn,omitempty"`
-	Agent         AgentInfo           `json:"agent"`
-	Jobs          []Job               `json:"jobs"`
-	VMs           VMsInfo             `json:"vms"`
-	Draining      []string            `json:"draining"`
-	Health        HealthInfo          `json:"health"`
-	Credential    credentialview.Info `json:"credential"`
+	Target               string              `json:"target"`
+	ConfigPath           string              `json:"config_path,omitempty"`
+	StateDir             string              `json:"state_dir"`
+	Host                 HostInfo            `json:"host"`
+	RunnerVersion        RunnerVersionInfo   `json:"runner_version"`
+	Mounts               []string            `json:"mounts,omitempty"`
+	Spawn                *SpawnInfo          `json:"spawn,omitempty"`
+	BootNotRunningBudget *BootNotRunningInfo `json:"boot_not_running_budget,omitempty"`
+	Agent                AgentInfo           `json:"agent"`
+	Jobs                 []Job               `json:"jobs"`
+	VMs                  VMsInfo             `json:"vms"`
+	Draining             []string            `json:"draining"`
+	Health               HealthInfo          `json:"health"`
+	Credential           credentialview.Info `json:"credential"`
+}
+
+type BootNotRunningInfo struct {
+	Count  int    `json:"count"`
+	LastAt string `json:"last_at"`
+	LastVM string `json:"last_vm,omitempty"`
 }
 
 type HostInfo struct {
@@ -58,20 +66,20 @@ type HostInfo struct {
 }
 
 type RunnerVersionInfo struct {
-	Configured  string `json:"configured"`
-	LastSpawn   string `json:"last_spawn,omitempty"`
-	Status      string `json:"status"`
+	Configured string `json:"configured"`
+	LastSpawn  string `json:"last_spawn,omitempty"`
+	Status     string `json:"status"`
 }
 
 type SpawnInfo struct {
-	At          string `json:"at"`
-	Clone       string `json:"clone"`
-	Boot        string `json:"boot"`
-	Register    string `json:"register"`
-	ColdStart   string `json:"cold_start"`
-	Job         string `json:"job"`
-	Total       string `json:"total"`
-	Success     bool   `json:"success"`
+	At        string `json:"at"`
+	Clone     string `json:"clone"`
+	Boot      string `json:"boot"`
+	Register  string `json:"register"`
+	ColdStart string `json:"cold_start"`
+	Job       string `json:"job"`
+	Total     string `json:"total"`
+	Success   bool   `json:"success"`
 }
 
 type AgentInfo struct {
@@ -157,7 +165,7 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 		Configured: versionSnap.Configured,
 		Status:     "ok",
 	}
-	mounts, err := provider.ResolveMountDirs(in.Cfg.Mounts)
+	mounts, err := provider.ResolveMountDirs(runnercache.WithRunnerCacheMount(stateDir, in.Cfg.Mounts))
 	if err != nil {
 		return Report{}, err
 	}
@@ -180,19 +188,29 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 		}
 	}
 
+	var bootNotRunning *BootNotRunningInfo
+	if stats, ok := spawn.LoadBootNotRunning(stateDir); ok {
+		bootNotRunning = &BootNotRunningInfo{
+			Count:  stats.Count,
+			LastAt: stats.LastAt.UTC().Format(time.RFC3339),
+			LastVM: stats.LastVM,
+		}
+	}
+
 	return Report{
-		Target:        in.Target.DisplayString(),
-		StateDir:      stateDir,
-		Host:          HostInfo{ID: host.ID, Hostname: host.Hostname, LocalHostName: host.LocalHostName, EffectivePrefix: host.EffectivePrefix, Warnings: host.Warnings},
-		RunnerVersion: runnerInfo,
-		Mounts:        mounts,
-		Spawn:         spawnInfo,
-		Agent:         agent,
-		Jobs:          emptyJobs(jobs),
-		VMs:           vmInfo,
-		Draining:      emptyDraining(draining),
-		Health:        health,
-		Credential:    cred,
+		Target:               in.Target.DisplayString(),
+		StateDir:             stateDir,
+		Host:                 HostInfo{ID: host.ID, Hostname: host.Hostname, LocalHostName: host.LocalHostName, EffectivePrefix: host.EffectivePrefix, Warnings: host.Warnings},
+		RunnerVersion:        runnerInfo,
+		Mounts:               mounts,
+		Spawn:                spawnInfo,
+		BootNotRunningBudget: bootNotRunning,
+		Agent:                agent,
+		Jobs:                 emptyJobs(jobs),
+		VMs:                  vmInfo,
+		Draining:             emptyDraining(draining),
+		Health:               health,
+		Credential:           cred,
 	}, nil
 }
 

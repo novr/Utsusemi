@@ -14,6 +14,7 @@ import (
 	"github.com/novr/utsusemi/internal/pool"
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/registrar"
+	"github.com/novr/utsusemi/internal/runnercache"
 	"github.com/novr/utsusemi/internal/target"
 )
 
@@ -72,6 +73,18 @@ func (a *Agent) Run(ctx context.Context) error {
 		return fmt.Errorf("sync base image: %w", err)
 	}
 	a.logger.Info("base image ready", "image", a.cfg.BaseImage)
+
+	if err := runnercache.PrepareDir(a.cfg.StateDir); err != nil {
+		a.logger.Warn("prepare runner cache dir failed", "error", err)
+	} else {
+		arch := a.provider.Capabilities().RunnerArch
+		if arch == "" {
+			arch = "osx-arm64"
+		}
+		if err := runnercache.Ensure(ctx, a.cfg.StateDir, a.cfg.RunnerVersion, arch, runnercache.Options{Logger: a.logger}); err != nil {
+			a.logger.Warn("ensure runner cache failed; bootstrap may download inside the VM", "error", err)
+		}
+	}
 
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()

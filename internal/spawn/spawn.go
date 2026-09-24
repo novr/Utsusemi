@@ -18,6 +18,9 @@ import (
 //go:embed bootstrap.sh
 var bootstrapScript string
 
+// ErrBootNotRunningBudget is returned when the VM stays ErrNotRunning for notRunningBudget.
+var ErrBootNotRunningBudget = errors.New("boot_not_running_budget")
+
 // Tunables (package vars so tests can shrink timeouts).
 var (
 	readyTimeout       = 3 * time.Minute
@@ -99,6 +102,12 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 		return Result{}, fmt.Errorf("start: %w", err)
 	}
 	if err := waitUntilReady(spawnCtx, log, s.opts.Provider, vmName); err != nil {
+		if errors.Is(err, ErrBootNotRunningBudget) {
+			log.Warn("boot failed", "reason", "boot_not_running_budget", "error", err)
+			if recErr := RecordBootNotRunning(cfg.StateDir, vmName); recErr != nil {
+				log.Debug("record boot_not_running failed", "error", recErr)
+			}
+		}
 		return Result{}, fmt.Errorf("wait for vm ready: %w", err)
 	}
 	metrics.BootMs = time.Since(phase).Milliseconds()
@@ -223,7 +232,7 @@ func waitUntilReady(parent context.Context, log *slog.Logger, vmProvider provide
 				notRunningSince = time.Now()
 			}
 			if time.Since(notRunningSince) >= notRunningBudget {
-				return fmt.Errorf("vm not running after %s: %w", notRunningBudget, err)
+				return fmt.Errorf("vm not running after %s: %w: %w", notRunningBudget, ErrBootNotRunningBudget, err)
 			}
 		} else {
 			notRunningSince = time.Time{}

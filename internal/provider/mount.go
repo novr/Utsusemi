@@ -73,3 +73,24 @@ func HostPathFromDir(dir string) string {
 	}
 	return path
 }
+
+// ValidateMountHostPaths ensures every resolved mount host path exists as a directory.
+// Missing paths make Tart exit immediately with a VZ directory-sharing error.
+func ValidateMountHostPaths(mounts []string) error {
+	dirs, err := ResolveMountDirs(mounts)
+	if err != nil {
+		return err
+	}
+	var bad []string
+	for _, d := range dirs {
+		path := HostPathFromDir(d)
+		st, err := os.Stat(path)
+		if err != nil || !st.IsDir() {
+			bad = append(bad, path)
+		}
+	}
+	if len(bad) > 0 {
+		return fmt.Errorf("mount host path(s) missing or not a directory: %s", strings.Join(bad, ", "))
+	}
+	return nil
+}

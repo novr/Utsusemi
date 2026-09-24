@@ -26,6 +26,13 @@ func FormatText(r Report) string {
 		fmt.Fprintf(&b, "spawn: clone %s, boot %s, register %s, cold_start %s, job %s, total %s (%s)\n",
 			r.Spawn.Clone, r.Spawn.Boot, r.Spawn.Register, r.Spawn.ColdStart, r.Spawn.Job, r.Spawn.Total, r.Spawn.At)
 	}
+	if r.BootNotRunningBudget != nil {
+		fmt.Fprintf(&b, "boot_not_running_budget: count=%d last=%s", r.BootNotRunningBudget.Count, r.BootNotRunningBudget.LastAt)
+		if r.BootNotRunningBudget.LastVM != "" {
+			fmt.Fprintf(&b, " vm=%s", r.BootNotRunningBudget.LastVM)
+		}
+		b.WriteByte('\n')
+	}
 	if len(r.Mounts) > 0 {
 		fmt.Fprintf(&b, "mounts: %s\n", strings.Join(r.Mounts, ", "))
 	}

@@ -5,6 +5,7 @@ import (
 
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/provider"
+	"github.com/novr/utsusemi/internal/runnercache"
 )
 
 func TestBootstrapSpecUsesProviderRunnerArch(t *testing.T) {
@@ -28,5 +29,12 @@ func TestBootstrapSpecDefaultsRunnerArch(t *testing.T) {
 	}
 	if spec.RunnerHome != defaultRunnerHome {
 		t.Fatalf("runner home = %q", spec.RunnerHome)
+	}
+	if spec.RunnerCacheDir != runnercache.GuestCacheDir {
+		t.Fatalf("runner cache dir = %q", spec.RunnerCacheDir)
+	}
+	env := spec.Env()
+	if env["RUNNER_CACHE_DIR"] != runnercache.GuestCacheDir {
+		t.Fatalf("RUNNER_CACHE_DIR = %q", env["RUNNER_CACHE_DIR"])
 	}
 }

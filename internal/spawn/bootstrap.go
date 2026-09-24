@@ -3,6 +3,7 @@ package spawn
 import (
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/provider"
+	"github.com/novr/utsusemi/internal/runnercache"
 )
 
 const (
@@ -11,15 +12,17 @@ const (
 )
 
 type BootstrapSpec struct {
-	RunnerVersion string
-	RunnerArch    string
-	RunnerHome    string
+	RunnerVersion  string
+	RunnerArch     string
+	RunnerHome     string
+	RunnerCacheDir string
 }
 
 func BootstrapSpecFor(cfg *config.Config, p provider.VMProvider) BootstrapSpec {
 	spec := BootstrapSpec{
-		RunnerArch: defaultRunnerArch,
-		RunnerHome: defaultRunnerHome,
+		RunnerArch:     defaultRunnerArch,
+		RunnerHome:     defaultRunnerHome,
+		RunnerCacheDir: runnercache.GuestCacheDir,
 	}
 	if cfg != nil {
 		spec.RunnerVersion = cfg.RunnerVersion
@@ -34,9 +37,10 @@ func BootstrapSpecFor(cfg *config.Config, p provider.VMProvider) BootstrapSpec {
 
 func (s BootstrapSpec) Env() map[string]string {
 	return map[string]string{
-		"RUNNER_VERSION": s.RunnerVersion,
-		"RUNNER_ARCH":    s.RunnerArch,
-		"RUNNER_HOME":    s.RunnerHome,
+		"RUNNER_VERSION":   s.RunnerVersion,
+		"RUNNER_ARCH":      s.RunnerArch,
+		"RUNNER_HOME":      s.RunnerHome,
+		"RUNNER_CACHE_DIR": s.RunnerCacheDir,
 	}
 }
 
