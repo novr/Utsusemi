@@ -290,7 +290,7 @@ utsusemi clean --dry-run
 
 `utsusemi run --log` mirrors structured logs to `{state_dir}/agent.log` (or `--log=/path`) so foreground runs leave a trail without relying on the terminal buffer. Tart subprocess lines are captured in the file even on a TTY (console format may differ from the `  | ` prefix).
 
-Homebrew's launchd formula runs `utsusemi run --log` (from the next release; `brew reinstall utsusemi` to refresh an older formula), so brew services also append to `{state_dir}/agent.log`. Launchd still captures stdout/stderr separately:
+Homebrew's launchd formula runs `utsusemi run --log`, so brew services also append to `{state_dir}/agent.log`. Launchd still captures stdout/stderr separately:
 
 - `$(brew --prefix)/var/log/utsusemi.log`
 - `$(brew --prefix)/var/log/utsusemi.error.log`
