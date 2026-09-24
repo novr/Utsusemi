@@ -71,7 +71,7 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 - **`validate`** — config + credential API check (`loadValidatedRuntime`). Loopback `broker_url` must be reachable first.
 - **`status`** — local ops summary via `internal/status.Collect` (`loadConfigRuntime`, no network).
 - **`list [vms|runners]`** — VM and/or runner rows via `internal/listing.Collect` (`loadValidatedRuntime`, network).
-- **`run --log`** — `ResolveAgentLog` picks `{state_dir}/agent.log` when the flag has no path; file sink is JSON regardless of TTY. Homebrew `service_run_args` is `run --log` so `brew services` uses the same file.
+- **`run --log`** — `ResolveAgentLog` picks `{state_dir}/agent.log` when the flag has no path; file sink is JSON regardless of TTY. Homebrew `service_run_args` is `run,--log` (comma-separated for the taps dispatch) so `brew services` uses the same file.
 
 ### Shell completion
 
@@ -174,7 +174,7 @@ cd worker && npm install && npm run deploy
 
 - Tag `v*` → `.github/workflows/release.yml`.
 - Release binaries embed the tag version (`v0.1.0` → `0.1.0`) via `-ldflags -X github.com/novr/utsusemi/internal/version.Version=...`.
-- Formula dispatch must pass `desc`, `test_match`, and `service_run_args: run --log` so the first release can create `utsusemi.rb` in `novr/homebrew-taps` (upsert when `desc` is set).
+- Formula dispatch must pass `desc`, `test_match`, and `service_run_args: run,--log` (comma-separated args for `novr/homebrew-taps`) so the first release can create `utsusemi.rb` (upsert when `desc` is set).
 - `Formula/utsusemi.rb` `install` must include `generate_completions_from_executable(bin/"utsusemi", shell_parameter_format: :cobra)` (zsh completions on `brew install` / `brew reinstall`).
 - `release-macos` uses workspace-local `GOMODCACHE` / `GOCACHE`.
 
