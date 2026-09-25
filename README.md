@@ -280,6 +280,36 @@ utsusemi run --log=/path/to.log
 brew services start utsusemi
 ```
 
+### Alerts
+
+Optional webhook for sustained outages while `utsusemi run` is up (URL in Keychain, or `UTSUSEMI_ALERT_WEBHOOK`):
+
+```bash
+utsusemi configure alerts --webhook-url https://hooks.example/xxx
+utsusemi configure alerts --clear
+```
+
+| Code | When |
+|------|------|
+| `agent_fatal` | Agent stops for a non-cancel reason (auth failure, repeated unclaimed exits, base-image sync failure, …) |
+| `disk_blocked` | Low disk has paused spawn for 15 minutes |
+| `pool_stuck` | No successful spawn for 15 minutes and the pool is currently empty (failed spawn attempts do not reset the timer; long cold starts while in-flight do not alert) |
+
+Single spawn failures and normal backoff do not notify. Process crashes still need launchd / `brew services` monitoring. Broker credential expiry before refresh remains best watched via `utsusemi validate` exit code (see Broker Availability).
+
+Payload is JSON for generic receivers and Slack Incoming Webhooks (`text` is what Slack shows):
+
+```json
+{
+  "text": "[pool_stuck] host=abc target=org:acme utsusemi pool empty: no warm capacity: clone failed",
+  "code": "pool_stuck",
+  "host_id": "abc",
+  "target": "org:acme",
+  "at": "2026-01-02T03:04:05Z",
+  "detail": "clone failed"
+}
+```
+
 Reclaim (automatic during `run`, per Runtime options) vs `clean` (manual purge; stop agent first):
 
 ```bash

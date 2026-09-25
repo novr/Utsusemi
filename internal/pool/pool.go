@@ -13,11 +13,23 @@ import (
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/hostid"
 	"github.com/novr/utsusemi/internal/lease"
+	"github.com/novr/utsusemi/internal/notify"
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/registrar"
 	"github.com/novr/utsusemi/internal/spawn"
 	"github.com/novr/utsusemi/internal/target"
 )
+
+type Options struct {
+	Config     *config.Config
+	Target     target.Target
+	Provider   provider.VMProvider
+	Registrar  registrar.RunnerRegistrar
+	Logger     *slog.Logger
+	Notifier   notify.Notifier
+	StuckAfter time.Duration
+	Now        func() time.Time
+}
 
 type Pool struct {
 	cfg             *config.Config
@@ -28,6 +40,7 @@ type Pool struct {
 	leases          *lease.Registry
 	session         *lease.AgentSession
 	logger          *slog.Logger
+	monitor         *notify.Monitor
 	effectivePrefix string // VMNamePrefix + hostID + "-"; scopes reclaim to this host
 
 	mu           sync.Mutex
@@ -38,6 +51,7 @@ type Pool struct {
 	shutdown     bool
 	drain        bool
 	lowDisk      bool
+	lastSpawnErr string
 	fatalErr     error
 	fatalCh      chan error
 	inFlight     sync.WaitGroup
@@ -45,20 +59,47 @@ type Pool struct {
 }
 
 func New(cfg *config.Config, tgt target.Target, vmProvider provider.VMProvider, reg registrar.RunnerRegistrar, logger *slog.Logger) *Pool {
+	return NewWithOptions(Options{
+		Config:    cfg,
+		Target:    tgt,
+		Provider:  vmProvider,
+		Registrar: reg,
+		Logger:    logger,
+	})
+}
+
+func NewWithOptions(opts Options) *Pool {
+	logger := opts.Logger
 	if logger == nil {
 		logger = slog.Default()
 	}
+	cfg := opts.Config
 	leases := lease.NewRegistry(cfg.StateDir)
 	hostID := hostid.Load(cfg.StateDir)
 	effectivePrefix := cfg.VMNamePrefix + hostID + "-"
 	return &Pool{
-		cfg:             cfg,
-		tgt:             tgt,
-		provider:        vmProvider,
-		registrar:       reg,
-		leases:          leases,
-		spawner:         spawn.New(spawn.Options{Config: cfg, Target: tgt, Provider: vmProvider, Registrar: reg, Leases: leases, Logger: logger}),
-		logger:          logger,
+		cfg:       cfg,
+		tgt:       opts.Target,
+		provider:  opts.Provider,
+		registrar: opts.Registrar,
+		leases:    leases,
+		spawner: spawn.New(spawn.Options{
+			Config:    cfg,
+			Target:    opts.Target,
+			Provider:  opts.Provider,
+			Registrar: opts.Registrar,
+			Leases:    leases,
+			Logger:    logger,
+		}),
+		logger: logger,
+		monitor: notify.NewMonitor(notify.MonitorOptions{
+			Notifier:   opts.Notifier,
+			StuckAfter: opts.StuckAfter,
+			HostID:     hostID,
+			Target:     opts.Target.String(),
+			Logger:     logger,
+			Now:        opts.Now,
+		}),
 		effectivePrefix: effectivePrefix,
 		fatalCh:         make(chan error, 1),
 		inFlightVMs:     make(map[string]struct{}),
@@ -145,6 +186,8 @@ func (p *Pool) drainAndWait(ctx context.Context) error {
 }
 
 func (p *Pool) tick(ctx context.Context) {
+	p.evaluateAlerts(ctx)
+
 	p.mu.Lock()
 	if p.shutdown || p.drain || p.lowDisk {
 		p.mu.Unlock()
@@ -266,10 +309,38 @@ func (p *Pool) handleSpawnSuccess(vmName string, result spawn.Result) {
 
 func (p *Pool) resetSpawnBackoff() {
 	p.mu.Lock()
-	defer p.mu.Unlock()
 	p.failures = 0
 	p.shortExits = 0
 	p.backoffUntil = time.Time{}
+	p.lastSpawnErr = ""
+	p.mu.Unlock()
+	p.monitor.Clear(notify.CodePoolStuck)
+}
+
+func (p *Pool) evaluateAlerts(ctx context.Context) {
+	p.mu.Lock()
+	if p.shutdown || p.drain {
+		p.mu.Unlock()
+		return
+	}
+	state := notify.PoolState{
+		Active:       p.active,
+		PoolSize:     p.cfg.PoolSize,
+		LowDisk:      p.lowDisk,
+		LastSpawnErr: p.lastSpawnErr,
+	}
+	p.mu.Unlock()
+	p.monitor.Evaluate(ctx, state)
+}
+
+func (p *Pool) AlertFatal(ctx context.Context, err error) {
+	p.monitor.AlertFatal(ctx, err)
+}
+
+func (p *Pool) FatalErr() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return p.fatalErr
 }
 
 func (p *Pool) recordShortExit(vmName string, result spawn.Result) error {
@@ -298,6 +369,9 @@ func (p *Pool) recordFailure(err error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	p.failures++
+	if err != nil {
+		p.lastSpawnErr = err.Error()
+	}
 	backoff := time.Duration(p.failures) * 10 * time.Second
 	if backoff > 5*time.Minute {
 		backoff = 5 * time.Minute

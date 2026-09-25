@@ -6,6 +6,8 @@ import (
 	"time"
 
 	"github.com/novr/utsusemi/internal/config"
+	"github.com/novr/utsusemi/internal/keychain"
+	"github.com/novr/utsusemi/internal/notify"
 	"github.com/novr/utsusemi/internal/spawn"
 )
 
@@ -83,6 +85,24 @@ func TestCheckMounts(t *testing.T) {
 				t.Fatalf("checks=%+v", checks)
 			}
 		})
+	}
+}
+
+func TestCheckAlerts(t *testing.T) {
+	t.Setenv(notify.EnvWebhookURL, "")
+	store := keychain.NewMemoryStore()
+	checks := recordChecks(func(add checkFn) {
+		checkAlerts(store, add)
+	})
+	if len(checks) != 1 || checks[0].Status != StatusOK || checks[0].Message != "not configured" {
+		t.Fatalf("checks=%+v", checks)
+	}
+	_ = store.Set(notify.AlertService, notify.AlertAccount, "https://example.com/hook")
+	checks = recordChecks(func(add checkFn) {
+		checkAlerts(store, add)
+	})
+	if len(checks) != 1 || checks[0].Message != "configured" {
+		t.Fatalf("checks=%+v", checks)
 	}
 }
 

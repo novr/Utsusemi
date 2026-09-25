@@ -11,6 +11,7 @@ import (
 	"github.com/novr/utsusemi/internal/keychain"
 	"github.com/novr/utsusemi/internal/listing"
 	"github.com/novr/utsusemi/internal/logging"
+	"github.com/novr/utsusemi/internal/notify"
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/registrar"
 	"github.com/novr/utsusemi/internal/status"
@@ -166,6 +167,7 @@ func (r *Runtime) DoctorInput(store keychain.Store) doctor.Input {
 }
 
 func (r *Runtime) Agent() (*agent.Agent, error) {
+	store := keychain.New()
 	return agent.New(agent.Options{
 		Config:      r.Config,
 		Target:      r.Target,
@@ -173,5 +175,6 @@ func (r *Runtime) Agent() (*agent.Agent, error) {
 		Registrar:   r.Registrar,
 		Logger:      r.Logger,
 		LogFilePath: r.LogFilePath,
+		Notifier:    notify.Resolve(store, r.Logger),
 	})
 }

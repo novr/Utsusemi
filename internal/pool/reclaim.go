@@ -6,6 +6,7 @@ import (
 
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/lease"
+	"github.com/novr/utsusemi/internal/notify"
 )
 
 func (p *Pool) startupReclaim(ctx context.Context) error {
@@ -25,10 +26,17 @@ func (p *Pool) reclaim(ctx context.Context, startupHard bool) error {
 		return err
 	}
 	p.mu.Lock()
+	wasLow := p.lowDisk
+	clearDiskAlert := false
 	if freeGB < float64(p.cfg.MinFreeDiskGB) {
 		p.lowDisk = true
-		p.logger.Warn("low disk space, pausing spawn", "free_gb", freeGB)
+		if !wasLow {
+			p.logger.Warn("low disk space, pausing spawn", "free_gb", freeGB)
+		}
 	} else {
+		if wasLow {
+			clearDiskAlert = true
+		}
 		p.lowDisk = false
 	}
 	shutdown := p.shutdown || p.drain
@@ -37,6 +45,13 @@ func (p *Pool) reclaim(ctx context.Context, startupHard bool) error {
 		inFlight[name] = struct{}{}
 	}
 	p.mu.Unlock()
+
+	if clearDiskAlert {
+		p.monitor.Clear(notify.CodeDiskBlocked)
+	}
+	if !shutdown {
+		p.evaluateAlerts(ctx)
+	}
 
 	if shutdown {
 		return nil
