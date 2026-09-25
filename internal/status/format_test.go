@@ -93,6 +93,29 @@ func TestFormatTextStaleJobs(t *testing.T) {
 	}
 }
 
+func TestFormatTextRunnerCache(t *testing.T) {
+	hit := FormatText(Report{
+		Target:      "org:my-org",
+		Agent:       AgentInfo{State: AgentStopped},
+		RunnerCache: RunnerCacheInfo{Present: true, Path: "/tmp/runner-cache/actions-runner-osx-arm64-2.337.0.tar.gz"},
+		Health:      HealthInfo{FreeDiskGB: 42.1, Status: "ok"},
+		Credential:  credentialview.Info{Mode: "github_pat"},
+	})
+	if !strings.Contains(hit, "runner_cache: hit /tmp/runner-cache/actions-runner-osx-arm64-2.337.0.tar.gz") {
+		t.Fatalf("hit:\n%s", hit)
+	}
+	miss := FormatText(Report{
+		Target:      "org:my-org",
+		Agent:       AgentInfo{State: AgentStopped},
+		RunnerCache: RunnerCacheInfo{Present: false, Path: "/tmp/runner-cache/actions-runner-osx-arm64-2.337.0.tar.gz"},
+		Health:      HealthInfo{FreeDiskGB: 42.1, Status: "ok"},
+		Credential:  credentialview.Info{Mode: "github_pat"},
+	})
+	if !strings.Contains(miss, "runner_cache: miss (VM may curl)") {
+		t.Fatalf("miss:\n%s", miss)
+	}
+}
+
 func TestFormatTextBootNotRunningBudget(t *testing.T) {
 	out := FormatText(Report{
 		Target: "org:my-org",

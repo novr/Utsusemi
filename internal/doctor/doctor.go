@@ -18,6 +18,7 @@ import (
 	"github.com/novr/utsusemi/internal/notify"
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/registrar"
+	"github.com/novr/utsusemi/internal/runnercache"
 	"github.com/novr/utsusemi/internal/runnerrelease"
 	"github.com/novr/utsusemi/internal/spawn"
 	"github.com/novr/utsusemi/internal/target"
@@ -119,7 +120,8 @@ func Collect(ctx context.Context, in Input) Report {
 		add("hostname", StatusOK, fmt.Sprintf("%s (LocalHostName: %s)", host.Hostname, orDash(host.LocalHostName)))
 	}
 
-	checkRunnerVersion(ctx, in.Cfg, add)
+	checkRunnerVersion(ctx, in.Cfg, nil, add)
+	checkRunnerCache(in.Cfg, in.Provider, add)
 	checkMounts(in.Cfg, add)
 	checkMultiHost(ctx, in, host, add)
 	checkAlerts(store, add)
@@ -173,7 +175,7 @@ func checkMounts(cfg *config.Config, add func(string, Status, string)) {
 	add("mounts", StatusOK, fmt.Sprintf("%d configured", len(dirs)))
 }
 
-func checkRunnerVersion(ctx context.Context, cfg *config.Config, add func(string, Status, string)) {
+func checkRunnerVersion(ctx context.Context, cfg *config.Config, release *runnerrelease.Client, add func(string, Status, string)) {
 	snap := spawn.LoadRunnerVersionSnapshot(cfg.RunnerVersion, cfg.StateDir)
 	if snap.Configured == "" {
 		add("runner_version", StatusFail, "runner_version is empty")
@@ -182,20 +184,40 @@ func checkRunnerVersion(ctx context.Context, cfg *config.Config, add func(string
 	msg := "configured " + snap.Configured
 	if snap.HasMetrics {
 		msg += fmt.Sprintf("; last successful spawn used %s", snap.LastMetrics.RunnerVersion)
-		if snap.Mismatch() {
-			add("runner_version", StatusWarn, msg+"; rebuild the base image and restart the agent after changing runner_version")
-			return
+		if !snap.Mismatch() {
+			msg += fmt.Sprintf(" (cold_start %dms)", snap.LastMetrics.ColdStartMs)
 		}
-		msg += fmt.Sprintf(" (cold_start %dms)", snap.LastMetrics.ColdStartMs)
 	} else {
 		msg += "; no successful spawn metrics yet"
 	}
-	latestClient := &http.Client{Timeout: 15 * time.Second}
-	if latest, err := runnerrelease.Latest(ctx, latestClient); err == nil && runnerrelease.Older(snap.Configured, latest) {
-		add("runner_version", StatusWarn, msg+fmt.Sprintf("; latest GitHub release is %s", latest))
+	if release == nil {
+		release = &runnerrelease.Client{HTTPClient: &http.Client{Timeout: 15 * time.Second}}
+	}
+	if latest, err := release.Latest(ctx); err == nil && runnerrelease.Older(snap.Configured, latest) {
+		add("runner_version", StatusFail, msg+fmt.Sprintf("; latest GitHub release is %s", latest))
+		return
+	}
+	if snap.Mismatch() {
+		add("runner_version", StatusWarn, msg+"; rebuild the base image and restart the agent after changing runner_version")
 		return
 	}
 	add("runner_version", StatusOK, msg)
+}
+
+func checkRunnerCache(cfg *config.Config, p provider.VMProvider, add func(string, Status, string)) {
+	arch := ""
+	if p != nil {
+		arch = p.Capabilities().RunnerArch
+	}
+	if arch == "" {
+		arch = "osx-arm64"
+	}
+	path, ok := runnercache.Cached(cfg.StateDir, arch, cfg.RunnerVersion)
+	if !ok {
+		add("runner_cache", StatusWarn, "missing; bootstrap may download inside the VM")
+		return
+	}
+	add("runner_cache", StatusOK, path)
 }
 
 func checkMultiHost(ctx context.Context, in Input, host hostid.Info, add func(string, Status, string)) {

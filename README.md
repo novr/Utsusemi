@@ -271,7 +271,7 @@ by that host are named `{vm_name_prefix}{host_id}-{random}`. Reclaim and
 ```bash
 utsusemi --version
 utsusemi validate
-utsusemi doctor   # runner_version behind GitHub latest → JIT exit without claiming jobs
+utsusemi doctor   # runner_version older than GitHub latest → fail (exit 1); runner_cache miss → warn
 utsusemi status
 utsusemi list
 utsusemi run
