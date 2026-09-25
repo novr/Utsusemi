@@ -15,6 +15,7 @@ import (
 	"github.com/novr/utsusemi/internal/hostid"
 	"github.com/novr/utsusemi/internal/instancelock"
 	"github.com/novr/utsusemi/internal/keychain"
+	"github.com/novr/utsusemi/internal/notify"
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/registrar"
 	"github.com/novr/utsusemi/internal/runnerrelease"
@@ -121,8 +122,17 @@ func Collect(ctx context.Context, in Input) Report {
 	checkRunnerVersion(ctx, in.Cfg, add)
 	checkMounts(in.Cfg, add)
 	checkMultiHost(ctx, in, host, add)
+	checkAlerts(store, add)
 
 	return Report{Checks: checks}
+}
+
+func checkAlerts(store keychain.Store, add func(string, Status, string)) {
+	if notify.WebhookConfigured(store) {
+		add("alerts", StatusOK, "configured")
+		return
+	}
+	add("alerts", StatusOK, "not configured")
 }
 
 func checkLoopbackBroker(ctx context.Context, cfg *config.Config, add func(string, Status, string)) {

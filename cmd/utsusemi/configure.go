@@ -11,6 +11,7 @@ func newConfigureCmd() *cobra.Command {
 	}
 	cmd.AddCommand(newConfigureAppCmd())
 	cmd.AddCommand(newConfigureTokenCmd())
+	cmd.AddCommand(newConfigureAlertsCmd())
 	cmd.AddCommand(newConfigureEditCmd())
 	cmd.AddCommand(newConfigurePathCmd())
 	cmd.AddCommand(newConfigureShowCmd())
