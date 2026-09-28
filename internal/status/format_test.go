@@ -111,7 +111,7 @@ func TestFormatTextRunnerCache(t *testing.T) {
 		Health:      HealthInfo{FreeDiskGB: 42.1, Status: "ok"},
 		Credential:  credentialview.Info{Mode: "github_pat"},
 	})
-	if !strings.Contains(miss, "runner_cache: miss (VM may curl)") {
+	if !strings.Contains(miss, "runner_cache: miss (image install or curl)") {
 		t.Fatalf("miss:\n%s", miss)
 	}
 }

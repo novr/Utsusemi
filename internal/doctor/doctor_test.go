@@ -55,6 +55,20 @@ func TestCheckRunnerVersionOlderThanLatest(t *testing.T) {
 	}
 }
 
+func TestCheckRunnerVersionSkipsLatestOnNetworkError(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Error(w, "unavailable", http.StatusBadGateway)
+	}))
+	t.Cleanup(srv.Close)
+	release := &runnerrelease.Client{HTTPClient: srv.Client(), URL: srv.URL}
+	checks := recordChecks(func(add checkFn) {
+		checkRunnerVersion(context.Background(), &config.Config{RunnerVersion: "2.300.0", StateDir: t.TempDir()}, release, add)
+	})
+	if len(checks) != 1 || checks[0].Status != StatusOK {
+		t.Fatalf("network error must skip latest comparison; checks=%+v", checks)
+	}
+}
+
 func TestCheckRunnerVersionOlderTakesPrecedenceOverMismatch(t *testing.T) {
 	dir := t.TempDir()
 	if err := spawn.SaveLastSpawn(dir, spawn.LastSpawn{
@@ -82,6 +96,9 @@ func TestCheckRunnerCache(t *testing.T) {
 	})
 	if len(missing) != 1 || missing[0].Status != StatusWarn || missing[0].Name != "runner_cache" {
 		t.Fatalf("missing=%+v", missing)
+	}
+	if missing[0].Message != "missing host tarball; bootstrap may use image install or curl" {
+		t.Fatalf("message=%q", missing[0].Message)
 	}
 
 	dest := runnercache.TarballPath(dir, "osx-arm64", "2.337.0")

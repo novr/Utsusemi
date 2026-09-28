@@ -25,7 +25,7 @@ func FormatText(r Report) string {
 	if r.RunnerCache.Present {
 		fmt.Fprintf(&b, "runner_cache: hit %s\n", r.RunnerCache.Path)
 	} else if r.RunnerCache.Path != "" {
-		fmt.Fprintf(&b, "runner_cache: miss (VM may curl)\n")
+		fmt.Fprintf(&b, "runner_cache: miss (image install or curl)\n")
 	}
 	if r.Spawn != nil {
 		fmt.Fprintf(&b, "spawn: clone %s, boot %s, register %s, cold_start %s, job %s, total %s (%s)\n",

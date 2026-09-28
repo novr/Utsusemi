@@ -194,7 +194,7 @@ func checkRunnerVersion(ctx context.Context, cfg *config.Config, release *runner
 		release = &runnerrelease.Client{HTTPClient: &http.Client{Timeout: 15 * time.Second}}
 	}
 	if latest, err := release.Latest(ctx); err == nil && runnerrelease.Older(snap.Configured, latest) {
-		add("runner_version", StatusFail, msg+fmt.Sprintf("; latest GitHub release is %s", latest))
+		add("runner_version", StatusFail, msg+fmt.Sprintf("; latest GitHub release is %s — bump runner_version (host cache installs it; matching the base image is optional)", latest))
 		return
 	}
 	if snap.Mismatch() {
@@ -205,19 +205,21 @@ func checkRunnerVersion(ctx context.Context, cfg *config.Config, release *runner
 }
 
 func checkRunnerCache(cfg *config.Config, p provider.VMProvider, add func(string, Status, string)) {
-	arch := ""
-	if p != nil {
-		arch = p.Capabilities().RunnerArch
-	}
-	if arch == "" {
-		arch = "osx-arm64"
-	}
-	path, ok := runnercache.Cached(cfg.StateDir, arch, cfg.RunnerVersion)
+	path, ok := runnercache.Cached(cfg.StateDir, runnerArch(p), cfg.RunnerVersion)
 	if !ok {
-		add("runner_cache", StatusWarn, "missing; bootstrap may download inside the VM")
+		add("runner_cache", StatusWarn, "missing host tarball; bootstrap may use image install or curl")
 		return
 	}
 	add("runner_cache", StatusOK, path)
+}
+
+func runnerArch(p provider.VMProvider) string {
+	if p != nil {
+		if arch := p.Capabilities().RunnerArch; arch != "" {
+			return arch
+		}
+	}
+	return "osx-arm64"
 }
 
 func checkMultiHost(ctx context.Context, in Input, host hostid.Info, add func(string, Status, string)) {
