@@ -10,6 +10,27 @@ import (
 	"testing"
 )
 
+func TestCached(t *testing.T) {
+	state := t.TempDir()
+	path, ok := Cached(state, "osx-arm64", "2.337.0")
+	if ok {
+		t.Fatal("expected miss")
+	}
+	if path != TarballPath(state, "osx-arm64", "2.337.0") {
+		t.Fatalf("path=%q", path)
+	}
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	got, ok := Cached(state, "osx-arm64", "2.337.0")
+	if !ok || got != path {
+		t.Fatalf("got=%q ok=%v", got, ok)
+	}
+}
+
 func TestTarballName(t *testing.T) {
 	got := TarballName("osx-arm64", "v2.337.0")
 	if got != "actions-runner-osx-arm64-2.337.0.tar.gz" {

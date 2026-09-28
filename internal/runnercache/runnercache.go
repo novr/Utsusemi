@@ -86,6 +86,16 @@ type Options struct {
 	Logger     *slog.Logger
 }
 
+// Cached reports whether a non-empty runner tarball is present for version/arch.
+func Cached(stateDir, arch, version string) (path string, ok bool) {
+	path = TarballPath(stateDir, arch, version)
+	st, err := os.Stat(path)
+	if err != nil || st.Size() <= 0 {
+		return path, false
+	}
+	return path, true
+}
+
 // Ensure downloads the runner tarball into StateDir when missing.
 func Ensure(ctx context.Context, stateDir, version, arch string, opts Options) error {
 	version = strings.TrimPrefix(strings.TrimSpace(version), "v")

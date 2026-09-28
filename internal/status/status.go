@@ -40,6 +40,7 @@ type Report struct {
 	StateDir             string              `json:"state_dir"`
 	Host                 HostInfo            `json:"host"`
 	RunnerVersion        RunnerVersionInfo   `json:"runner_version"`
+	RunnerCache          RunnerCacheInfo     `json:"runner_cache"`
 	Mounts               []string            `json:"mounts,omitempty"`
 	Spawn                *SpawnInfo          `json:"spawn,omitempty"`
 	BootNotRunningBudget *BootNotRunningInfo `json:"boot_not_running_budget,omitempty"`
@@ -69,6 +70,11 @@ type RunnerVersionInfo struct {
 	Configured string `json:"configured"`
 	LastSpawn  string `json:"last_spawn,omitempty"`
 	Status     string `json:"status"`
+}
+
+type RunnerCacheInfo struct {
+	Present bool   `json:"present"`
+	Path    string `json:"path,omitempty"`
 }
 
 type SpawnInfo struct {
@@ -197,11 +203,19 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 		}
 	}
 
+	arch := in.Provider.Capabilities().RunnerArch
+	if arch == "" {
+		arch = "osx-arm64"
+	}
+	cachePath, cacheOK := runnercache.Cached(stateDir, arch, in.Cfg.RunnerVersion)
+	runnerCache := RunnerCacheInfo{Present: cacheOK, Path: cachePath}
+
 	return Report{
 		Target:               in.Target.DisplayString(),
 		StateDir:             stateDir,
 		Host:                 HostInfo{ID: host.ID, Hostname: host.Hostname, LocalHostName: host.LocalHostName, EffectivePrefix: host.EffectivePrefix, Warnings: host.Warnings},
 		RunnerVersion:        runnerInfo,
+		RunnerCache:          runnerCache,
 		Mounts:               mounts,
 		Spawn:                spawnInfo,
 		BootNotRunningBudget: bootNotRunning,
