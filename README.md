@@ -46,11 +46,11 @@ utsusemi configure edit|path|show
 | Targets | organization | organization or repository |
 | Credential refresh | automatic | manual |
 
-Shared flags: `--base-image`, `--pool-size`, `--labels`, `--runner-version`, `--output`, `--force`.
+Shared flags: `--base-image`, `--pool-size`, `--labels`, `--runner-version`, `--mounts`, `--softnet`, `--reclaim-policy`, `--reclaim-grace`, `--min-free-disk-gb`, `--output`, `--force`.
 
 `--runner-group-id` (default `1`) for organization and repository targets.
 
-Re-running `configure` merges **only changed flags** so hand-edited keys (`reclaim_policy`, `mounts`, …) survive. Existing config: prompt on TTY; `--force` for non-interactive.
+Re-running `configure` merges **only changed flags** so hand-edited keys (`state_dir`, `vm_name_prefix`, timeouts, …) survive. Existing config: prompt on TTY; `--force` for non-interactive.
 
 | Case | Rationale |
 |------|-----------|
@@ -189,7 +189,14 @@ Edit `config.yaml` after `configure` with `utsusemi configure edit`, or set flag
 
 #### Directory shares (host → VM)
 
-`mounts` is a list of host paths passed to Tart's `--dir` flag. `~/` and Tart's `name:~/…` form expand to the home directory of the user running `utsusemi` (the same user as `brew services`). Each path must already exist as a directory — missing mounts make Tart refuse to start the VM. Use `utsusemi status` to see resolved paths and `utsusemi doctor` to catch missing directories before a job starts.
+`mounts` is a list of host paths passed to Tart's `--dir` flag. `~/` and Tart's `name:~/…` form expand to the home directory of the user running `utsusemi` (the same user as `brew services`). Each path must already exist as a directory — missing mounts make Tart refuse to start the VM. Use `utsusemi status` to see resolved paths and `utsusemi doctor` to catch missing directories before a job starts. Create the directories first, then:
+
+```bash
+utsusemi configure app --mounts ~/utsusemi-cache/swiftpm --mounts ~/utsusemi-toolchains:ro
+brew services restart utsusemi   # mounts/softnet apply after agent restart
+```
+
+`--mounts=` clears the list. Repeat `--mounts` to replace the whole list (merge is not append).
 
 ```yaml
 mounts:

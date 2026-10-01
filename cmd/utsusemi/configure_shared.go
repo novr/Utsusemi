@@ -40,7 +40,7 @@ type configureMergeInput struct {
 	OutputPath string
 	Target     configureTargetInput
 	App        configureAppInput
-	Opts       runnerOptions
+	Opts       sharedConfigOptions
 }
 
 type configureMergeResult struct {
@@ -118,7 +118,7 @@ func mergeConfigureConfig(cmd *cobra.Command, in configureMergeInput) (configure
 		cfg.Registration.Mode = config.ModeGitHubPAT
 	}
 
-	if err := applyRunnerOptions(cmd, in.Opts, cfg, !existing); err != nil {
+	if err := applySharedConfigOptions(cmd, in.Opts, cfg, !existing); err != nil {
 		return configureMergeResult{}, err
 	}
 
@@ -203,8 +203,11 @@ func validateConfigureTarget(cfg *config.Config, existing bool, mode configureMo
 	return nil
 }
 
-func applyRunnerOptions(cmd *cobra.Command, opts runnerOptions, cfg *config.Config, isNew bool) error {
+func applySharedConfigOptions(cmd *cobra.Command, opts sharedConfigOptions, cfg *config.Config, isNew bool) error {
 	if isNew {
+		if err := validateSharedConfigOptionValues(opts); err != nil {
+			return err
+		}
 		opts.apply(cfg)
 		return nil
 	}
@@ -220,13 +223,44 @@ func applyRunnerOptions(cmd *cobra.Command, opts runnerOptions, cfg *config.Conf
 	if cmd.Flags().Changed("pool-size") {
 		cfg.PoolSize = opts.poolSize
 	}
+	if cmd.Flags().Changed("mounts") {
+		cfg.Mounts = normalizeMounts(opts.mounts)
+	}
+	if cmd.Flags().Changed("softnet") {
+		cfg.Softnet = opts.softnet
+	}
+	if cmd.Flags().Changed("reclaim-policy") {
+		cfg.ReclaimPolicy = opts.reclaimPolicy
+	}
+	if cmd.Flags().Changed("reclaim-grace") {
+		if opts.reclaimGrace <= 0 {
+			return fmt.Errorf("--reclaim-grace must be positive")
+		}
+		cfg.ReclaimGrace = config.Duration(opts.reclaimGrace)
+	}
+	if cmd.Flags().Changed("min-free-disk-gb") {
+		if opts.minFreeDiskGB <= 0 {
+			return fmt.Errorf("--min-free-disk-gb must be positive")
+		}
+		cfg.MinFreeDiskGB = opts.minFreeDiskGB
+	}
 	if cfg.Provider == "" {
 		cfg.Provider = "tart"
 	}
 	return nil
 }
 
-func resolveRunnerVersionFlag(ctx context.Context, cmd *cobra.Command, opts *runnerOptions) error {
+func validateSharedConfigOptionValues(opts sharedConfigOptions) error {
+	if opts.minFreeDiskGB <= 0 {
+		return fmt.Errorf("--min-free-disk-gb must be positive")
+	}
+	if opts.reclaimGrace <= 0 {
+		return fmt.Errorf("--reclaim-grace must be positive")
+	}
+	return nil
+}
+
+func resolveRunnerVersionFlag(ctx context.Context, cmd *cobra.Command, opts *sharedConfigOptions) error {
 	if !cmd.Flags().Changed("runner-version") {
 		return nil
 	}
@@ -262,6 +296,7 @@ type configureSuccess struct {
 var configureAppConfigFlagNames = []string{
 	"broker", "oauth-client-id", "org", "runner-group-id",
 	"labels", "base-image", "runner-version", "pool-size",
+	"mounts", "softnet", "reclaim-policy", "reclaim-grace", "min-free-disk-gb",
 }
 
 func configureAppConfigFlagsChanged(cmd *cobra.Command) bool {

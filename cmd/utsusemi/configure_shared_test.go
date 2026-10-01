@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -33,8 +34,8 @@ func TestMergeConfigureConfigRunnerGroupAuthChanged(t *testing.T) {
 	}
 
 	cmd := &cobra.Command{}
-	opts := runnerOptions{}
-	addRunnerFlags(cmd, &opts)
+	opts := sharedConfigOptions{}
+	addSharedConfigFlags(cmd, &opts)
 	var runnerGroup int64
 	cmd.Flags().Int64Var(&runnerGroup, "runner-group-id", 1, "")
 	if err := cmd.ParseFlags([]string{"--runner-group-id", "2"}); err != nil {
@@ -59,8 +60,8 @@ func TestMergeConfigureConfigRunnerGroupAuthChanged(t *testing.T) {
 	}
 
 	cmdSame := &cobra.Command{}
-	optsSame := runnerOptions{}
-	addRunnerFlags(cmdSame, &optsSame)
+	optsSame := sharedConfigOptions{}
+	addSharedConfigFlags(cmdSame, &optsSame)
 	var runnerGroupSame int64
 	cmdSame.Flags().Int64Var(&runnerGroupSame, "runner-group-id", 1, "")
 	if err := cmdSame.ParseFlags([]string{"--runner-group-id", "1"}); err != nil {
@@ -96,14 +97,17 @@ func TestMergeConfigureConfigPreservesMounts(t *testing.T) {
 		RunnerVersion: "2.336.0",
 		PoolSize:      1,
 		Mounts:        []string{"/tmp/shared"},
+		Softnet:       true,
+		ReclaimPolicy: config.ReclaimSoft,
+		MinFreeDiskGB: 40,
 	}
 	if err := writeConfig(path, existing); err != nil {
 		t.Fatal(err)
 	}
 
 	cmd := &cobra.Command{}
-	opts := runnerOptions{}
-	addRunnerFlags(cmd, &opts)
+	opts := sharedConfigOptions{}
+	addSharedConfigFlags(cmd, &opts)
 	if err := cmd.ParseFlags([]string{"--pool-size", "2"}); err != nil {
 		t.Fatal(err)
 	}
@@ -124,6 +128,127 @@ func TestMergeConfigureConfigPreservesMounts(t *testing.T) {
 	if len(merge.Config.Mounts) != 1 || merge.Config.Mounts[0] != "/tmp/shared" {
 		t.Fatalf("mounts=%v", merge.Config.Mounts)
 	}
+	if !merge.Config.Softnet || merge.Config.ReclaimPolicy != config.ReclaimSoft || merge.Config.MinFreeDiskGB != 40 {
+		t.Fatalf("ops fields changed without flags: softnet=%v reclaim=%q disk=%d", merge.Config.Softnet, merge.Config.ReclaimPolicy, merge.Config.MinFreeDiskGB)
+	}
+}
+
+func TestMergeConfigureConfigMountsReplaceAndClear(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	existing := &config.Config{
+		Target: config.TargetYAML("my-org", "", 1),
+		Registration: config.Registration{
+			Mode:      config.ModeHostedApp,
+			BrokerURL: config.DefaultHostedAppBrokerURL,
+		},
+		Labels:        []string{"self-hosted"},
+		Provider:      "tart",
+		BaseImage:     "ghcr.io/example/old:latest",
+		RunnerVersion: "2.336.0",
+		PoolSize:      1,
+		Mounts:        []string{"/tmp/old"},
+	}
+	if err := writeConfig(path, existing); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &cobra.Command{}
+	opts := sharedConfigOptions{}
+	addSharedConfigFlags(cmd, &opts)
+	if err := cmd.ParseFlags([]string{"--mounts", "/tmp/a", "--mounts", "/tmp/b"}); err != nil {
+		t.Fatal(err)
+	}
+	merge, err := mergeConfigureConfig(cmd, configureMergeInput{
+		Mode:       configureModeApp,
+		OutputPath: path,
+		Target:     configureTargetInput{Org: "my-org", RunnerGroup: 1},
+		App:        configureAppInput{BrokerURL: config.DefaultHostedAppBrokerURL},
+		Opts:       opts,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(merge.Config.Mounts) != 2 || merge.Config.Mounts[0] != "/tmp/a" || merge.Config.Mounts[1] != "/tmp/b" {
+		t.Fatalf("mounts=%v", merge.Config.Mounts)
+	}
+
+	cmdClear := &cobra.Command{}
+	optsClear := sharedConfigOptions{}
+	addSharedConfigFlags(cmdClear, &optsClear)
+	if err := cmdClear.ParseFlags([]string{"--mounts="}); err != nil {
+		t.Fatal(err)
+	}
+	cleared, err := mergeConfigureConfig(cmdClear, configureMergeInput{
+		Mode:       configureModeApp,
+		OutputPath: path,
+		Target:     configureTargetInput{Org: "my-org", RunnerGroup: 1},
+		App:        configureAppInput{BrokerURL: config.DefaultHostedAppBrokerURL},
+		Opts:       optsClear,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(cleared.Config.Mounts) != 0 {
+		t.Fatalf("cleared mounts=%v", cleared.Config.Mounts)
+	}
+}
+
+func TestMergeConfigureConfigSoftnetAndReclaim(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	existing := &config.Config{
+		Target: config.TargetYAML("my-org", "", 1),
+		Registration: config.Registration{
+			Mode:      config.ModeHostedApp,
+			BrokerURL: config.DefaultHostedAppBrokerURL,
+		},
+		Labels:        []string{"self-hosted"},
+		Provider:      "tart",
+		BaseImage:     "ghcr.io/example/old:latest",
+		RunnerVersion: "2.336.0",
+		PoolSize:      1,
+		Softnet:       true,
+		ReclaimPolicy: config.ReclaimGrace,
+		MinFreeDiskGB: 50,
+	}
+	if err := writeConfig(path, existing); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &cobra.Command{}
+	opts := sharedConfigOptions{}
+	addSharedConfigFlags(cmd, &opts)
+	if err := cmd.ParseFlags([]string{
+		"--softnet=false",
+		"--reclaim-policy", "hard",
+		"--reclaim-grace", "20m",
+		"--min-free-disk-gb", "60",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	merge, err := mergeConfigureConfig(cmd, configureMergeInput{
+		Mode:       configureModeApp,
+		OutputPath: path,
+		Target:     configureTargetInput{Org: "my-org", RunnerGroup: 1},
+		App:        configureAppInput{BrokerURL: config.DefaultHostedAppBrokerURL},
+		Opts:       opts,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if merge.Config.Softnet {
+		t.Fatal("expected softnet disabled")
+	}
+	if merge.Config.ReclaimPolicy != config.ReclaimHard {
+		t.Fatalf("reclaim_policy=%q", merge.Config.ReclaimPolicy)
+	}
+	if merge.Config.ReclaimGrace.Duration() != 20*time.Minute {
+		t.Fatalf("reclaim_grace=%s", merge.Config.ReclaimGrace.Duration())
+	}
+	if merge.Config.MinFreeDiskGB != 60 {
+		t.Fatalf("min_free_disk_gb=%d", merge.Config.MinFreeDiskGB)
+	}
 }
 
 func TestMergeConfigureConfigRejectsModeChange(t *testing.T) {
@@ -141,8 +266,8 @@ func TestMergeConfigureConfigRejectsModeChange(t *testing.T) {
 	}
 
 	cmd := &cobra.Command{}
-	opts := runnerOptions{}
-	addRunnerFlags(cmd, &opts)
+	opts := sharedConfigOptions{}
+	addSharedConfigFlags(cmd, &opts)
 	if err := cmd.ParseFlags(nil); err != nil {
 		t.Fatal(err)
 	}
@@ -298,8 +423,8 @@ func TestConfigureOnlyCredentialRefresh(t *testing.T) {
 	cmd := &cobra.Command{}
 	var refresh bool
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "")
-	opts := runnerOptions{}
-	addRunnerFlags(cmd, &opts)
+	opts := sharedConfigOptions{}
+	addSharedConfigFlags(cmd, &opts)
 	if err := cmd.ParseFlags([]string{"--refresh"}); err != nil {
 		t.Fatal(err)
 	}
@@ -314,6 +439,70 @@ func TestConfigureOnlyCredentialRefresh(t *testing.T) {
 	}
 	if configureOnlyCredentialRefresh(cmd, true) {
 		t.Fatal("expected false when config flags change")
+	}
+
+	cmdMounts := &cobra.Command{}
+	var refreshMounts bool
+	cmdMounts.Flags().BoolVar(&refreshMounts, "refresh", false, "")
+	optsMounts := sharedConfigOptions{}
+	addSharedConfigFlags(cmdMounts, &optsMounts)
+	if err := cmdMounts.ParseFlags([]string{"--refresh", "--mounts", "/tmp/cache"}); err != nil {
+		t.Fatal(err)
+	}
+	if configureOnlyCredentialRefresh(cmdMounts, true) {
+		t.Fatal("expected false when --mounts changes config")
+	}
+}
+
+func TestMergeConfigureConfigRejectsNonPositiveDiskAndGrace(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	existing := &config.Config{
+		Target: config.TargetYAML("my-org", "", 1),
+		Registration: config.Registration{
+			Mode:      config.ModeHostedApp,
+			BrokerURL: config.DefaultHostedAppBrokerURL,
+		},
+		Labels:        []string{"self-hosted"},
+		Provider:      "tart",
+		BaseImage:     "ghcr.io/example/old:latest",
+		RunnerVersion: "2.336.0",
+		PoolSize:      1,
+	}
+	if err := writeConfig(path, existing); err != nil {
+		t.Fatal(err)
+	}
+
+	cmdDisk := &cobra.Command{}
+	optsDisk := sharedConfigOptions{}
+	addSharedConfigFlags(cmdDisk, &optsDisk)
+	if err := cmdDisk.ParseFlags([]string{"--min-free-disk-gb", "0"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mergeConfigureConfig(cmdDisk, configureMergeInput{
+		Mode:       configureModeApp,
+		OutputPath: path,
+		Target:     configureTargetInput{Org: "my-org", RunnerGroup: 1},
+		App:        configureAppInput{BrokerURL: config.DefaultHostedAppBrokerURL},
+		Opts:       optsDisk,
+	}); err == nil {
+		t.Fatal("expected error for --min-free-disk-gb 0")
+	}
+
+	cmdGrace := &cobra.Command{}
+	optsGrace := sharedConfigOptions{}
+	addSharedConfigFlags(cmdGrace, &optsGrace)
+	if err := cmdGrace.ParseFlags([]string{"--reclaim-grace", "0"}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := mergeConfigureConfig(cmdGrace, configureMergeInput{
+		Mode:       configureModeApp,
+		OutputPath: path,
+		Target:     configureTargetInput{Org: "my-org", RunnerGroup: 1},
+		App:        configureAppInput{BrokerURL: config.DefaultHostedAppBrokerURL},
+		Opts:       optsGrace,
+	}); err == nil {
+		t.Fatal("expected error for --reclaim-grace 0")
 	}
 }
 
