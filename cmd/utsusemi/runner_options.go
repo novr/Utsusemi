@@ -2,6 +2,7 @@ package main
 
 import (
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -15,26 +16,41 @@ const (
 	defaultPoolSize      = 1
 )
 
-type runnerOptions struct {
-	labels    string
-	baseImage string
-	runnerVer string
-	poolSize  int
+type sharedConfigOptions struct {
+	labels        string
+	baseImage     string
+	runnerVer     string
+	poolSize      int
+	mounts        []string
+	softnet       bool
+	reclaimPolicy string
+	reclaimGrace  time.Duration
+	minFreeDiskGB int
 }
 
-func (o runnerOptions) apply(cfg *config.Config) {
+func (o sharedConfigOptions) apply(cfg *config.Config) {
 	cfg.Labels = splitLabels(o.labels)
 	cfg.Provider = "tart"
 	cfg.BaseImage = o.baseImage
 	cfg.RunnerVersion = o.runnerVer
 	cfg.PoolSize = o.poolSize
+	cfg.Mounts = normalizeMounts(o.mounts)
+	cfg.Softnet = o.softnet
+	cfg.ReclaimPolicy = o.reclaimPolicy
+	cfg.ReclaimGrace = config.Duration(o.reclaimGrace)
+	cfg.MinFreeDiskGB = o.minFreeDiskGB
 }
 
-func addRunnerFlags(cmd *cobra.Command, opts *runnerOptions) {
+func addSharedConfigFlags(cmd *cobra.Command, opts *sharedConfigOptions) {
 	cmd.Flags().StringVar(&opts.labels, "labels", defaultLabels, "comma-separated runner labels")
 	cmd.Flags().StringVar(&opts.baseImage, "base-image", defaultBaseImage, "base image used to create runner VMs")
 	cmd.Flags().StringVar(&opts.runnerVer, "runner-version", defaultRunnerVersion, "actions runner version (use latest to resolve from GitHub)")
 	cmd.Flags().IntVar(&opts.poolSize, "pool-size", defaultPoolSize, "pool size")
+	cmd.Flags().StringArrayVar(&opts.mounts, "mounts", nil, "host directory share for Tart --dir (repeatable; --mounts= clears)")
+	cmd.Flags().BoolVar(&opts.softnet, "softnet", false, "use Softnet networking (disable with --softnet=false)")
+	cmd.Flags().StringVar(&opts.reclaimPolicy, "reclaim-policy", config.DefaultReclaimPolicy, "reclaim policy: soft, grace, or hard")
+	cmd.Flags().DurationVar(&opts.reclaimGrace, "reclaim-grace", config.DefaultReclaimGrace, "grace window when reclaim-policy is grace")
+	cmd.Flags().IntVar(&opts.minFreeDiskGB, "min-free-disk-gb", config.DefaultMinFreeDiskGB, "pause spawning when free disk is below this many GB")
 }
 
 func splitLabels(value string) []string {
@@ -44,6 +60,20 @@ func splitLabels(value string) []string {
 		part = strings.TrimSpace(part)
 		if part != "" {
 			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func normalizeMounts(in []string) []string {
+	if len(in) == 0 {
+		return nil
+	}
+	out := make([]string, 0, len(in))
+	for _, m := range in {
+		m = strings.TrimSpace(m)
+		if m != "" {
+			out = append(out, m)
 		}
 	}
 	return out

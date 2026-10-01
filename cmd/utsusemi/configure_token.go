@@ -19,7 +19,7 @@ func newConfigureTokenCmd() *cobra.Command {
 		repo        string
 		runnerGroup int64
 		force       bool
-		opts        runnerOptions
+		opts        sharedConfigOptions
 	)
 
 	cmd := &cobra.Command{
@@ -28,7 +28,8 @@ func newConfigureTokenCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		Example: `  printf '%s' "$TOKEN" | utsusemi configure token --repo owner/repo
   utsusemi configure token --token "$TOKEN" --org my-org
-  utsusemi configure token --pool-size 2`,
+  utsusemi configure token --pool-size 2
+  utsusemi configure token --mounts ~/utsusemi-cache/swiftpm`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if runnerGroup <= 0 {
 				runnerGroup = 1
@@ -87,7 +88,7 @@ func newConfigureTokenCmd() *cobra.Command {
 	cmd.Flags().StringVar(&repo, "repo", "", "GitHub repository (owner/repo)")
 	cmd.Flags().Int64Var(&runnerGroup, "runner-group-id", 1, "runner group id")
 	cmd.Flags().BoolVar(&force, "force", false, "update existing config without prompting")
-	addRunnerFlags(cmd, &opts)
+	addSharedConfigFlags(cmd, &opts)
 	return cmd
 }
 

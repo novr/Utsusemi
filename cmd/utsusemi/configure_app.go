@@ -30,7 +30,7 @@ func newConfigureAppCmd() *cobra.Command {
 		outputPath    string
 		force         bool
 		refresh       bool
-		opts          runnerOptions
+		opts          sharedConfigOptions
 	)
 
 	cmd := &cobra.Command{
@@ -39,6 +39,7 @@ func newConfigureAppCmd() *cobra.Command {
 		Example: `  utsusemi configure app --org my-org
   utsusemi configure app --pool-size 2
   utsusemi configure app --runner-version latest
+  utsusemi configure app --mounts ~/utsusemi-cache/swiftpm
   utsusemi configure app --refresh`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if runnerGroup <= 0 {
@@ -129,7 +130,7 @@ func newConfigureAppCmd() *cobra.Command {
 	cmd.Flags().StringVar(&outputPath, "output", configPath, "config output path")
 	cmd.Flags().BoolVar(&force, "force", false, "update existing config without prompting")
 	cmd.Flags().BoolVar(&refresh, "refresh", false, "refresh hosted_app credential via OAuth (falls back to device flow)")
-	addRunnerFlags(cmd, &opts)
+	addSharedConfigFlags(cmd, &opts)
 	return cmd
 }
 
