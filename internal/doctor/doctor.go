@@ -194,7 +194,7 @@ func checkRunnerVersion(ctx context.Context, cfg *config.Config, release *runner
 		release = &runnerrelease.Client{HTTPClient: &http.Client{Timeout: 15 * time.Second}}
 	}
 	if latest, err := release.Latest(ctx); err == nil && runnerrelease.Older(snap.Configured, latest) {
-		add("runner_version", StatusFail, msg+fmt.Sprintf("; latest GitHub release is %s — bump runner_version (host cache installs it; matching the base image is optional)", latest))
+		add("runner_version", StatusWarn, msg+fmt.Sprintf("; latest GitHub release is %s — bump runner_version (host cache installs it; matching the base image is optional)", latest))
 		return
 	}
 	if snap.Mismatch() {

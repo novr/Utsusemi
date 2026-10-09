@@ -50,7 +50,7 @@ func TestCheckRunnerVersionOlderThanLatest(t *testing.T) {
 	checks := recordChecks(func(add checkFn) {
 		checkRunnerVersion(context.Background(), &config.Config{RunnerVersion: "2.300.0", StateDir: t.TempDir()}, release, add)
 	})
-	if len(checks) != 1 || checks[0].Status != StatusFail || checks[0].Name != "runner_version" {
+	if len(checks) != 1 || checks[0].Status != StatusWarn || checks[0].Name != "runner_version" {
 		t.Fatalf("checks=%+v", checks)
 	}
 }
@@ -83,7 +83,7 @@ func TestCheckRunnerVersionOlderTakesPrecedenceOverMismatch(t *testing.T) {
 	checks := recordChecks(func(add checkFn) {
 		checkRunnerVersion(context.Background(), &config.Config{RunnerVersion: "2.300.0", StateDir: dir}, release, add)
 	})
-	if len(checks) != 1 || checks[0].Status != StatusFail {
+	if len(checks) != 1 || checks[0].Status != StatusWarn {
 		t.Fatalf("checks=%+v", checks)
 	}
 }

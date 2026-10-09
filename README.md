@@ -214,9 +214,9 @@ On agent start, Utsusemi downloads the configured `runner_version` tarball once 
 
 If the base image already has the same runner version at `/Users/admin/actions-runner`, bootstrap skips install entirely (fastest path).
 
-Keep `runner_version` at GitHub’s current Actions runner release — `utsusemi doctor` **fails** when the configured version is older than latest (stale runners exit after JIT without claiming jobs). Prefer bumping `runner_version` and restarting the agent; the host cache installs that tarball even when the base image ships an older runner.
+Keep `runner_version` at GitHub’s current Actions runner release — `utsusemi doctor` **warns** when the configured version is older than latest (stale runners can exit after JIT without claiming jobs). Prefer bumping `runner_version` and restarting the agent; the host cache installs that tarball even when the base image ships an older runner.
 
-**Stock cirruslabs images** (`ghcr.io/cirruslabs/macos-*-xcode`) already ship a runner at `/Users/admin/actions-runner`. Matching that image version skips install (fastest) only while it equals GitHub latest; once the image lags, bump `runner_version` (or rebuild/refresh the image) so doctor stays green.
+**Stock cirruslabs images** (`ghcr.io/cirruslabs/macos-*-xcode`) already ship a runner at `/Users/admin/actions-runner`. Matching that image version skips install (fastest) only while it equals GitHub latest; once the image lags, bump `runner_version` (or rebuild/refresh the image) so doctor stops warning.
 
 **Custom images** — if `./bin/Runner.Listener` is missing under `RUNNER_HOME` (default `/Users/admin/actions-runner`), bootstrap falls back to a `.runner-version` sentinel file:
 
@@ -280,7 +280,7 @@ by that host are named `{vm_name_prefix}{host_id}-{random}`. Reclaim and
 ```bash
 utsusemi --version
 utsusemi validate
-utsusemi doctor   # runner_version older than GitHub latest → fail (exit 1); runner_cache miss → warn
+utsusemi doctor   # runner_version older than GitHub latest → warn; runner_cache miss → warn
 utsusemi status
 utsusemi list
 utsusemi run
