@@ -33,7 +33,7 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 | Listing | `internal/listing` | VM/runner rows for `utsusemi list` |
 | Credential view | `internal/credentialview` | Keychain credential summary (no refresh) |
 | Logging | `internal/logging` | slog + redaction; `run --log` fans out to stdout and a JSON log file |
-| Runner releases | `internal/runnerrelease` | GitHub rejects stale runners; `latest` resolve + doctor fail when older |
+| Runner releases | `internal/runnerrelease` | GitHub rejects stale runners; `latest` resolve + doctor warn when older |
 | Runner cache | `internal/runnercache` | Host tarball cache under `StateDir/runner-cache`; Tart `:ro` mount injection |
 | Alerts | `internal/notify` | Webhook push (`agent_fatal` / `disk_blocked` / `pool_stuck`); Keychain or `UTSUSEMI_ALERT_WEBHOOK` |
 | Keychain | `internal/keychain` | Platform secret store |
@@ -161,7 +161,7 @@ Deploy broker separately from CLI. After JWT signing or route changes, operators
 - **Bootstrap env**: `spawn.BootstrapEnv` sets `RUNNER_VERSION`, `RUNNER_ARCH`, `RUNNER_HOME`, and `RUNNER_CACHE_DIR` for `bootstrap.sh`. `RUNNER_ARCH` comes from `VMProvider.Capabilities().RunnerArch` (Tart: `osx-arm64`). Host cache via `runnercache.Ensure` on agent start; mount name `utsusemi-runner-cache`.
 - Operator docs in [README.md](README.md) Operations and Provider.
 - **Alerts (in scope)**: webhook push via `internal/notify` for `agent_fatal`, `disk_blocked`, and `pool_stuck` only (`utsusemi configure alerts`; URL in Keychain or `UTSUSEMI_ALERT_WEBHOOK`). `pool_stuck` uses time since last successful spawn (in-flight failures do not reset). Out of scope: process-death detection, fleet dashboards, Slack SDKs, YAML webhook URLs, threshold knobs in config.
-- **`utsusemi doctor`**: preflight via `internal/doctor` (provider, disk, loopback broker, credential, host_id, runner_version, runner_cache, mounts, multi-host, alerts configured-or-not as info/`ok`). `runner_version` older than GitHub `latest` is **fail** (stale → JIT failure); skip that comparison on network error. Host runner-cache miss is **warn** only. Exit 1 when any check is `fail`.
+- **`utsusemi doctor`**: preflight via `internal/doctor` (provider, disk, loopback broker, credential, host_id, runner_version, runner_cache, mounts, multi-host, alerts configured-or-not as info/`ok`). `runner_version` older than GitHub `latest` is **warn** (stale → JIT failure); skip that comparison on network error. Empty `runner_version` remains **fail**. Host runner-cache miss is **warn** only. Exit 1 when any check is `fail`.
 - **Spawn metrics**: `spawn.SaveLastSpawn` writes `{StateDir}/last_spawn.json`; `status` and spawn logs expose cold-start phase timings.
 
 ### Tests and toolchain
