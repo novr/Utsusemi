@@ -43,19 +43,20 @@ type Pool struct {
 	monitor         *notify.Monitor
 	effectivePrefix string // VMNamePrefix + hostID + "-"; scopes reclaim to this host
 
-	mu           sync.Mutex
-	active       int
-	failures     int
-	shortExits   int
-	backoffUntil time.Time
-	shutdown     bool
-	drain        bool
-	lowDisk      bool
-	lastSpawnErr string
-	fatalErr     error
-	fatalCh      chan error
-	inFlight     sync.WaitGroup
-	inFlightVMs  map[string]struct{}
+	mu                    sync.Mutex
+	active                int
+	failures              int
+	shortExits            int
+	consecutiveReadyFails int
+	backoffUntil          time.Time
+	shutdown              bool
+	drain                 bool
+	lowDisk               bool
+	lastSpawnErr          string
+	fatalErr              error
+	fatalCh               chan error
+	inFlight              sync.WaitGroup
+	inFlightVMs           map[string]struct{}
 }
 
 func New(cfg *config.Config, tgt target.Target, vmProvider provider.VMProvider, reg registrar.RunnerRegistrar, logger *slog.Logger) *Pool {
@@ -230,7 +231,11 @@ func (p *Pool) tick(ctx context.Context) {
 			p.mu.Unlock()
 		}()
 
-		if result, err := p.spawner.Run(ctx, vmName); err != nil {
+		result, err := p.spawner.Run(ctx, vmName)
+		if result.ReachedReady {
+			p.noteReadyOK()
+		}
+		if err != nil {
 			if registrar.IsUnauthorized(err) {
 				p.reportFatal(err)
 				return
@@ -244,9 +249,8 @@ func (p *Pool) tick(ctx context.Context) {
 			p.recordFailure(err)
 			p.logger.Warn("spawn failed", "vm", vmName, "error", err)
 			return
-		} else {
-			p.handleSpawnSuccess(vmName, result)
 		}
+		p.handleSpawnSuccess(vmName, result)
 	}()
 }
 
@@ -317,17 +321,25 @@ func (p *Pool) resetSpawnBackoff() {
 	p.monitor.Clear(notify.CodePoolStuck)
 }
 
+func (p *Pool) noteReadyOK() {
+	p.mu.Lock()
+	p.consecutiveReadyFails = 0
+	p.mu.Unlock()
+	p.monitor.Clear(notify.CodeReadyFailing)
+}
+
 func (p *Pool) evaluateAlerts(ctx context.Context) {
 	p.mu.Lock()
 	if p.shutdown || p.drain {
 		p.mu.Unlock()
 		return
 	}
-	state := notify.PoolState{
-		Active:       p.active,
-		PoolSize:     p.cfg.PoolSize,
-		LowDisk:      p.lowDisk,
-		LastSpawnErr: p.lastSpawnErr,
+	state := notify.Snapshot{
+		Active:                p.active,
+		PoolSize:              p.cfg.PoolSize,
+		LowDisk:               p.lowDisk,
+		LastSpawnErr:          p.lastSpawnErr,
+		ConsecutiveReadyFails: p.consecutiveReadyFails,
 	}
 	p.mu.Unlock()
 	p.monitor.Evaluate(ctx, state)
@@ -371,6 +383,9 @@ func (p *Pool) recordFailure(err error) {
 	p.failures++
 	if err != nil {
 		p.lastSpawnErr = err.Error()
+		if errors.Is(err, spawn.ErrWaitReady) {
+			p.consecutiveReadyFails++
+		}
 	}
 	backoff := time.Duration(p.failures) * 10 * time.Second
 	if backoff > 5*time.Minute {

@@ -302,15 +302,16 @@ utsusemi configure alerts --clear
 |------|------|
 | `agent_fatal` | Agent stops for a non-cancel reason (auth failure, repeated unclaimed exits, base-image sync failure, …) |
 | `disk_blocked` | Low disk has paused spawn for 15 minutes |
-| `pool_stuck` | No successful spawn for 15 minutes and the pool is currently empty (failed spawn attempts do not reset the timer; long cold starts while in-flight do not alert) |
+| `pool_stuck` | No warm capacity for 15 minutes while the pool is empty **or full with ongoing ready-check failures** (a partial fill or a full pool of healthy jobs does not alert; long jobs that succeed clear the timer) |
+| `ready_failing` | Three consecutive VM ready-check failures (`waitUntilReady`); cleared when a spawn reaches ready |
 
-Single spawn failures and normal backoff do not notify. Process crashes still need launchd / `brew services` monitoring. Broker credential expiry before refresh remains best watched via `utsusemi validate` exit code (see Broker Availability).
+Single spawn failures and normal backoff do not notify (except the sustained cases above). Process crashes still need launchd / `brew services` monitoring. Broker credential expiry before refresh remains best watched via `utsusemi validate` exit code (see Broker Availability).
 
 Payload is JSON for generic receivers and Slack Incoming Webhooks (`text` is what Slack shows):
 
 ```json
 {
-  "text": "[pool_stuck] host=abc target=org:acme utsusemi pool empty: no warm capacity: clone failed",
+  "text": "[pool_stuck] host=abc target=org:acme utsusemi pool: no warm capacity (empty or saturated): clone failed",
   "code": "pool_stuck",
   "host_id": "abc",
   "target": "org:acme",
