@@ -157,28 +157,28 @@ func TestMonitorPoolStuckDedupeAndClear(t *testing.T) {
 		Now:        func() time.Time { return now.Load().(time.Time) },
 	})
 
-	m.Evaluate(context.Background(), PoolState{Active: 0, PoolSize: 1, LastSpawnErr: "boom"})
+	m.Evaluate(context.Background(), Snapshot{Active: 0, PoolSize: 1, LastSpawnErr: "boom"})
 	if len(rec.codes()) != 0 {
 		t.Fatalf("too early: %v", rec.codes())
 	}
 
 	now.Store(time.Unix(0, 0).Add(time.Minute))
-	m.Evaluate(context.Background(), PoolState{Active: 0, PoolSize: 1, LastSpawnErr: "boom"})
+	m.Evaluate(context.Background(), Snapshot{Active: 0, PoolSize: 1, LastSpawnErr: "boom"})
 	if got := rec.codes(); len(got) != 1 || got[0] != CodePoolStuck {
 		t.Fatalf("codes=%v", got)
 	}
 
 	now.Store(time.Unix(0, 0).Add(2 * time.Minute))
-	m.Evaluate(context.Background(), PoolState{Active: 0, PoolSize: 1, LastSpawnErr: "boom"})
+	m.Evaluate(context.Background(), Snapshot{Active: 0, PoolSize: 1, LastSpawnErr: "boom"})
 	if len(rec.codes()) != 1 {
 		t.Fatalf("dedupe failed: %v", rec.codes())
 	}
 
 	m.Clear(CodePoolStuck)
 	now.Store(time.Unix(0, 0).Add(2 * time.Minute))
-	m.Evaluate(context.Background(), PoolState{Active: 0, PoolSize: 1})
+	m.Evaluate(context.Background(), Snapshot{Active: 0, PoolSize: 1})
 	now.Store(time.Unix(0, 0).Add(3 * time.Minute))
-	m.Evaluate(context.Background(), PoolState{Active: 0, PoolSize: 1})
+	m.Evaluate(context.Background(), Snapshot{Active: 0, PoolSize: 1})
 	if len(rec.codes()) != 2 {
 		t.Fatalf("after clear want 2, got %v", rec.codes())
 	}
@@ -194,9 +194,9 @@ func TestMonitorDiskBlocksPoolStuck(t *testing.T) {
 		Now:        func() time.Time { return now.Load().(time.Time) },
 	})
 
-	m.Evaluate(context.Background(), PoolState{Active: 0, PoolSize: 1, LowDisk: true})
+	m.Evaluate(context.Background(), Snapshot{Active: 0, PoolSize: 1, LowDisk: true})
 	now.Store(time.Unix(0, 0).Add(time.Minute))
-	m.Evaluate(context.Background(), PoolState{Active: 0, PoolSize: 1, LowDisk: true})
+	m.Evaluate(context.Background(), Snapshot{Active: 0, PoolSize: 1, LowDisk: true})
 	if got := rec.codes(); len(got) != 1 || got[0] != CodeDiskBlocked {
 		t.Fatalf("codes=%v", got)
 	}
@@ -233,22 +233,22 @@ func TestPoolStuckFiresAcrossFailedSpawnAttempts(t *testing.T) {
 	})
 
 	// active flickers during failure loops; must not refresh lastGoodAt
-	m.Evaluate(context.Background(), PoolState{Active: 0, PoolSize: 1, LastSpawnErr: "boom"})
+	m.Evaluate(context.Background(), Snapshot{Active: 0, PoolSize: 1, LastSpawnErr: "boom"})
 	now.Store(time.Unix(0, 0).Add(30 * time.Second))
-	m.Evaluate(context.Background(), PoolState{Active: 1, PoolSize: 1, LastSpawnErr: "boom"})
+	m.Evaluate(context.Background(), Snapshot{Active: 1, PoolSize: 1, LastSpawnErr: "boom"})
 	now.Store(time.Unix(0, 0).Add(45 * time.Second))
-	m.Evaluate(context.Background(), PoolState{Active: 0, PoolSize: 1, LastSpawnErr: "boom"})
+	m.Evaluate(context.Background(), Snapshot{Active: 0, PoolSize: 1, LastSpawnErr: "boom"})
 	if len(rec.codes()) != 0 {
 		t.Fatalf("should not fire yet: %v", rec.codes())
 	}
 	now.Store(time.Unix(0, 0).Add(time.Minute))
-	m.Evaluate(context.Background(), PoolState{Active: 0, PoolSize: 1, LastSpawnErr: "boom"})
+	m.Evaluate(context.Background(), Snapshot{Active: 0, PoolSize: 1, LastSpawnErr: "boom"})
 	if got := rec.codes(); len(got) != 1 || got[0] != CodePoolStuck {
 		t.Fatalf("codes=%v", got)
 	}
 }
 
-func TestPoolStuckDoesNotFireWhileInFlight(t *testing.T) {
+func TestPoolStuckDoesNotFireWhilePartiallyFilled(t *testing.T) {
 	rec := &recordingNotifier{}
 	var now atomic.Value
 	now.Store(time.Unix(0, 0))
@@ -257,14 +257,122 @@ func TestPoolStuckDoesNotFireWhileInFlight(t *testing.T) {
 		StuckAfter: time.Minute,
 		Now:        func() time.Time { return now.Load().(time.Time) },
 	})
-	m.Evaluate(context.Background(), PoolState{Active: 1, PoolSize: 1})
+	// 1 of 2 in flight is not empty and not saturated.
+	m.Evaluate(context.Background(), Snapshot{Active: 1, PoolSize: 2})
 	now.Store(time.Unix(0, 0).Add(2 * time.Minute))
-	m.Evaluate(context.Background(), PoolState{Active: 1, PoolSize: 1})
+	m.Evaluate(context.Background(), Snapshot{Active: 1, PoolSize: 2})
 	if len(rec.codes()) != 0 {
-		t.Fatalf("in-flight should not alert: %v", rec.codes())
+		t.Fatalf("partial fill should not alert: %v", rec.codes())
 	}
-	m.Evaluate(context.Background(), PoolState{Active: 0, PoolSize: 1, LastSpawnErr: "late fail"})
+	m.Evaluate(context.Background(), Snapshot{Active: 0, PoolSize: 2, LastSpawnErr: "late fail"})
 	if got := rec.codes(); len(got) != 1 || got[0] != CodePoolStuck {
 		t.Fatalf("codes=%v", got)
+	}
+}
+
+func TestPoolStuckDoesNotFireWhenSaturatedHealthy(t *testing.T) {
+	rec := &recordingNotifier{}
+	var now atomic.Value
+	now.Store(time.Unix(0, 0))
+	m := NewMonitor(MonitorOptions{
+		Notifier:   rec,
+		StuckAfter: time.Minute,
+		Now:        func() time.Time { return now.Load().(time.Time) },
+	})
+	now.Store(time.Unix(0, 0).Add(2 * time.Minute))
+	m.Evaluate(context.Background(), Snapshot{Active: 2, PoolSize: 2, ConsecutiveReadyFails: 0})
+	if len(rec.codes()) != 0 {
+		t.Fatalf("healthy full pool should not alert: %v", rec.codes())
+	}
+}
+
+func TestPoolStuckFiresWhenSaturated(t *testing.T) {
+	rec := &recordingNotifier{}
+	var now atomic.Value
+	now.Store(time.Unix(0, 0))
+	m := NewMonitor(MonitorOptions{
+		Notifier:   rec,
+		StuckAfter: time.Minute,
+		Now:        func() time.Time { return now.Load().(time.Time) },
+	})
+	m.Evaluate(context.Background(), Snapshot{Active: 2, PoolSize: 2, ConsecutiveReadyFails: 1, LastSpawnErr: "zombie"})
+	if len(rec.codes()) != 0 {
+		t.Fatalf("too early: %v", rec.codes())
+	}
+	now.Store(time.Unix(0, 0).Add(time.Minute))
+	m.Evaluate(context.Background(), Snapshot{Active: 2, PoolSize: 2, ConsecutiveReadyFails: 1, LastSpawnErr: "zombie"})
+	if got := rec.codes(); len(got) != 1 || got[0] != CodePoolStuck {
+		t.Fatalf("codes=%v", got)
+	}
+}
+
+func TestPoolStuckKeepsFiredWhileActiveFlaps(t *testing.T) {
+	rec := &recordingNotifier{}
+	var now atomic.Value
+	now.Store(time.Unix(0, 0))
+	m := NewMonitor(MonitorOptions{
+		Notifier:   rec,
+		StuckAfter: time.Minute,
+		Now:        func() time.Time { return now.Load().(time.Time) },
+	})
+	now.Store(time.Unix(0, 0).Add(time.Minute))
+	m.Evaluate(context.Background(), Snapshot{Active: 0, PoolSize: 2})
+	if len(rec.codes()) != 1 {
+		t.Fatalf("codes=%v", rec.codes())
+	}
+	// Partial fill must not clear fired (ClearFiredWhenInactive=false).
+	m.Evaluate(context.Background(), Snapshot{Active: 1, PoolSize: 2})
+	now.Store(time.Unix(0, 0).Add(2 * time.Minute))
+	m.Evaluate(context.Background(), Snapshot{Active: 0, PoolSize: 2})
+	if len(rec.codes()) != 1 {
+		t.Fatalf("should not re-fire without Clear: %v", rec.codes())
+	}
+}
+
+func TestReadyFailingImmediateAndRearm(t *testing.T) {
+	rec := &recordingNotifier{}
+	m := NewMonitor(MonitorOptions{Notifier: rec, StuckAfter: time.Minute})
+	m.Evaluate(context.Background(), Snapshot{PoolSize: 1, ConsecutiveReadyFails: 2})
+	if len(rec.codes()) != 0 {
+		t.Fatalf("below threshold: %v", rec.codes())
+	}
+	m.Evaluate(context.Background(), Snapshot{PoolSize: 1, ConsecutiveReadyFails: 3, LastSpawnErr: "ready"})
+	if got := rec.codes(); len(got) != 1 || got[0] != CodeReadyFailing {
+		t.Fatalf("codes=%v", got)
+	}
+	m.Evaluate(context.Background(), Snapshot{PoolSize: 1, ConsecutiveReadyFails: 3})
+	if len(rec.codes()) != 1 {
+		t.Fatalf("dedupe: %v", rec.codes())
+	}
+	m.Evaluate(context.Background(), Snapshot{PoolSize: 1, ConsecutiveReadyFails: 0})
+	m.Evaluate(context.Background(), Snapshot{PoolSize: 1, ConsecutiveReadyFails: 3})
+	if len(rec.codes()) != 2 {
+		t.Fatalf("rearm after inactive: %v", rec.codes())
+	}
+}
+
+func TestDiskRecoveryRearms(t *testing.T) {
+	rec := &recordingNotifier{}
+	var now atomic.Value
+	now.Store(time.Unix(0, 0))
+	m := NewMonitor(MonitorOptions{
+		Notifier:   rec,
+		StuckAfter: time.Minute,
+		Now:        func() time.Time { return now.Load().(time.Time) },
+	})
+	// PoolSize 0 keeps pool_stuck inactive so this test isolates disk rearm.
+	snapDisk := Snapshot{Active: 0, PoolSize: 0, LowDisk: true}
+	m.Evaluate(context.Background(), snapDisk)
+	now.Store(time.Unix(0, 0).Add(time.Minute))
+	m.Evaluate(context.Background(), snapDisk)
+	if len(rec.codes()) != 1 || rec.codes()[0] != CodeDiskBlocked {
+		t.Fatalf("codes=%v", rec.codes())
+	}
+	m.Evaluate(context.Background(), Snapshot{Active: 0, PoolSize: 0, LowDisk: false})
+	m.Evaluate(context.Background(), snapDisk)
+	now.Store(time.Unix(0, 0).Add(2 * time.Minute))
+	m.Evaluate(context.Background(), snapDisk)
+	if len(rec.codes()) != 2 {
+		t.Fatalf("disk should rearm after recovery: %v", rec.codes())
 	}
 }

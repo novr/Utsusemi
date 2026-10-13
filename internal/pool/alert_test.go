@@ -2,12 +2,15 @@ package pool
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/novr/utsusemi/internal/notify"
 	"github.com/novr/utsusemi/internal/provider"
+	"github.com/novr/utsusemi/internal/spawn"
 	"github.com/novr/utsusemi/internal/target"
 )
 
@@ -133,6 +136,39 @@ func TestEvaluateAlertsSkipsSingleFailure(t *testing.T) {
 	p.evaluateAlerts(context.Background())
 	if len(rec.codes()) != 0 {
 		t.Fatalf("unexpected alert: %v", rec.codes())
+	}
+}
+
+func TestEvaluateAlertsReadyFailing(t *testing.T) {
+	rec := &recordingNotifier{}
+	p := newAlertTestPool(t, rec, time.Hour, nil)
+	readyErr := fmt.Errorf("%w: %w", spawn.ErrWaitReady, errors.New("guest down"))
+	for i := 0; i < notify.DefaultReadyFailingAfter-1; i++ {
+		p.recordFailure(readyErr)
+		p.evaluateAlerts(context.Background())
+		if len(rec.codes()) != 0 {
+			t.Fatalf("too early at %d: %v", i+1, rec.codes())
+		}
+	}
+	p.recordFailure(readyErr)
+	p.evaluateAlerts(context.Background())
+	if got := rec.codes(); len(got) != 1 || got[0] != notify.CodeReadyFailing {
+		t.Fatalf("codes=%v", got)
+	}
+	p.noteReadyOK()
+	p.recordFailure(readyErr)
+	p.recordFailure(readyErr)
+	p.recordFailure(readyErr)
+	p.evaluateAlerts(context.Background())
+	if len(rec.codes()) != 2 {
+		t.Fatalf("rearm after noteReadyOK: %v", rec.codes())
+	}
+	p.recordFailure(errors.New("clone failed"))
+	p.mu.Lock()
+	n := p.consecutiveReadyFails
+	p.mu.Unlock()
+	if n != notify.DefaultReadyFailingAfter {
+		t.Fatalf("non-ready failure must not change counter: got %d", n)
 	}
 }
 

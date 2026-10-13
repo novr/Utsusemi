@@ -21,6 +21,9 @@ var bootstrapScript string
 // ErrBootNotRunningBudget is returned when the VM stays ErrNotRunning for notRunningBudget.
 var ErrBootNotRunningBudget = errors.New("boot_not_running_budget")
 
+// ErrWaitReady marks any waitUntilReady failure for errors.Is from the pool.
+var ErrWaitReady = errors.New("wait for vm ready")
+
 // Tunables (package vars so tests can shrink timeouts).
 var (
 	readyTimeout       = 3 * time.Minute
@@ -108,16 +111,17 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 				log.Debug("record boot_not_running failed", "error", recErr)
 			}
 		}
-		return Result{}, fmt.Errorf("wait for vm ready: %w", err)
+		return Result{}, fmt.Errorf("%w: %w", ErrWaitReady, err)
 	}
 	metrics.BootMs = time.Since(phase).Milliseconds()
 	log.Info("spawn phase complete", "phase", "boot", "duration_ms", metrics.BootMs)
+	reachedReady := true
 
 	phase = time.Now()
 	log.Info("registering runner with GitHub")
 	jit, err := s.opts.Registrar.CreateJIT(spawnCtx, s.opts.Target, cfg.Labels, vmName)
 	if err != nil {
-		return Result{}, fmt.Errorf("create jit: %w", err)
+		return Result{ReachedReady: reachedReady}, fmt.Errorf("create jit: %w", err)
 	}
 	metrics.RegisterMs = time.Since(phase).Milliseconds()
 	log.Info("spawn phase complete", "phase", "register", "duration_ms", metrics.RegisterMs)
@@ -164,13 +168,13 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 			} else {
 				log.Warn("job timeout reached")
 			}
-			return Result{}, jobCtx.Err()
+			return Result{ReachedReady: reachedReady}, jobCtx.Err()
 		case err := <-execDone:
 			metrics.JobMs = time.Since(jobPhase).Milliseconds()
 			log.Info("spawn phase complete", "phase", "job", "duration_ms", metrics.JobMs,
 				"total_ms", time.Since(spawnStart).Milliseconds())
 			if err != nil {
-				return Result{}, fmt.Errorf("runner exec: %w", err)
+				return Result{ReachedReady: reachedReady}, fmt.Errorf("runner exec: %w", err)
 			}
 			runnerRegistered = false
 			metrics.Success = true
@@ -186,15 +190,15 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 				case err := <-execDone:
 					metrics.JobMs = time.Since(jobPhase).Milliseconds()
 					if err != nil && !errors.Is(err, context.Canceled) {
-						return Result{}, fmt.Errorf("runner exec: %w", err)
+						return Result{ReachedReady: reachedReady}, fmt.Errorf("runner exec: %w", err)
 					}
 					runnerRegistered = false
 					metrics.Success = true
 					return resultFromMetrics(metrics), nil
 				case <-time.After(30 * time.Second):
-					return Result{}, fmt.Errorf("vm stopped before runner exec finished")
+					return Result{ReachedReady: reachedReady}, fmt.Errorf("vm stopped before runner exec finished")
 				case <-jobCtx.Done():
-					return Result{}, jobCtx.Err()
+					return Result{ReachedReady: reachedReady}, jobCtx.Err()
 				}
 			}
 		}

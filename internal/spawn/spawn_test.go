@@ -188,6 +188,20 @@ func TestWaitUntilReadyGivesUpWhenNotRunning(t *testing.T) {
 	}
 }
 
+func TestErrWaitReadyWrap(t *testing.T) {
+	inner := fmt.Errorf("%w: vm", ErrBootNotRunningBudget)
+	err := fmt.Errorf("%w: %w", ErrWaitReady, inner)
+	if !errors.Is(err, ErrWaitReady) {
+		t.Fatalf("Is ErrWaitReady: %v", err)
+	}
+	if !errors.Is(err, ErrBootNotRunningBudget) {
+		t.Fatalf("Is ErrBootNotRunningBudget: %v", err)
+	}
+	if got := err.Error(); got != "wait for vm ready: boot_not_running_budget: vm" {
+		t.Fatalf("Error()=%q", got)
+	}
+}
+
 func TestStopAndDeleteBestEffortGoneIsOK(t *testing.T) {
 	restoreTeardownTunables(t)
 	teardownAttemptBud = time.Second
