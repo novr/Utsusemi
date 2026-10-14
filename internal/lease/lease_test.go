@@ -50,12 +50,20 @@ func TestRegistryWriteRemoveLease(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := reg.WriteLease(session, Lease{VMName: "utsusemi-test", RunnerID: 7}); err != nil {
+	if err := reg.WriteLease(session, Lease{
+		VMName:        "utsusemi-test",
+		RunnerID:      7,
+		BaseImage:     "ghcr.io/example/image:1",
+		RunnerVersion: "2.337.0",
+	}); err != nil {
 		t.Fatal(err)
 	}
 	leases, err := reg.ListLeases()
 	if err != nil || len(leases) != 1 {
 		t.Fatalf("leases=%v err=%v", leases, err)
+	}
+	if leases[0].BaseImage != "ghcr.io/example/image:1" || leases[0].RunnerVersion != "2.337.0" {
+		t.Fatalf("lease meta=%+v", leases[0])
 	}
 	if err := reg.RemoveLease("utsusemi-test"); err != nil {
 		t.Fatal(err)

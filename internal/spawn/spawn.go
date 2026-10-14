@@ -135,8 +135,10 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 
 	if s.opts.Leases != nil && s.session != nil {
 		if err := s.opts.Leases.WriteLease(s.session, lease.Lease{
-			VMName:   vmName,
-			RunnerID: runnerID,
+			VMName:        vmName,
+			RunnerID:      runnerID,
+			BaseImage:     cfg.BaseImage,
+			RunnerVersion: cfg.RunnerVersion,
 		}); err != nil {
 			log.Warn("write lease failed", "error", err)
 		}

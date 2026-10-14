@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/novr/utsusemi/internal/config"
+	"github.com/novr/utsusemi/internal/lease"
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/registrar"
 	"github.com/novr/utsusemi/internal/target"
@@ -23,13 +24,17 @@ func TargetChoices() []string {
 }
 
 type VM struct {
-	Name    string `json:"name"`
-	Running bool   `json:"running"`
+	Name          string `json:"name"`
+	Running       bool   `json:"running"`
+	BaseImage     string `json:"base_image,omitempty"`
+	RunnerVersion string `json:"runner_version,omitempty"`
 }
 
 type Runner struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
+	ID            int64  `json:"id"`
+	Name          string `json:"name"`
+	BaseImage     string `json:"base_image,omitempty"`
+	RunnerVersion string `json:"runner_version,omitempty"`
 }
 
 type Report struct {
@@ -42,6 +47,7 @@ type Input struct {
 	Target    target.Target
 	Provider  provider.VMProvider
 	Registrar registrar.RunnerRegistrar
+	Leases    *lease.Registry
 	Scope     string
 }
 
@@ -52,6 +58,8 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 		return Report{}, fmt.Errorf("unknown list scope %q", in.Scope)
 	}
 
+	leaseByVM, leaseByRunner := loadLeaseIndexes(in.Leases)
+
 	report := Report{}
 	if in.Scope == ScopeAll || in.Scope == ScopeVMs {
 		vms, err := in.Provider.ListManaged(ctx, in.Cfg.VMNamePrefix)
@@ -60,7 +68,12 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 		}
 		report.VMs = make([]VM, len(vms))
 		for i, vm := range vms {
-			report.VMs[i] = VM{Name: vm.Name, Running: vm.Running}
+			row := VM{Name: vm.Name, Running: vm.Running}
+			if l, ok := leaseByVM[vm.Name]; ok {
+				row.BaseImage = l.BaseImage
+				row.RunnerVersion = l.RunnerVersion
+			}
+			report.VMs[i] = row
 		}
 	}
 	if in.Scope == ScopeAll || in.Scope == ScopeRunners {
@@ -70,7 +83,15 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 		}
 		report.Runners = make([]Runner, len(runners))
 		for i, runner := range runners {
-			report.Runners[i] = Runner{ID: runner.ID, Name: runner.Name}
+			row := Runner{ID: runner.ID, Name: runner.Name}
+			if l, ok := leaseByRunner[runner.ID]; ok {
+				row.BaseImage = l.BaseImage
+				row.RunnerVersion = l.RunnerVersion
+			} else if l, ok := leaseByVM[runner.Name]; ok {
+				row.BaseImage = l.BaseImage
+				row.RunnerVersion = l.RunnerVersion
+			}
+			report.Runners[i] = row
 		}
 	}
 	if in.Scope == ScopeAll {
@@ -82,6 +103,27 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 		}
 	}
 	return report, nil
+}
+
+func loadLeaseIndexes(reg *lease.Registry) (map[string]lease.Lease, map[int64]lease.Lease) {
+	byVM := map[string]lease.Lease{}
+	byRunner := map[int64]lease.Lease{}
+	if reg == nil {
+		return byVM, byRunner
+	}
+	leases, err := reg.ListLeases()
+	if err != nil {
+		return byVM, byRunner
+	}
+	for _, l := range leases {
+		if l.VMName != "" {
+			byVM[l.VMName] = l
+		}
+		if l.RunnerID != 0 {
+			byRunner[l.RunnerID] = l
+		}
+	}
+	return byVM, byRunner
 }
 
 func FormatText(r Report) string {
@@ -96,7 +138,9 @@ func FormatText(r Report) string {
 			if vm.Running {
 				state = "running"
 			}
-			fmt.Fprintf(&b, "  %s (%s)\n", vm.Name, state)
+			fmt.Fprintf(&b, "  %s (%s)", vm.Name, state)
+			writeMeta(&b, vm.BaseImage, vm.RunnerVersion)
+			b.WriteByte('\n')
 		}
 	}
 	if r.Runners != nil {
@@ -108,8 +152,19 @@ func FormatText(r Report) string {
 			b.WriteString("  (none)\n")
 		}
 		for _, runner := range r.Runners {
-			fmt.Fprintf(&b, "  %s (id %d)\n", runner.Name, runner.ID)
+			fmt.Fprintf(&b, "  %s (id %d)", runner.Name, runner.ID)
+			writeMeta(&b, runner.BaseImage, runner.RunnerVersion)
+			b.WriteByte('\n')
 		}
 	}
 	return b.String()
+}
+
+func writeMeta(b *strings.Builder, baseImage, runnerVersion string) {
+	if baseImage != "" {
+		fmt.Fprintf(b, " base_image=%s", baseImage)
+	}
+	if runnerVersion != "" {
+		fmt.Fprintf(b, " runner_version=%s", runnerVersion)
+	}
 }
