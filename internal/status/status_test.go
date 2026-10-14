@@ -14,6 +14,8 @@ import (
 	"github.com/novr/utsusemi/internal/keychain"
 	"github.com/novr/utsusemi/internal/lease"
 	"github.com/novr/utsusemi/internal/provider"
+	"github.com/novr/utsusemi/internal/runtimeconfig"
+	"github.com/novr/utsusemi/internal/spawn"
 	"github.com/novr/utsusemi/internal/target"
 )
 
@@ -316,5 +318,155 @@ func TestCollectLowDisk(t *testing.T) {
 	}
 	if report.Health.Status != "low disk" {
 		t.Fatalf("health=%+v", report.Health)
+	}
+}
+
+func TestCollectRuntimeActive(t *testing.T) {
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, "utsusemi.lock")
+	lock, err := instancelock.Acquire(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+
+	reg := lease.NewRegistry(dir)
+	session, err := reg.BeginAgentSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := testConfig(dir)
+	cfg.RunnerVersion = "2.400.0"
+	cfg.PoolSize = 1
+	snap := runtimeconfig.FromConfig(cfg, session.ID)
+	snap.BaseImage = "img:frozen"
+	snap.RunnerVersion = "2.337.0"
+	snap.PoolSize = 2
+	if err := runtimeconfig.Save(dir, snap); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := Collect(context.Background(), testInput(cfg, &fakeProvider{freeGB: 100}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Runtime == nil || report.Runtime.State != "active" {
+		t.Fatalf("runtime=%+v", report.Runtime)
+	}
+	if report.Runtime.BaseImage != "img:frozen" || report.Runtime.PoolSize != 2 {
+		t.Fatalf("runtime fields=%+v", report.Runtime)
+	}
+	if report.VMs.PoolSize != 2 {
+		t.Fatalf("vms pool_size=%d want runtime 2", report.VMs.PoolSize)
+	}
+	if report.RunnerVersion.Runtime != "2.337.0" || report.RunnerVersion.Configured != "2.400.0" {
+		t.Fatalf("runner_version=%+v", report.RunnerVersion)
+	}
+	if report.RunnerVersion.Status != "config.yaml differs from running agent; restart agent to apply" {
+		t.Fatalf("status=%q", report.RunnerVersion.Status)
+	}
+}
+
+func TestCollectRuntimeStaleWhenAgentStopped(t *testing.T) {
+	dir := t.TempDir()
+	reg := lease.NewRegistry(dir)
+	session, err := reg.BeginAgentSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := testConfig(dir)
+	if err := runtimeconfig.Save(dir, runtimeconfig.FromConfig(cfg, session.ID)); err != nil {
+		t.Fatal(err)
+	}
+	report, err := Collect(context.Background(), testInput(cfg, &fakeProvider{freeGB: 100}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Runtime == nil || report.Runtime.State != "stale" {
+		t.Fatalf("runtime=%+v", report.Runtime)
+	}
+	if report.VMs.PoolSize != cfg.PoolSize {
+		t.Fatalf("stopped agent should use disk pool_size=%d got %d", cfg.PoolSize, report.VMs.PoolSize)
+	}
+}
+
+func TestCollectRuntimePendingIgnoresStaleKnobs(t *testing.T) {
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, "utsusemi.lock")
+	lock, err := instancelock.Acquire(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+
+	reg := lease.NewRegistry(dir)
+	session, err := reg.BeginAgentSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := testConfig(dir)
+	cfg.PoolSize = 1
+	// Snapshot from a previous session id while agent looks running.
+	snap := runtimeconfig.FromConfig(cfg, "other-session")
+	snap.PoolSize = 2
+	snap.RunnerVersion = "2.337.0"
+	if err := runtimeconfig.Save(dir, snap); err != nil {
+		t.Fatal(err)
+	}
+	cfg.RunnerVersion = "2.400.0"
+
+	report, err := Collect(context.Background(), testInput(cfg, &fakeProvider{freeGB: 100}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.Agent.State != AgentRunning {
+		t.Fatalf("agent=%+v session=%s", report.Agent, session.ID)
+	}
+	if report.Runtime == nil || report.Runtime.State != "pending" {
+		t.Fatalf("runtime=%+v", report.Runtime)
+	}
+	if report.VMs.PoolSize != 1 {
+		t.Fatalf("pending must not apply stale pool_size: %d", report.VMs.PoolSize)
+	}
+	if report.RunnerVersion.Runtime != "" {
+		t.Fatalf("pending must not set runner runtime: %+v", report.RunnerVersion)
+	}
+}
+
+func TestCollectRuntimeYAMLDriftWithMatchingLastSpawn(t *testing.T) {
+	dir := t.TempDir()
+	lockPath := filepath.Join(dir, "utsusemi.lock")
+	lock, err := instancelock.Acquire(lockPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer lock.Release()
+
+	reg := lease.NewRegistry(dir)
+	session, err := reg.BeginAgentSession()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := testConfig(dir)
+	cfg.RunnerVersion = "2.400.0"
+	snap := runtimeconfig.FromConfig(cfg, session.ID)
+	snap.RunnerVersion = "2.337.0"
+	if err := runtimeconfig.Save(dir, snap); err != nil {
+		t.Fatal(err)
+	}
+	if err := spawn.SaveLastSpawn(dir, spawn.LastSpawn{
+		At:            time.Now().UTC(),
+		RunnerVersion: "2.337.0",
+		Success:       true,
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	report, err := Collect(context.Background(), testInput(cfg, &fakeProvider{freeGB: 100}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if report.RunnerVersion.Status != "config.yaml differs from running agent; restart agent to apply" {
+		t.Fatalf("status=%q", report.RunnerVersion.Status)
 	}
 }

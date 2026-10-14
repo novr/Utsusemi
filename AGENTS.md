@@ -30,6 +30,7 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 | Config | `internal/config` | YAML model, defaults, `Validate`, `ValidateBrokerURL` |
 | Leases | `internal/lease` | On-disk VM ↔ runner ↔ agent session |
 | Status | `internal/status` | Read-only aggregation + text format for `utsusemi status` |
+| Runtime config | `internal/runtimeconfig` | Agent-frozen knobs snapshot (`runtime_config.json`) for status |
 | Listing | `internal/listing` | VM/runner rows for `utsusemi list` |
 | Credential view | `internal/credentialview` | Keychain credential summary (no refresh) |
 | Logging | `internal/logging` | slog + redaction; `run --log` fans out to stdout and a JSON log file |
@@ -61,6 +62,8 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 
 - `clean` must acquire `utsusemi.lock` (agent stopped) before `PurgeAll`.
 - `validate` and `run` can call `EnsureFresh` concurrently; credential refresh serializes on `credential.refresh.lock`, not `utsusemi.lock`.
+- **Config freeze** — `agent.New` deep-copies `config.Config` for pool/spawn; respawns use that clone only (no mid-run YAML reload). On session start the freeze is written to `{StateDir}/runtime_config.json` for `utsusemi status`.
+- **disk vs runtime** — `validate` / `configure` / `list` / `doctor` read `config.yaml` (next start). `status` shows `runtime` from the snapshot when the agent session matches. Apply YAML changes by restarting the agent.
 
 ### CLI (`cmd/utsusemi`)
 
@@ -70,8 +73,8 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 - **`configure edit|path|show`** — always `configPath` (`--config`); `--output` divergence would edit a file `run` never loads. New file seeds from embedded template so `$EDITOR` never opens invalid YAML.
 - Cross-mode `configure app|token` rejected — Keychain shape and registrar differ; mode flip via `configure edit` only.
 - **`broker`** — local GitHub App broker on `127.0.0.1`; does **not** take `utsusemi.lock` (run it beside `utsusemi run`).
-- **`validate`** — config + credential API check (`loadValidatedRuntime`). Loopback `broker_url` must be reachable first.
-- **`status`** — local ops summary via `internal/status.Collect` (`loadConfigRuntime`, no network).
+- **`validate`** — disk `config.yaml` + credential API check (`loadValidatedRuntime`); does not inspect a running agent's freeze. Loopback `broker_url` must be reachable first.
+- **`status`** — local ops summary via `internal/status.Collect` (`loadConfigRuntime`, no network), including `runtime` from `{StateDir}/runtime_config.json` when present.
 - **`list [vms|runners]`** — VM and/or runner rows via `internal/listing.Collect` (`loadValidatedRuntime`, network).
 - **`run --log`** — `ResolveAgentLog` picks `{state_dir}/agent.log` when the flag has no path; file sink is JSON regardless of TTY. Homebrew `service_run_args` is `run,--log` (comma-separated for the taps dispatch) so `brew services` uses the same file.
 

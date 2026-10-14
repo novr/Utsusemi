@@ -14,7 +14,36 @@ func FormatText(r Report) string {
 	for _, w := range r.Host.Warnings {
 		fmt.Fprintf(&b, "warning: %s\n", w)
 	}
-	fmt.Fprintf(&b, "runner_version: %s", r.RunnerVersion.Configured)
+	if r.Runtime != nil {
+		fmt.Fprintf(&b, "runtime: %s\n", r.Runtime.State)
+		// pending = agent_id mismatch; do not print knobs from the wrong freeze.
+		if r.Runtime.State != "pending" {
+			if r.Runtime.BaseImage != "" {
+				fmt.Fprintf(&b, "  base_image: %s\n", r.Runtime.BaseImage)
+			}
+			if r.Runtime.RunnerVersion != "" {
+				fmt.Fprintf(&b, "  runner_version: %s\n", r.Runtime.RunnerVersion)
+			}
+			if r.Runtime.PoolSize > 0 {
+				fmt.Fprintf(&b, "  pool_size: %d\n", r.Runtime.PoolSize)
+			}
+			if len(r.Runtime.Labels) > 0 {
+				fmt.Fprintf(&b, "  labels: %s\n", strings.Join(r.Runtime.Labels, ", "))
+			}
+			if r.Runtime.Target != "" {
+				fmt.Fprintf(&b, "  target: %s\n", r.Runtime.Target)
+			}
+		}
+	}
+	// Prefer active freeze; otherwise show config.yaml (next start).
+	effectiveRunner := r.RunnerVersion.Configured
+	if r.RunnerVersion.Runtime != "" {
+		effectiveRunner = r.RunnerVersion.Runtime
+	}
+	fmt.Fprintf(&b, "runner_version: %s", effectiveRunner)
+	if r.RunnerVersion.Runtime != "" && r.RunnerVersion.Configured != "" && r.RunnerVersion.Runtime != r.RunnerVersion.Configured {
+		fmt.Fprintf(&b, " (config.yaml %s)", r.RunnerVersion.Configured)
+	}
 	if r.RunnerVersion.LastSpawn != "" {
 		fmt.Fprintf(&b, " (last spawn %s)", r.RunnerVersion.LastSpawn)
 	}

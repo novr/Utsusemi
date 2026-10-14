@@ -289,6 +289,8 @@ utsusemi run --log=/path/to.log
 brew services start utsusemi
 ```
 
+`validate` / `configure edit` change `config.yaml` for the **next** agent start. A running agent keeps its start-time settings; `utsusemi status` shows them under `runtime:` (from `{state_dir}/runtime_config.json`). Restart the agent (or `brew services restart utsusemi`) to apply YAML changes.
+
 ### Alerts
 
 Optional webhook for sustained outages while `utsusemi run` is up (URL in Keychain, or `UTSUSEMI_ALERT_WEBHOOK`):

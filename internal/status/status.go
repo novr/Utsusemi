@@ -14,6 +14,7 @@ import (
 	"github.com/novr/utsusemi/internal/lease"
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/runnercache"
+	"github.com/novr/utsusemi/internal/runtimeconfig"
 	"github.com/novr/utsusemi/internal/spawn"
 	"github.com/novr/utsusemi/internal/target"
 	"github.com/novr/utsusemi/internal/timefmt"
@@ -39,6 +40,7 @@ type Report struct {
 	ConfigPath           string              `json:"config_path,omitempty"`
 	StateDir             string              `json:"state_dir"`
 	Host                 HostInfo            `json:"host"`
+	Runtime              *RuntimeInfo        `json:"runtime,omitempty"`
 	RunnerVersion        RunnerVersionInfo   `json:"runner_version"`
 	RunnerCache          RunnerCacheInfo     `json:"runner_cache"`
 	Mounts               []string            `json:"mounts,omitempty"`
@@ -50,6 +52,25 @@ type Report struct {
 	Draining             []string            `json:"draining"`
 	Health               HealthInfo          `json:"health"`
 	Credential           credentialview.Info `json:"credential"`
+}
+
+// RuntimeInfo is the agent-frozen config from StateDir/runtime_config.json.
+type RuntimeInfo struct {
+	State         string   `json:"state"` // active | stale | pending
+	SavedAt       string   `json:"saved_at,omitempty"`
+	AgentID       string   `json:"agent_id,omitempty"`
+	Target        string   `json:"target,omitempty"`
+	BaseImage     string   `json:"base_image,omitempty"`
+	RunnerVersion string   `json:"runner_version,omitempty"`
+	PoolSize      int      `json:"pool_size,omitempty"`
+	Labels        []string `json:"labels,omitempty"`
+	ReclaimPolicy string   `json:"reclaim_policy,omitempty"`
+	MinFreeDiskGB int      `json:"min_free_disk_gb,omitempty"`
+	Softnet       bool     `json:"softnet"`
+	Mounts        []string `json:"mounts,omitempty"`
+	SpawnTimeout  string   `json:"spawn_timeout,omitempty"`
+	JobTimeout    string   `json:"job_timeout,omitempty"`
+	VMNamePrefix  string   `json:"vm_name_prefix,omitempty"`
 }
 
 type BootNotRunningInfo struct {
@@ -68,6 +89,7 @@ type HostInfo struct {
 
 type RunnerVersionInfo struct {
 	Configured string `json:"configured"`
+	Runtime    string `json:"runtime,omitempty"`
 	LastSpawn  string `json:"last_spawn,omitempty"`
 	Status     string `json:"status"`
 }
@@ -136,11 +158,29 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 	}
 	jobs := collectJobs(agent.State, session, leases, now)
 
+	runtimeInfo := loadRuntimeInfo(stateDir, agent, session)
+	activeRuntime := runtimeInfo != nil && runtimeInfo.State == "active"
+
+	poolSize := in.Cfg.PoolSize
+	minFreeDisk := in.Cfg.MinFreeDiskGB
+	runnerVersionForCache := in.Cfg.RunnerVersion
+	if activeRuntime {
+		if runtimeInfo.PoolSize > 0 {
+			poolSize = runtimeInfo.PoolSize
+		}
+		if runtimeInfo.MinFreeDiskGB > 0 {
+			minFreeDisk = runtimeInfo.MinFreeDiskGB
+		}
+		if runtimeInfo.RunnerVersion != "" {
+			runnerVersionForCache = runtimeInfo.RunnerVersion
+		}
+	}
+
 	vms, err := in.Provider.ListManaged(ctx, in.Cfg.VMNamePrefix)
 	if err != nil {
 		return Report{}, err
 	}
-	vmInfo, draining := summarizeVMs(vms, in.Cfg.PoolSize, jobs, agent.State, leases)
+	vmInfo, draining := summarizeVMs(vms, poolSize, jobs, agent.State, leases)
 	vmInfo.MaxConcurrent = in.Provider.Capabilities().MaxConcurrent
 
 	freeGB, err := in.Provider.FreeDiskGB(ctx)
@@ -149,10 +189,10 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 	}
 	health := HealthInfo{
 		FreeDiskGB:    freeGB,
-		MinFreeDiskGB: in.Cfg.MinFreeDiskGB,
+		MinFreeDiskGB: minFreeDisk,
 		Status:        "ok",
 	}
-	if freeGB < float64(in.Cfg.MinFreeDiskGB) {
+	if freeGB < float64(minFreeDisk) {
 		health.Status = "low disk"
 	}
 
@@ -171,6 +211,10 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 		Configured: versionSnap.Configured,
 		Status:     "ok",
 	}
+	// Only an active freeze is "what the running agent uses".
+	if activeRuntime && runtimeInfo.RunnerVersion != "" {
+		runnerInfo.Runtime = runtimeInfo.RunnerVersion
+	}
 	mounts, err := provider.ResolveMountDirs(runnercache.WithRunnerCacheMount(stateDir, in.Cfg.Mounts))
 	if err != nil {
 		return Report{}, err
@@ -179,7 +223,11 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 	if versionSnap.HasMetrics {
 		last := versionSnap.LastMetrics
 		runnerInfo.LastSpawn = last.RunnerVersion
-		if versionSnap.Mismatch() {
+		effectiveRunner := versionSnap.Configured
+		if runnerInfo.Runtime != "" {
+			effectiveRunner = runnerInfo.Runtime
+		}
+		if last.RunnerVersion != effectiveRunner {
 			runnerInfo.Status = "config changed; rebuild base image and restart agent"
 		}
 		spawnInfo = &SpawnInfo{
@@ -192,6 +240,10 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 			Total:     formatMs(last.TotalMs),
 			Success:   last.Success,
 		}
+	}
+	// YAML drift vs a live freeze must surface even when last_spawn matches runtime.
+	if activeRuntime && runnerInfo.Configured != "" && runnerInfo.Runtime != "" && runnerInfo.Runtime != runnerInfo.Configured {
+		runnerInfo.Status = "config.yaml differs from running agent; restart agent to apply"
 	}
 
 	var bootNotRunning *BootNotRunningInfo
@@ -207,13 +259,14 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 	if arch == "" {
 		arch = "osx-arm64"
 	}
-	cachePath, cacheOK := runnercache.Cached(stateDir, arch, in.Cfg.RunnerVersion)
+	cachePath, cacheOK := runnercache.Cached(stateDir, arch, runnerVersionForCache)
 	runnerCache := RunnerCacheInfo{Present: cacheOK, Path: cachePath}
 
 	return Report{
 		Target:               in.Target.DisplayString(),
 		StateDir:             stateDir,
 		Host:                 HostInfo{ID: host.ID, Hostname: host.Hostname, LocalHostName: host.LocalHostName, EffectivePrefix: host.EffectivePrefix, Warnings: host.Warnings},
+		Runtime:              runtimeInfo,
 		RunnerVersion:        runnerInfo,
 		RunnerCache:          runnerCache,
 		Mounts:               mounts,
@@ -226,6 +279,40 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 		Health:               health,
 		Credential:           cred,
 	}, nil
+}
+
+func loadRuntimeInfo(stateDir string, agent AgentInfo, session *lease.AgentSession) *RuntimeInfo {
+	snap, ok := runtimeconfig.Load(stateDir)
+	if !ok {
+		return nil
+	}
+	info := &RuntimeInfo{
+		State:         "stale",
+		SavedAt:       snap.SavedAt.UTC().Format(time.RFC3339),
+		AgentID:       snap.AgentID,
+		Target:        snap.Target,
+		BaseImage:     snap.BaseImage,
+		RunnerVersion: snap.RunnerVersion,
+		PoolSize:      snap.PoolSize,
+		Labels:        snap.Labels,
+		ReclaimPolicy: snap.ReclaimPolicy,
+		MinFreeDiskGB: snap.MinFreeDiskGB,
+		Softnet:       snap.Softnet,
+		Mounts:        snap.Mounts,
+		SpawnTimeout:  snap.SpawnTimeout,
+		JobTimeout:    snap.JobTimeout,
+		VMNamePrefix:  snap.VMNamePrefix,
+	}
+	if agent.State != AgentRunning || session == nil || snap.AgentID == "" {
+		return info
+	}
+	if snap.AgentID == session.ID {
+		info.State = "active"
+		return info
+	}
+	// agent.json and runtime_config.json briefly disagree (either write order).
+	info.State = "pending"
+	return info
 }
 
 func formatMs(ms int64) string {

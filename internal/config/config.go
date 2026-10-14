@@ -149,6 +149,23 @@ func ApplyDefaults(cfg *Config) {
 	applyDefaults(cfg)
 }
 
+// Clone returns a deep copy of cfg. Labels and Mounts are new slices.
+// The result is intended as an agent-owned freeze; callers must not write it back
+// into shared Load-time config.
+func Clone(cfg *Config) *Config {
+	if cfg == nil {
+		return nil
+	}
+	out := *cfg
+	if cfg.Labels != nil {
+		out.Labels = append([]string(nil), cfg.Labels...)
+	}
+	if cfg.Mounts != nil {
+		out.Mounts = append([]string(nil), cfg.Mounts...)
+	}
+	return &out
+}
+
 func defaultStateDir() string {
 	if dir := os.Getenv("XDG_STATE_HOME"); dir != "" {
 		return filepath.Join(dir, "utsusemi")
