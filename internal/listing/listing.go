@@ -58,7 +58,10 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 		return Report{}, fmt.Errorf("unknown list scope %q", in.Scope)
 	}
 
-	leaseByVM, leaseByRunner := loadLeaseIndexes(in.Leases)
+	leaseByVM, leaseByRunner, err := loadLeaseIndexes(in.Leases)
+	if err != nil {
+		return Report{}, err
+	}
 
 	report := Report{}
 	if in.Scope == ScopeAll || in.Scope == ScopeVMs {
@@ -84,10 +87,9 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 		report.Runners = make([]Runner, len(runners))
 		for i, runner := range runners {
 			row := Runner{ID: runner.ID, Name: runner.Name}
+			// Match by runner ID only: leases are local to this host's StateDir while
+			// ListRunners is prefix-wide across hosts sharing vm_name_prefix.
 			if l, ok := leaseByRunner[runner.ID]; ok {
-				row.BaseImage = l.BaseImage
-				row.RunnerVersion = l.RunnerVersion
-			} else if l, ok := leaseByVM[runner.Name]; ok {
 				row.BaseImage = l.BaseImage
 				row.RunnerVersion = l.RunnerVersion
 			}
@@ -105,17 +107,26 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 	return report, nil
 }
 
-func loadLeaseIndexes(reg *lease.Registry) (map[string]lease.Lease, map[int64]lease.Lease) {
+func loadLeaseIndexes(reg *lease.Registry) (map[string]lease.Lease, map[int64]lease.Lease, error) {
 	byVM := map[string]lease.Lease{}
 	byRunner := map[int64]lease.Lease{}
 	if reg == nil {
-		return byVM, byRunner
+		return byVM, byRunner, nil
+	}
+	session, err := reg.LoadAgentSession()
+	if err != nil {
+		return nil, nil, err
 	}
 	leases, err := reg.ListLeases()
 	if err != nil {
-		return byVM, byRunner
+		return nil, nil, err
 	}
 	for _, l := range leases {
+		// When the agent session is alive, ignore leases from prior sessions so
+		// list does not attach stale clone metadata to current VMs/runners.
+		if session != nil && lease.PidAlive(session.PID) && lease.IsStale(&l, session) {
+			continue
+		}
 		if l.VMName != "" {
 			byVM[l.VMName] = l
 		}
@@ -123,7 +134,7 @@ func loadLeaseIndexes(reg *lease.Registry) (map[string]lease.Lease, map[int64]le
 			byRunner[l.RunnerID] = l
 		}
 	}
-	return byVM, byRunner
+	return byVM, byRunner, nil
 }
 
 func FormatText(r Report) string {
