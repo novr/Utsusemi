@@ -56,12 +56,15 @@ func New(opts Options) (*Agent, error) {
 			return nil, err
 		}
 	}
+	// Freeze Load-time config for this process; respawns must not follow later
+	// mutations of the caller's *Config (or a future reload).
+	cfg := config.Clone(opts.Config)
 	return &Agent{
-		cfg:      opts.Config,
+		cfg:      cfg,
 		tgt:      opts.Target,
 		provider: opts.Provider,
 		pool: pool.NewWithOptions(pool.Options{
-			Config:     opts.Config,
+			Config:     cfg,
 			Target:     opts.Target,
 			Provider:   opts.Provider,
 			Registrar:  opts.Registrar,
@@ -72,6 +75,11 @@ func New(opts Options) (*Agent, error) {
 		logger:      logger,
 		logFilePath: opts.LogFilePath,
 	}, nil
+}
+
+// Config returns the agent-owned frozen config (read-only by convention).
+func (a *Agent) Config() *config.Config {
+	return a.cfg
 }
 
 func (a *Agent) Run(ctx context.Context) error {
@@ -114,6 +122,8 @@ func (a *Agent) Run(ctx context.Context) error {
 
 	startAttrs := []any{
 		"target", a.tgt.String(),
+		"base_image", a.cfg.BaseImage,
+		"runner_version", a.cfg.RunnerVersion,
 		"pool_size", a.cfg.PoolSize,
 		"labels", a.cfg.Labels,
 		"state_dir", a.cfg.StateDir,

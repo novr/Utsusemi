@@ -69,20 +69,33 @@ func (r *Registry) LoadAgentSession() (*AgentSession, error) {
 	return &session, nil
 }
 
-func (r *Registry) BeginAgentSession() (*AgentSession, error) {
-	if err := r.EnsureDirs(); err != nil {
-		return nil, err
-	}
-	session := &AgentSession{
+// NewAgentSession builds an in-memory session that is not yet visible on disk.
+func (r *Registry) NewAgentSession() *AgentSession {
+	return &AgentSession{
 		ID:        newAgentID(),
 		PID:       os.Getpid(),
 		StartedAt: time.Now().UTC(),
 	}
+}
+
+// WriteAgentSession publishes session to agent.json.
+func (r *Registry) WriteAgentSession(session *AgentSession) error {
+	if session == nil {
+		return errors.New("session is required")
+	}
+	if err := r.EnsureDirs(); err != nil {
+		return err
+	}
 	data, err := json.Marshal(session)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if err := os.WriteFile(r.agentPath(), data, 0o644); err != nil {
+	return os.WriteFile(r.agentPath(), data, 0o644)
+}
+
+func (r *Registry) BeginAgentSession() (*AgentSession, error) {
+	session := r.NewAgentSession()
+	if err := r.WriteAgentSession(session); err != nil {
 		return nil, err
 	}
 	return session, nil

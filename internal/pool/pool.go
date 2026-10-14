@@ -16,6 +16,7 @@ import (
 	"github.com/novr/utsusemi/internal/notify"
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/registrar"
+	"github.com/novr/utsusemi/internal/runtimeconfig"
 	"github.com/novr/utsusemi/internal/spawn"
 	"github.com/novr/utsusemi/internal/target"
 )
@@ -108,8 +109,13 @@ func NewWithOptions(opts Options) *Pool {
 }
 
 func (p *Pool) Run(ctx context.Context) error {
-	session, err := p.leases.BeginAgentSession()
-	if err != nil {
+	// Write freeze before publishing agent.json so a new session never pairs with
+	// an old snapshot (status would be pending and must not apply those knobs).
+	session := p.leases.NewAgentSession()
+	if err := runtimeconfig.Save(p.cfg.StateDir, runtimeconfig.FromConfig(p.cfg, session.ID)); err != nil {
+		p.logger.Warn("save runtime config snapshot failed", "error", err)
+	}
+	if err := p.leases.WriteAgentSession(session); err != nil {
 		return fmt.Errorf("begin agent session: %w", err)
 	}
 	p.session = session

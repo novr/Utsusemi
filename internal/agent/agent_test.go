@@ -190,3 +190,40 @@ func TestRunSkipsAlertOnCancel(t *testing.T) {
 		t.Fatalf("unexpected alert on cancel: %v", rec.codes())
 	}
 }
+
+func TestNewFreezesConfig(t *testing.T) {
+	cfg := &config.Config{
+		BaseImage:     "img:old",
+		RunnerVersion: "2.0.0",
+		PoolSize:      1,
+		Labels:        []string{"a"},
+		StateDir:      t.TempDir(),
+	}
+	config.ApplyDefaults(cfg)
+
+	ag, err := New(Options{
+		Config:    cfg,
+		Target:    target.Target{Type: target.TypeOrg, Org: "o", RunnerGroupID: 1},
+		Provider:  provider.NewStub(2),
+		Registrar: noopRegistrar{},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg.BaseImage = "img:new"
+	cfg.RunnerVersion = "9.9.9"
+	cfg.PoolSize = 2
+	cfg.Labels[0] = "mutated"
+
+	got := ag.Config()
+	if got.BaseImage != "img:old" || got.RunnerVersion != "2.0.0" || got.PoolSize != 1 {
+		t.Fatalf("frozen cfg leaked: %+v", got)
+	}
+	if got.Labels[0] != "a" {
+		t.Fatalf("labels leaked: %v", got.Labels)
+	}
+	if got == cfg {
+		t.Fatal("agent config shares Load pointer")
+	}
+}

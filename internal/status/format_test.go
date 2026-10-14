@@ -10,6 +10,18 @@ import (
 func TestFormatTextRunning(t *testing.T) {
 	out := FormatText(Report{
 		Target: "org:my-org (group 1)",
+		Runtime: &RuntimeInfo{
+			State:         "active",
+			BaseImage:     "ghcr.io/example/image:1",
+			RunnerVersion: "2.337.0",
+			PoolSize:      2,
+			Labels:        []string{"self-hosted"},
+		},
+		RunnerVersion: RunnerVersionInfo{
+			Configured: "2.400.0",
+			Runtime:    "2.337.0",
+			Status:     "ok",
+		},
 		Agent: AgentInfo{
 			State:  AgentRunning,
 			PID:    12345,
@@ -32,6 +44,9 @@ func TestFormatTextRunning(t *testing.T) {
 
 	for _, want := range []string{
 		"target: org:my-org (group 1)",
+		"runtime: active",
+		"base_image: ghcr.io/example/image:1",
+		"runner_version: 2.337.0 (config.yaml 2.400.0)",
 		"agent: running (pid 12345, uptime 2h15m)",
 		"jobs: 1",
 		"utsusemi-a1b2 runner=42",
