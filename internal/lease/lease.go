@@ -15,11 +15,13 @@ import (
 )
 
 type Lease struct {
-	VMName    string    `json:"vm_name"`
-	RunnerID  int64     `json:"runner_id"`
-	AgentID   string    `json:"agent_id"`
-	PID       int       `json:"pid"`
-	StartedAt time.Time `json:"started_at"`
+	VMName        string    `json:"vm_name"`
+	RunnerID      int64     `json:"runner_id"`
+	BaseImage     string    `json:"base_image,omitempty"`
+	RunnerVersion string    `json:"runner_version,omitempty"`
+	AgentID       string    `json:"agent_id"`
+	PID           int       `json:"pid"`
+	StartedAt     time.Time `json:"started_at"`
 }
 
 type AgentSession struct {

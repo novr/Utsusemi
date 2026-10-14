@@ -9,6 +9,7 @@ import (
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/doctor"
 	"github.com/novr/utsusemi/internal/keychain"
+	"github.com/novr/utsusemi/internal/lease"
 	"github.com/novr/utsusemi/internal/listing"
 	"github.com/novr/utsusemi/internal/logging"
 	"github.com/novr/utsusemi/internal/notify"
@@ -152,6 +153,7 @@ func (r *Runtime) ListingInput(scope string) listing.Input {
 		Target:    r.Target,
 		Provider:  r.Provider,
 		Registrar: r.Registrar,
+		Leases:    lease.NewRegistry(r.Config.StateDir),
 		Scope:     scope,
 	}
 }

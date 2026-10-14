@@ -99,6 +99,21 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 		stopAndDeleteBestEffort(log, s.opts.Provider, vmName)
 	}()
 
+	// Record clone metadata immediately so `utsusemi list` can show base_image
+	// during boot/register; RunnerID is filled in after CreateJIT.
+	if s.opts.Leases != nil && s.session != nil {
+		defer func() {
+			_ = s.opts.Leases.RemoveLease(vmName)
+		}()
+		if err := s.opts.Leases.WriteLease(s.session, lease.Lease{
+			VMName:        vmName,
+			BaseImage:     cfg.BaseImage,
+			RunnerVersion: cfg.RunnerVersion,
+		}); err != nil {
+			log.Warn("write lease failed", "error", err)
+		}
+	}
+
 	phase = time.Now()
 	log.Info("starting vm")
 	if err := s.opts.Provider.Start(spawnCtx, vmName); err != nil {
@@ -135,14 +150,13 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 
 	if s.opts.Leases != nil && s.session != nil {
 		if err := s.opts.Leases.WriteLease(s.session, lease.Lease{
-			VMName:   vmName,
-			RunnerID: runnerID,
+			VMName:        vmName,
+			RunnerID:      runnerID,
+			BaseImage:     cfg.BaseImage,
+			RunnerVersion: cfg.RunnerVersion,
 		}); err != nil {
 			log.Warn("write lease failed", "error", err)
 		}
-		defer func() {
-			_ = s.opts.Leases.RemoveLease(vmName)
-		}()
 	}
 
 	jobCtx, jobCancel := context.WithTimeout(ctx, cfg.JobTimeout.Duration())
