@@ -41,8 +41,9 @@ func runCommandStreaming(ctx context.Context, name string, args []string, stdin 
 	for k, v := range env {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("%s=%s", k, v))
 	}
-	out := logging.SubprocessWriter(os.Stdout)
-	errOut := logging.SubprocessWriter(os.Stderr)
+	tap := stdoutTapFrom(ctx)
+	out := streamWriter(os.Stdout, tap)
+	errOut := streamWriter(os.Stderr, tap)
 	defer logging.FlushWriter(out)
 	defer logging.FlushWriter(errOut)
 	cmd.Stdout = out
