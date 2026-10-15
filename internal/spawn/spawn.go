@@ -162,6 +162,9 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 	jobCtx, jobCancel := context.WithTimeout(ctx, cfg.JobTimeout.Duration())
 	defer jobCancel()
 
+	var claim claimScanner
+	jobCtx = provider.WithStdoutTap(jobCtx, &claim)
+
 	log.Info("waiting for job", "runner_id", runnerID, "runner_version", cfg.RunnerVersion,
 		"cold_start_ms", metrics.CloneMs+metrics.BootMs+metrics.RegisterMs)
 	env := BootstrapEnv(cfg, s.opts.Provider)
@@ -173,6 +176,11 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
+
+	finishJob := func() Result {
+		_ = claim.Flush()
+		return resultFromMetrics(metrics, claim.Claimed())
+	}
 
 	for {
 		select {
@@ -192,7 +200,7 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 			}
 			runnerRegistered = false
 			metrics.Success = true
-			return resultFromMetrics(metrics), nil
+			return finishJob(), nil
 		case <-ticker.C:
 			running, err := s.opts.Provider.IsRunning(jobCtx, vmName)
 			if err != nil {
@@ -208,7 +216,7 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 					}
 					runnerRegistered = false
 					metrics.Success = true
-					return resultFromMetrics(metrics), nil
+					return finishJob(), nil
 				case <-time.After(30 * time.Second):
 					return Result{ReachedReady: reachedReady}, fmt.Errorf("vm stopped before runner exec finished")
 				case <-jobCtx.Done():

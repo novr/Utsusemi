@@ -230,6 +230,29 @@ func TestHandleSpawnSuccessRecordsShortExit(t *testing.T) {
 	}
 }
 
+func TestHandleSpawnSuccessClaimedShortJobResetsBackoff(t *testing.T) {
+	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(provider.NewFakeExecutor(), false, nil), noopRegistrar{})
+
+	p.mu.Lock()
+	p.shortExits = 4
+	p.backoffUntil = time.Now().Add(time.Minute)
+	p.mu.Unlock()
+
+	p.handleSpawnSuccess("vm-1", spawn.Result{JobMs: 28_000, TotalMs: 90_000, ClaimedJob: true})
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.shortExits != 0 {
+		t.Fatalf("shortExits = %d, want 0 after claimed short job", p.shortExits)
+	}
+	if !p.backoffUntil.IsZero() {
+		t.Fatalf("backoffUntil = %v, want zero", p.backoffUntil)
+	}
+	if p.shutdown {
+		t.Fatal("claimed short job must not stop the agent")
+	}
+}
+
 func TestIsUnclaimedJobExit(t *testing.T) {
 	tests := []struct {
 		result spawn.Result
@@ -237,6 +260,7 @@ func TestIsUnclaimedJobExit(t *testing.T) {
 	}{
 		{spawn.Result{JobMs: 28_000, TotalMs: 90_000}, true},
 		{spawn.Result{JobMs: 37_999, TotalMs: 120_000}, true},
+		{spawn.Result{JobMs: 28_000, TotalMs: 90_000, ClaimedJob: true}, false},
 		{spawn.Result{JobMs: 21_999, TotalMs: 90_000}, false},
 		{spawn.Result{JobMs: 38_000, TotalMs: 120_000}, false},
 		{spawn.Result{JobMs: 45_000, TotalMs: 105_000}, false},

@@ -278,9 +278,9 @@ func (p *Pool) reportFatal(err error) {
 	}
 }
 
-// JIT idle timeout is ~28 s. Unclaimed exits cluster just above that in the job
-// phase (bootstrap + run.sh). Claimed work usually runs longer; medium jobs
-// leave counters unchanged so a single short success cannot clear a streak.
+// JIT idle timeout is ~28 s. Unclaimed exits (no job assignment in runner
+// output) cluster just above that in the job phase. Short claimed jobs must
+// not use this band alone — see Result.ClaimedJob.
 const (
 	minUnclaimedJobMs   int64 = 22_000
 	maxUnclaimedJobMs   int64 = 38_000
@@ -291,6 +291,9 @@ const (
 const maxConsecutiveShortExits = 5
 
 func isUnclaimedJobExit(result spawn.Result) bool {
+	if result.ClaimedJob {
+		return false
+	}
 	return result.JobMs >= minUnclaimedJobMs && result.JobMs < maxUnclaimedJobMs
 }
 
@@ -299,11 +302,16 @@ func (p *Pool) handleSpawnSuccess(vmName string, result spawn.Result) {
 		"vm", vmName,
 		"duration_ms", result.TotalMs,
 		"job_ms", result.JobMs,
+		"claimed_job", result.ClaimedJob,
 	)
 	if result.JobMs <= 0 {
 		p.logger.Warn("runner finished with no job phase timing; leaving backoff counters unchanged",
 			"vm", vmName,
 		)
+		return
+	}
+	if result.ClaimedJob {
+		p.resetSpawnBackoff()
 		return
 	}
 	if isUnclaimedJobExit(result) {
