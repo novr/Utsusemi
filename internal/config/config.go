@@ -84,6 +84,7 @@ type Config struct {
 	StateDir               string            `yaml:"state_dir,omitempty"`
 	Softnet                bool              `yaml:"softnet,omitempty"`
 	Mounts                 []string          `yaml:"mounts,omitempty"`
+	Env                    map[string]string `yaml:"env,omitempty"`
 	ReclaimPolicy          string            `yaml:"reclaim_policy,omitempty"`
 	ReclaimGrace           Duration          `yaml:"reclaim_grace,omitempty"`
 }
@@ -149,7 +150,7 @@ func ApplyDefaults(cfg *Config) {
 	applyDefaults(cfg)
 }
 
-// Clone returns a deep copy of cfg. Labels and Mounts are new slices.
+// Clone returns a deep copy of cfg. Labels, Mounts, and Env are independent.
 // The result is intended as an agent-owned freeze; callers must not write it back
 // into shared Load-time config.
 func Clone(cfg *Config) *Config {
@@ -162,6 +163,12 @@ func Clone(cfg *Config) *Config {
 	}
 	if cfg.Mounts != nil {
 		out.Mounts = append([]string(nil), cfg.Mounts...)
+	}
+	if cfg.Env != nil {
+		out.Env = make(map[string]string, len(cfg.Env))
+		for k, v := range cfg.Env {
+			out.Env[k] = v
+		}
 	}
 	return &out
 }

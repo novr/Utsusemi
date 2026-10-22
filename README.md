@@ -248,7 +248,10 @@ utsusemi doctor
 
 > **Warning:** do not assume the runner version bundled in your base image is acceptable to GitHub. GitHub periodically deprecates old runner versions; a JIT runner that is too old will register and then exit after ~28 s **without claiming a job**, causing the pool to respawn with growing backoffs until the agent stops. Always install a current runner from [github.com/actions/runner/releases](https://github.com/actions/runner/releases) and set `runner_version` in `config.yaml` to match. Repeated `runner finished quickly without claiming a job` warnings mean the runner left in that window **with no job assignment in its output** — short successful jobs (e.g. a quick `precheck`) are not treated as this failure.
 
-> **Note:** The runner's `.env` file is consumed by the service wrapper (`svc.sh`), not by `run.sh --jitconfig`. Utsusemi invokes `run.sh` directly, so `.env` is never read. Expose environment variables to jobs at the workflow level instead:
+> **Note:** The runner's `.env` file is consumed by the service wrapper (`svc.sh`), not by `run.sh --jitconfig`. Utsusemi invokes `run.sh` directly, so `.env` is never read.
+>
+> - **bootstrap / `run.sh` (guest process):** set literal values under `env:` in `config.yaml` (e.g. `HTTP_PROXY`). Keys must be `[A-Za-z_][A-Za-z0-9_]*`. No `$VAR` expansion; `RUNNER_*` keys are reserved. Do not put secrets in `config.yaml`. Values appear on the guest process argv.
+> - **job steps:** use workflow `env:` (config `env` is not injected into Actions jobs):
 > ```yaml
 > jobs:
 >   build:

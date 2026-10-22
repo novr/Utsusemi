@@ -38,3 +38,32 @@ func TestBootstrapSpecDefaultsRunnerArch(t *testing.T) {
 		t.Fatalf("RUNNER_CACHE_DIR = %q", env["RUNNER_CACHE_DIR"])
 	}
 }
+
+func TestGuestEnvMergesConfigAndBootstrap(t *testing.T) {
+	p := provider.NewStub(2)
+	p.Caps.RunnerArch = "linux-arm64"
+	cfg := &config.Config{
+		RunnerVersion: "2.336.0",
+		Env: map[string]string{
+			"HTTP_PROXY":     "http://proxy:8080",
+			"RUNNER_VERSION": "should-not-win",
+		},
+	}
+	env := GuestEnv(cfg, p)
+	if env["HTTP_PROXY"] != "http://proxy:8080" {
+		t.Fatalf("HTTP_PROXY = %q", env["HTTP_PROXY"])
+	}
+	if env["RUNNER_VERSION"] != "2.336.0" {
+		t.Fatalf("RUNNER_VERSION = %q, want bootstrap win", env["RUNNER_VERSION"])
+	}
+	if env["RUNNER_ARCH"] != "linux-arm64" {
+		t.Fatalf("RUNNER_ARCH = %q", env["RUNNER_ARCH"])
+	}
+}
+
+func TestGuestEnvNilConfig(t *testing.T) {
+	env := GuestEnv(nil, provider.NewStub(2))
+	if env["RUNNER_HOME"] != defaultRunnerHome {
+		t.Fatalf("RUNNER_HOME = %q", env["RUNNER_HOME"])
+	}
+}

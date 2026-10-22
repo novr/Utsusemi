@@ -185,7 +185,7 @@ func (s *Spawner) Run(ctx context.Context, vmName string, ctrl *SlotControl) (Re
 
 	log.Info("waiting for job", "runner_id", runnerID, "runner_version", cfg.RunnerVersion,
 		"cold_start_ms", metrics.CloneMs+metrics.BootMs+metrics.RegisterMs)
-	env := BootstrapEnv(cfg, s.opts.Provider)
+	env := GuestEnv(cfg, s.opts.Provider)
 	execDone := make(chan error, 1)
 	jobPhase := time.Now()
 	go func() {

@@ -3,12 +3,17 @@ package config
 import (
 	"fmt"
 	"net/url"
+	"regexp"
 	"slices"
 	"strings"
 
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/target"
 )
+
+// envKeyPattern is a POSIX-ish name safe as tart exec `env KEY=value` argv
+// (rejects leading '-', '=', whitespace, and other getopt/shell hazards).
+var envKeyPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 
 func validateRegistration(reg Registration) error {
 	switch reg.Mode {
@@ -81,7 +86,30 @@ func Validate(cfg *Config, p provider.VMProvider) (target.Target, error) {
 	if cfg.Registration.Mode == ModeHostedApp && tgt.Type != target.TypeOrg {
 		return target.Target{}, fmt.Errorf("hosted_app requires an organization target")
 	}
+	if err := validateEnv(cfg.Env); err != nil {
+		return target.Target{}, err
+	}
 	return tgt, nil
+}
+
+// validateEnv checks literal guest env keys/values for tart exec `env KEY=value`.
+// Values are not expanded; RUNNER_ keys are reserved for bootstrap.
+func validateEnv(env map[string]string) error {
+	for key, value := range env {
+		if key == "" {
+			return fmt.Errorf("env key must not be empty")
+		}
+		if !envKeyPattern.MatchString(key) {
+			return fmt.Errorf("env key %q must match [A-Za-z_][A-Za-z0-9_]*", key)
+		}
+		if strings.HasPrefix(key, "RUNNER_") {
+			return fmt.Errorf("env key %q is reserved (RUNNER_ prefix)", key)
+		}
+		if strings.ContainsAny(value, "\x00\n\r") {
+			return fmt.Errorf("env %q value must not contain NUL or newline", key)
+		}
+	}
+	return nil
 }
 
 // ValidateBrokerURL checks hosted app broker URLs (https, or loopback http).
