@@ -13,6 +13,8 @@ base_image: ghcr.io/cirruslabs/macos-sequoia-base:latest
 runner_version: "2.336.0"
 pool_size: 1
 # reclaim_policy: grace
+# reclaim_grace: 15m
+# softnet: true    # brew install cirruslabs/cli/softnet + root
 # mounts:
 #   - ~/utsusemi-cache/swiftpm
 # Literal env for bootstrap + run.sh only (not job steps; no $VAR expansion).

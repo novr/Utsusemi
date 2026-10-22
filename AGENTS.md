@@ -10,7 +10,7 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 - **Credential safety** — secrets in Keychain only; `config.yaml` is non-secret.
 - **Hosted app renewability** — device flow once; OAuth refresh + broker exchange thereafter while the host runs.
 - **Registration modes** — `hosted_app` (organization + broker) and `github_pat` (organization or repository, direct GitHub API). Keep code paths separate.
-- **macOS / Tart** — Keychain, NAT lease limits, optional Softnet; Tart CLI stays behind `internal/provider`.
+- **macOS / Tart** — Keychain, NAT lease limits, optional Softnet (`cirruslabs/cli/softnet` + root); Tart CLI stays behind `internal/provider`.
 
 ## Responsibilities
 
@@ -21,6 +21,7 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 | Pool | `internal/pool` | Spawn loop, backoff, in-flight tracking, fill staggered until idle-ready, **reclaim**, **purge** (`clean`), **poolDrain** (`drain`) |
 | Spawn | `internal/spawn` | One job lifecycle: clone → register → bootstrap → wait → teardown; `SlotControl` for poolDrain |
 | Drain IPC | `internal/drainctl` | `{StateDir}/drain.request` / `drain.status` (CLI ↔ running agent) |
+| Host ID | `internal/hostid` | `{StateDir}/host_id`; LocalHostName → hostname → random |
 | VMs | `internal/provider` | Tart / executor abstraction |
 | Runners | `internal/registrar` | `RunnerRegistrar` interface |
 | PAT mode | `internal/registrar/pat.go` | GitHub REST with PAT from Keychain |
@@ -70,7 +71,7 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 ### CLI (`cmd/utsusemi`)
 
 - Wire dependencies only; no pool logic, Tart commands, or OAuth/device-flow implementation.
-- `configure app` — device flow when credential missing or org/broker/oauth-client-id **value** changes; `--runner-group-id` **value** change → `EnsureFresh(force)` then device flow. `--refresh` → same EnsureFresh path. Credential-only `--refresh` skips confirm/`writeConfig` because YAML is unchanged.
+- `configure app` — device flow when credential missing or org/broker/oauth-client-id **value** changes; `--runner-group-id` **value** change → OAuth refresh / `EnsureFresh(force)` (same as `--refresh`), device flow only if that fails. Credential-only `--refresh` skips confirm/`writeConfig` because YAML is unchanged.
 - `configure token` — token optional so config-only merges do not require Keychain writes.
 - **`configure edit|path|show`** — always `configPath` (`--config`); `--output` divergence would edit a file `run` never loads. New file seeds from embedded template so `$EDITOR` never opens invalid YAML.
 - Cross-mode `configure app|token` rejected — Keychain shape and registrar differ; mode flip via `configure edit` only.
@@ -126,9 +127,10 @@ Shared teardown: `stopAndDeleteManagedVM` (`managed_vm.go`). Shutdown path still
 
 Each `Pool` carries an `effectivePrefix = cfg.VMNamePrefix + hostID + "-"`.
 
-- **hostID** is loaded from `{StateDir}/host_id`. On first run, it is derived
-  from `os.Hostname()` (sanitized: lowercase, non-alphanumeric → dash, max 24
-  chars) and written to that file for stability across hostname changes.
+- **hostID** is loaded from `{StateDir}/host_id`. On first run, `internal/hostid`
+  derives it from `scutil --get LocalHostName`, else `os.Hostname()`, else random
+  hex (sanitized: lowercase, non-alphanumeric → dash, max 24 chars) and writes
+  that file for stability across hostname changes.
 - `reclaim` and `purgeAllManaged` both use `effectivePrefix` instead of
   `cfg.VMNamePrefix`, so they only see and delete runners created by this host.
 - `listing` (`utsusemi list`) still uses `cfg.VMNamePrefix` for full
@@ -167,8 +169,8 @@ Deploy broker separately from CLI. After JWT signing or route changes, operators
 - **Runtime assembly**: `internal/app` owns provider construction (`buildProvider`), config validation, registrar setup, and `Runtime` helpers used by CLI commands.
 - **Bootstrap / guest env**: `spawn.GuestEnv` merges literal `config.Env` into `ExecStdin`, then `BootstrapEnv` (`RUNNER_VERSION`, `RUNNER_ARCH`, `RUNNER_HOME`, `RUNNER_CACHE_DIR`) wins. `Validate` requires POSIX-ish keys (`[A-Za-z_][A-Za-z0-9_]*`), rejects `RUNNER_` and NUL/newline in values (leading `-` would confuse guest `env(1)` getopt). Values are not expanded. Scope is bootstrap + `run.sh` only (not job steps; not `runtime_config` / `status`). `RUNNER_ARCH` comes from `VMProvider.Capabilities().RunnerArch` (Tart: `osx-arm64`). Host cache via `runnercache.Ensure` on agent start; mount name `utsusemi-runner-cache`.
 - Operator docs in [README.md](README.md) Operations and Provider.
-- **Alerts (in scope)**: webhook push via `internal/notify` for `agent_fatal`, `disk_blocked`, `pool_stuck`, and `ready_failing` (`utsusemi configure alerts`; URL in Keychain or `UTSUSEMI_ALERT_WEBHOOK`). `pool_stuck` uses time since last warm capacity (`Clear` on long job success); fires when the pool is empty **or saturated with consecutive ready failures** (partial fill and a full pool of healthy jobs do not). In-flight flickers do not reset the warm clock. `ready_failing` fires after 3 consecutive `waitUntilReady` failures (`spawn.ErrWaitReady`); cleared when a spawn reaches ready. Out of scope: process-death detection, fleet dashboards, Slack SDKs, YAML webhook URLs, threshold knobs in config, single spawn failures.
-- **`utsusemi doctor`**: preflight via `internal/doctor` (provider, disk, loopback broker, credential, host_id, runner_version, runner_cache, mounts, multi-host, alerts configured-or-not as info/`ok`). `runner_version` older than GitHub `latest` is **warn** (stale → JIT failure); skip that comparison on network error. Empty `runner_version` remains **fail**. Host runner-cache miss is **warn** only. Exit 1 when any check is `fail`.
+- **Alerts (in scope)**: webhook push via `internal/notify` for `agent_fatal`, `disk_blocked`, `pool_stuck`, and `ready_failing` (`utsusemi configure alerts`; URL in Keychain or `UTSUSEMI_ALERT_WEBHOOK`). `pool_stuck` uses time since last warm capacity; `Clear` on `resetSpawnBackoff` (ClaimedJob, or JobMs ≥ 60s). Fires when empty or saturated (`Active >= PoolSize` with `ConsecutiveReadyFails > 0`; partial fill / healthy full pool do not). In-flight flickers do not reset the warm clock. `ready_failing` fires after 3 consecutive `waitUntilReady` failures (`spawn.ErrWaitReady`); cleared when a spawn reaches ready. Out of scope: process-death detection, fleet dashboards, Slack SDKs, YAML webhook URLs, threshold knobs in config, single spawn failures.
+- **`utsusemi doctor`**: preflight via `internal/doctor` (check names and statuses are defined there; alerts unset is `ok` / “not configured”). `runner_version` older than GitHub `latest` is **warn** (stale → JIT failure); skip that comparison on network error. Empty `runner_version` remains **fail**. Host runner-cache miss is **warn** only. Exit 1 when any check is `fail`.
 - **Spawn metrics**: `spawn.SaveLastSpawn` writes `{StateDir}/last_spawn.json`; `status` and spawn logs expose cold-start phase timings.
 
 ### Tests and toolchain

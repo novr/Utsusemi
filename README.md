@@ -17,7 +17,7 @@ utsusemi run
 ## Requirements
 
 - Apple Silicon Mac, macOS 15+
-- [Tart](https://tart.run/) 2.34+ — install via `brew tap openai/tools && brew trust openai/tools && brew install openai/tools/tart`. The minimum matches the current `openai/tools` distribution (the `tart exec -i` fix shipped in 2.33.0, but the stale `cirruslabs/cli` tap stops at 2.32.1). Upgrading from `cirruslabs/cli` may require `brew uninstall softnet` first if softnet was installed from that tap.
+- [Tart](https://tart.run/) 2.34+ — `brew tap openai/tools && brew trust openai/tools && brew install openai/tools/tart`
 
 ## Paths
 
@@ -37,6 +37,7 @@ Use `--config` or `UTSUSEMI_CONFIG` when multiple agents on one Mac must not sha
 ```text
 utsusemi configure app [flags]
 utsusemi configure token [flags]
+utsusemi configure alerts [flags]
 utsusemi configure edit|path|show
 ```
 
@@ -108,11 +109,11 @@ While the agent is stopped: `utsusemi configure app --refresh` — same OAuth pa
 
 #### Broker
 
-`hosted_app` mode routes host credential issuance and refresh through a broker service (`broker_url`).
+`hosted_app` mode routes host credential issuance and refresh through a broker service (`broker_url`). Default hosted URL is `https://utsusemi.duckdns.org` (see [`deploy/oracle/`](deploy/oracle/)).
 
 **Availability.** A running agent holds a 30-day host credential locally; the broker is only contacted during `configure app` and at refresh time (≤7 days remaining). If the broker is unreachable at refresh, the existing credential continues to work until it expires. A monitoring system that watches `utsusemi validate` exit code will surface the failure before the credential window closes.
 
-**Local broker.** For an allowlisted org, or to stop depending on the hosted Workers deployment, run a loopback broker on this Mac. It talks to `api.github.com` from this host (or the VPN/egress IP GitHub already allows). Bind is IPv4 `127.0.0.1` only.
+**Local broker.** For an allowlisted org, or to stop depending on the hosted broker, run a loopback broker on this Mac. It talks to `api.github.com` from this host (or the VPN/egress IP GitHub already allows). Bind is IPv4 `127.0.0.1` only.
 
 1. Create a GitHub App (org owner). Enable GitHub Actions, including org self-hosted runners, and install it on the org. Copy the App ID and download the private key PEM.
 2. Start the broker (leave this process running; it does **not** replace `utsusemi run`):
@@ -170,9 +171,9 @@ Edit `config.yaml` after `configure` with `utsusemi configure edit`, or set flag
 
 | Key | Default | Notes |
 |-----|---------|-------|
-| `pool_size` | `1` | Upper bound is provider-specific (`utsusemi status` shows `max`; Tart is 2). Status `draining` is lease-less running VMs — it does **not** count toward `pool_size`. Operator recycle is `pool_drain` (`utsusemi drain`), a separate field. When filling, at most one spawn may be in cold start: the next clone/boot waits until the previous slot is idle-ready (`Listening for Jobs`, a job-claim marker, a 5m grace after bootstrap `tart exec` starts, or that spawn exits). Idle runners still hold a long-lived `tart exec`; stagger only avoids overlapping boots/bootstraps. |
-| `pool_check_interval` | `30s` | How often the pool looks for a free slot. Lengthening this alone does **not** prevent mid-bootstrap overlap; stagger (above) does. |
-| `reclaim_policy` | `grace` | `soft` — local dev; `hard` — immediate |
+| `pool_size` | `1` | Upper bound is provider-specific (`utsusemi status` shows `max`; Tart is 2). Status `draining` is lease-less running VMs — not counted toward `pool_size`. Operator recycle is `pool_drain` (`utsusemi drain`). Cold starts are staggered (at most one overlapping clone/boot) so Tart boots do not pile up. |
+| `pool_check_interval` | `30s` | How often the pool looks for a free slot. Lengthening this alone does not prevent mid-bootstrap overlap; stagger (above) does. |
+| `reclaim_policy` | `grace` | `soft` — do not reclaim running VMs for staleness (restart-friendly; at capacity may still reclaim); `grace` — reclaim stale after `reclaim_grace`; `hard` — reclaim stale immediately |
 | `reclaim_grace` | `15m` | When `reclaim_policy` is `grace` |
 | `reconciliation_interval` | `5m` | Reclaim interval during `run` |
 
@@ -185,7 +186,7 @@ Edit `config.yaml` after `configure` with `utsusemi configure edit`, or set flag
 - **base_image** / `--base-image` — pull on agent start ([Tart](https://tart.run/))
 - **min_free_disk_gb** — default `50`
 - **Keychain** — unlock: `security unlock-keychain login.keychain`; headless: `security set-keychain-settings -t 0 ~/Library/Keychains/login.keychain-db`
-- **Networking** — [Tart FAQ](https://tart.run/faq/); `softnet: true` → [Softnet](https://github.com/cirruslabs/softnet) (NAT / lease isolation). Softnet does **not** stabilize Tart guest-agent GRPC / `tart exec`.
+- **Networking** — [Tart FAQ](https://tart.run/faq/); optional `softnet: true` for NAT / lease isolation — `brew install cirruslabs/cli/softnet` and grant root (SUID or passwordless sudo). Softnet does **not** stabilize Tart guest-agent GRPC / `tart exec`.
 - **Directory shares** — `mounts` passes host directories into the VM as Tart `--dir` flags (see below)
 
 #### Directory shares (host → VM)
@@ -211,43 +212,9 @@ mounts:
 
 #### Pre-installed runner (low-latency)
 
-On agent start, Utsusemi downloads the configured `runner_version` tarball once into `{state_dir}/runner-cache/` and mounts that directory read-only into every VM (`utsusemi-runner-cache`). Bootstrap copies from the host cache instead of hitting GitHub on each spawn — this also avoids two VMs downloading in parallel (which can stretch install to ~100 s). Changing `runner_version` takes effect after an agent restart (so the new tarball is cached).
+On agent start, Utsusemi caches `runner_version` under `{state_dir}/runner-cache/` and mounts it read-only (`utsusemi-runner-cache`) so each spawn does not download from GitHub. A matching runner already in the image skips install. Restart the agent after changing `runner_version` so the cache refreshes.
 
-If the base image already has the same runner version at `/Users/admin/actions-runner`, bootstrap skips install entirely (fastest path).
-
-Keep `runner_version` at GitHub’s current Actions runner release — `utsusemi doctor` **warns** when the configured version is older than latest (stale runners can exit after JIT without claiming jobs). Prefer bumping `runner_version` and restarting the agent; the host cache installs that tarball even when the base image ships an older runner.
-
-**Stock cirruslabs images** (`ghcr.io/cirruslabs/macos-*-xcode`) already ship a runner at `/Users/admin/actions-runner`. Matching that image version skips install (fastest) only while it equals GitHub latest; once the image lags, bump `runner_version` (or rebuild/refresh the image) so doctor stops warning.
-
-**Custom images** — if `./bin/Runner.Listener` is missing under `RUNNER_HOME` (default `/Users/admin/actions-runner`), bootstrap falls back to a `.runner-version` sentinel file:
-
-```bash
-# Run once inside the base image VM, then snapshot / push the image.
-RUNNER_VERSION="2.336.0"   # must match runner_version in config.yaml
-RUNNER_HOME="/Users/admin/actions-runner"   # must match bootstrap.sh default
-mkdir -p "$RUNNER_HOME" && cd "$RUNNER_HOME"
-curl -fsSL -o actions-runner.tar.gz \
-  "https://github.com/actions/runner/releases/download/v${RUNNER_VERSION}/actions-runner-osx-arm64-${RUNNER_VERSION}.tar.gz"
-tar xzf actions-runner.tar.gz && rm actions-runner.tar.gz
-echo "${RUNNER_VERSION}" > .runner-version
-sync   # flush writes before tart stop; skipping this silently loses recent changes
-```
-
-For custom images that bake the runner, keep `runner_version` in sync with the pre-installed version **and** with GitHub latest. When you upgrade, update `config.yaml` (and rebuild the image if you want the skip-install path).
-
-**Updating stock cirruslabs images** (`base_image` with `:latest`):
-
-```bash
-brew services stop utsusemi
-utsusemi configure app --runner-version latest   # hosted_app
-# or: utsusemi configure edit
-brew services start utsusemi   # tart pull on start
-utsusemi doctor
-```
-
-`:latest` only refreshes the Tart VM image on agent start. `runner_version` must be updated separately — otherwise bootstrap may reinstall an older runner over a newer one baked into the image.
-
-> **Warning:** do not assume the runner version bundled in your base image is acceptable to GitHub. GitHub periodically deprecates old runner versions; a JIT runner that is too old will register and then exit after ~28 s **without claiming a job**, causing the pool to respawn with growing backoffs until the agent stops. Always install a current runner from [github.com/actions/runner/releases](https://github.com/actions/runner/releases) and set `runner_version` in `config.yaml` to match. Repeated `runner finished quickly without claiming a job` warnings mean the runner left in that window **with no job assignment in its output** — short successful jobs (e.g. a quick `precheck`) are not treated as this failure.
+Keep `runner_version` at GitHub’s current [Actions runner](https://github.com/actions/runner/releases) release. A stale runner can register then exit without claiming a job (`utsusemi doctor` **warns** when older than latest). Repeated `runner finished quickly without claiming a job` means that unclaimed-exit window — short successful jobs are not treated as this failure. `base_image:…:latest` refreshes the Tart image on agent start only; bump `runner_version` separately (host cache installs it even when the image ships an older runner).
 
 > **Note:** The runner's `.env` file is consumed by the service wrapper (`svc.sh`), not by `run.sh --jitconfig`. Utsusemi invokes `run.sh` directly, so `.env` is never read.
 >
@@ -262,30 +229,19 @@ utsusemi doctor
 
 ## Multi-host setup
 
-You can run Utsusemi on multiple Mac hosts pointing at the same GitHub org or
-repository. Each host automatically scopes its reclaim to only the runners it
-created, so Host A will never delete Host B's runners.
+Multiple Macs can target the same org or repo. Reclaim and `clean` only touch runners named `{vm_name_prefix}{host_id}-…` for this host, so hosts do not delete each other's runners.
 
-**How it works** — on first start, Utsusemi derives a *host identifier* from
-`os.Hostname()` and stores it in `{StateDir}/host_id`. All runner VMs created
-by that host are named `{vm_name_prefix}{host_id}-{random}`. Reclaim and
-`clean` only touch names that start with that combined prefix.
+`host_id` is stored in `{state_dir}/host_id` on first start (`scutil --get LocalHostName`, else hostname, else random).
 
-**Requirements for safe multi-host operation:**
-
-- Each host must have a unique hostname (`scutil --get LocalHostName`). Two
-  hosts with the same hostname will still interfere.
-- Alternatively, set a unique `vm_name_prefix` per host in `config.yaml`
-  (e.g. `vm_name_prefix: utsusemi-mac-a-`); the host identifier is appended
-  automatically so names remain distinct.
+- Give each host a unique `LocalHostName`, or a unique `vm_name_prefix` in config.
 
 ## Operations
 
 ```bash
 utsusemi --version
 utsusemi validate
-utsusemi doctor   # runner_version older than GitHub latest → warn; runner_cache miss → warn
-utsusemi status
+utsusemi doctor   # preflight (fail → exit 1)
+utsusemi status   # live agent / runtime vs next-start config
 utsusemi list
 utsusemi run
 utsusemi run --log              # also append to {state_dir}/agent.log
@@ -296,7 +252,7 @@ utsusemi drain --force
 brew services start utsusemi
 ```
 
-`validate` / `configure edit` change `config.yaml` for the **next** agent start. A running agent keeps its start-time settings; `utsusemi status` shows them under `runtime:` (from `{state_dir}/runtime_config.json`). Restart the agent (or `brew services restart utsusemi`) to apply YAML changes.
+`validate` / `configure edit` change `config.yaml` for the **next** agent start; `status` shows the running agent’s start-time settings under `runtime:`. Restart (or `brew services restart utsusemi`) to apply YAML changes.
 
 ### Alerts
 
@@ -311,7 +267,7 @@ utsusemi configure alerts --clear
 |------|------|
 | `agent_fatal` | Agent stops for a non-cancel reason (auth failure, repeated unclaimed exits, base-image sync failure, …) |
 | `disk_blocked` | Low disk has paused spawn for 15 minutes |
-| `pool_stuck` | No warm capacity for 15 minutes while the pool is empty **or full with ongoing ready-check failures** (a partial fill or a full pool of healthy jobs does not alert; long jobs that succeed clear the timer) |
+| `pool_stuck` | No warm capacity for 15 minutes while the pool is empty **or full with ongoing ready-check failures** (partial fill / healthy full pool do not alert; cleared when a job is claimed or runs long enough) |
 | `ready_failing` | Three consecutive VM ready-check failures (`waitUntilReady`); cleared when a spawn reaches ready |
 
 Single spawn failures and normal backoff do not notify (except the sustained cases above). Process crashes still need launchd / `brew services` monitoring. Broker credential expiry before refresh remains best watched via `utsusemi validate` exit code (see Broker Availability).
