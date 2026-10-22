@@ -14,3 +14,7 @@ pool_size: 1
 # mounts:
 #   - ~/utsusemi-cache/swiftpm
 #   - ~/utsusemi-toolchains:ro
+# env: literal for bootstrap + run.sh only (see README)
+# env:
+#   HTTP_PROXY: http://proxy.example:8080
+

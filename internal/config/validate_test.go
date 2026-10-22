@@ -161,3 +161,46 @@ func TestValidateHostedAppBrokerURL(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestValidateEnv(t *testing.T) {
+	ok := &Config{
+		Target:        target.ConfigYAML{Org: "my-org", RunnerGroupID: 1},
+		Labels:        []string{"self-hosted", "macOS"},
+		Registration:  Registration{Mode: ModeGitHubPAT},
+		Provider:      "tart",
+		BaseImage:     "ghcr.io/example/image:1",
+		RunnerVersion: "2.336.0",
+		PoolSize:      1,
+		Env:           map[string]string{"HTTP_PROXY": "http://proxy:8080", "NO_PROXY": ""},
+	}
+	if _, err := Validate(ok, provider.NewStub(2)); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name string
+		env  map[string]string
+		want string
+	}{
+		{name: "empty key", env: map[string]string{"": "x"}, want: "must not be empty"},
+		{name: "equals in key", env: map[string]string{"FOO=BAR": "x"}, want: "must match"},
+		{name: "space in key", env: map[string]string{"FOO BAR": "x"}, want: "must match"},
+		{name: "dash option key", env: map[string]string{"-u": "HOME"}, want: "must match"},
+		{name: "leading digit", env: map[string]string{"1FOO": "x"}, want: "must match"},
+		{name: "reserved", env: map[string]string{"RUNNER_HOME": "/tmp"}, want: "reserved"},
+		{name: "newline value", env: map[string]string{"FOO": "a\nb"}, want: "NUL or newline"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := *ok
+			cfg.Env = tc.env
+			_, err := Validate(&cfg, provider.NewStub(2))
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want substring %q", err, tc.want)
+			}
+		})
+	}
+}
