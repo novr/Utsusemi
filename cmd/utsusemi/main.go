@@ -38,6 +38,7 @@ func initRootCmd() {
 		rootCmd.AddCommand(listCmd)
 
 		rootCmd.AddCommand(newCleanCmd())
+		rootCmd.AddCommand(newDrainCmd())
 	})
 }
 

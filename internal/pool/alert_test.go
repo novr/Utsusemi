@@ -193,3 +193,24 @@ func TestEvaluateAlertsSkipsDuringDrain(t *testing.T) {
 		t.Fatalf("unexpected: %v", rec.codes())
 	}
 }
+
+func TestEvaluateAlertsSkipsDuringPoolDrain(t *testing.T) {
+	rec := &recordingNotifier{}
+	var nowMu sync.Mutex
+	now := time.Unix(1000, 0)
+	p := newAlertTestPool(t, rec, time.Minute, func() time.Time {
+		nowMu.Lock()
+		defer nowMu.Unlock()
+		return now
+	})
+	p.mu.Lock()
+	p.poolDrain = true
+	p.mu.Unlock()
+	nowMu.Lock()
+	now = now.Add(time.Hour)
+	nowMu.Unlock()
+	p.evaluateAlerts(context.Background())
+	if len(rec.codes()) != 0 {
+		t.Fatalf("unexpected: %v", rec.codes())
+	}
+}

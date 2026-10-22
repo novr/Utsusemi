@@ -51,13 +51,16 @@ type Pool struct {
 	consecutiveReadyFails int
 	backoffUntil          time.Time
 	shutdown              bool
-	drain                 bool
+	drain                 bool // shutdown-only; ends Pool.Run after purge
+	poolDrain             bool // operator recycle; agent stays up
+	poolDrainState        *poolDrainState
 	lowDisk               bool
 	lastSpawnErr          string
 	fatalErr              error
 	fatalCh               chan error
 	inFlight              sync.WaitGroup
 	inFlightVMs           map[string]struct{}
+	slotControls          map[string]*spawn.SlotControl
 }
 
 func New(cfg *config.Config, tgt target.Target, vmProvider provider.VMProvider, reg registrar.RunnerRegistrar, logger *slog.Logger) *Pool {
@@ -105,6 +108,7 @@ func NewWithOptions(opts Options) *Pool {
 		effectivePrefix: effectivePrefix,
 		fatalCh:         make(chan error, 1),
 		inFlightVMs:     make(map[string]struct{}),
+		slotControls:    make(map[string]*spawn.SlotControl),
 	}
 }
 
@@ -128,6 +132,8 @@ func (p *Pool) Run(ctx context.Context) error {
 		p.logger.Warn("startup reclaim failed", "error", err)
 	}
 
+	p.scrubDrainControl()
+
 	p.logger.Info("pool loop started",
 		"pool_size", p.cfg.PoolSize,
 		"check_interval", p.cfg.PoolCheckInterval.Duration().String(),
@@ -146,6 +152,13 @@ func (p *Pool) Run(ctx context.Context) error {
 	reconcileTicker := time.NewTicker(reconcileEvery)
 	defer reconcileTicker.Stop()
 
+	controlEvery := poolDrainControlInterval
+	if controlEvery <= 0 {
+		controlEvery = time.Second
+	}
+	controlTicker := time.NewTicker(controlEvery)
+	defer controlTicker.Stop()
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -154,6 +167,8 @@ func (p *Pool) Run(ctx context.Context) error {
 			return errors.Join(err, p.drainAndWait(ctx))
 		case <-ticker.C:
 			p.tick(ctx)
+		case <-controlTicker.C:
+			p.controlTick()
 		case <-reconcileTicker.C:
 			if err := p.reclaim(ctx, false); err != nil {
 				if registrar.IsUnauthorized(err) {
@@ -196,7 +211,7 @@ func (p *Pool) tick(ctx context.Context) {
 	p.evaluateAlerts(ctx)
 
 	p.mu.Lock()
-	if p.shutdown || p.drain || p.lowDisk {
+	if p.shutdown || p.drain || p.poolDrain || p.lowDisk {
 		p.mu.Unlock()
 		return
 	}
@@ -218,6 +233,7 @@ func (p *Pool) tick(ctx context.Context) {
 			p.mu.Lock()
 			p.active--
 			p.mu.Unlock()
+			p.maybeFinishPoolDrain()
 		}()
 
 		vmName, err := p.newVMName()
@@ -228,16 +244,27 @@ func (p *Pool) tick(ctx context.Context) {
 
 		p.logger.Info("spawning runner", "vm", vmName)
 
+		ctrl := spawn.NewSlotControl()
 		p.mu.Lock()
 		p.inFlightVMs[vmName] = struct{}{}
+		p.slotControls[vmName] = ctrl
+		draining := p.poolDrain
+		forced := p.poolDrainState != nil && p.poolDrainState.forced
 		p.mu.Unlock()
+		if draining {
+			ctrl.AbandonIdle()
+			if forced {
+				ctrl.Force()
+			}
+		}
 		defer func() {
 			p.mu.Lock()
 			delete(p.inFlightVMs, vmName)
+			delete(p.slotControls, vmName)
 			p.mu.Unlock()
 		}()
 
-		result, err := p.spawner.Run(ctx, vmName)
+		result, err := p.spawner.Run(ctx, vmName, ctrl)
 		if result.ReachedReady {
 			p.noteReadyOK()
 		}
@@ -246,10 +273,9 @@ func (p *Pool) tick(ctx context.Context) {
 				p.reportFatal(err)
 				return
 			}
-			p.mu.Lock()
-			draining := p.drain
-			p.mu.Unlock()
-			if draining && errors.Is(err, context.Canceled) {
+			// Cancel is always intentional (shutdown, poolDrain, or SlotControl).
+			// Do not backoff: force-grace may clear poolDrain before we observe it.
+			if errors.Is(err, context.Canceled) {
 				return
 			}
 			p.recordFailure(err)
@@ -344,7 +370,7 @@ func (p *Pool) noteReadyOK() {
 
 func (p *Pool) evaluateAlerts(ctx context.Context) {
 	p.mu.Lock()
-	if p.shutdown || p.drain {
+	if p.shutdown || p.drain || p.poolDrain {
 		p.mu.Unlock()
 		return
 	}

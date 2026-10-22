@@ -170,7 +170,7 @@ Edit `config.yaml` after `configure` with `utsusemi configure edit`, or set flag
 
 | Key | Default | Notes |
 |-----|---------|-------|
-| `pool_size` | `1` | Upper bound is provider-specific (`utsusemi status` shows `max`; Tart is 2). Status `draining` is lease-less running VMs — it does **not** count toward `pool_size`. |
+| `pool_size` | `1` | Upper bound is provider-specific (`utsusemi status` shows `max`; Tart is 2). Status `draining` is lease-less running VMs — it does **not** count toward `pool_size`. Operator recycle is `pool_drain` (`utsusemi drain`), a separate field. |
 | `reclaim_policy` | `grace` | `soft` — local dev; `hard` — immediate |
 | `reclaim_grace` | `15m` | When `reclaim_policy` is `grace` |
 | `reconciliation_interval` | `5m` | Reclaim interval during `run` |
@@ -286,6 +286,9 @@ utsusemi list
 utsusemi run
 utsusemi run --log              # also append to {state_dir}/agent.log
 utsusemi run --log=/path/to.log
+utsusemi drain                  # recycle pool; agent stays up
+utsusemi drain --timeout=30m
+utsusemi drain --force
 brew services start utsusemi
 ```
 
@@ -322,12 +325,23 @@ Payload is JSON for generic receivers and Slack Incoming Webhooks (`text` is wha
 }
 ```
 
-Reclaim (automatic during `run`, per Runtime options) vs `clean` (manual purge; stop agent first):
+Reclaim (automatic during `run`, per Runtime options) vs `drain` vs `clean`:
+
+| | `drain` | `clean` |
+|--|---------|---------|
+| Agent | must be **running** | must be **stopped** |
+| Effect | stop new jobs, wait/force in-flight, then refill `pool_size` | delete all managed VMs/runners |
+| Use when | stuck / desynced occupancy without restart | last-resort wipe |
 
 ```bash
+utsusemi drain
+utsusemi drain --timeout=30m
+utsusemi drain --force          # reclaim in-flight immediately (may fail a claimed Actions job)
 utsusemi clean
 utsusemi clean --dry-run
 ```
+
+`drain` tears down idle (unclaimed) runners immediately so they cannot pick up new jobs; claimed jobs finish unless `--timeout` elapses or `--force` is set. A short race remains between GitHub assignment and the runner log markers Utsusemi uses to detect a claim. Status field `pool_drain` shows an in-progress recycle; `draining` still means lease-less running VMs (not counted toward `pool_size`).
 
 ### Service logs
 

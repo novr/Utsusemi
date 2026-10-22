@@ -24,6 +24,11 @@ func stdoutTapFrom(ctx context.Context) io.Writer {
 	return w
 }
 
+// StdoutTap returns the writer installed by WithStdoutTap, if any.
+func StdoutTap(ctx context.Context) io.Writer {
+	return stdoutTapFrom(ctx)
+}
+
 // teeFlushWriter writes to primary and tap, and flushes both when possible.
 type teeFlushWriter struct {
 	primary io.Writer
