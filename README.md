@@ -170,7 +170,8 @@ Edit `config.yaml` after `configure` with `utsusemi configure edit`, or set flag
 
 | Key | Default | Notes |
 |-----|---------|-------|
-| `pool_size` | `1` | Upper bound is provider-specific (`utsusemi status` shows `max`; Tart is 2). Status `draining` is lease-less running VMs — it does **not** count toward `pool_size`. Operator recycle is `pool_drain` (`utsusemi drain`), a separate field. |
+| `pool_size` | `1` | Upper bound is provider-specific (`utsusemi status` shows `max`; Tart is 2). Status `draining` is lease-less running VMs — it does **not** count toward `pool_size`. Operator recycle is `pool_drain` (`utsusemi drain`), a separate field. When filling, at most one spawn may be in cold start: the next clone/boot waits until the previous slot is idle-ready (`Listening for Jobs`, a job-claim marker, a 5m grace after bootstrap `tart exec` starts, or that spawn exits). Idle runners still hold a long-lived `tart exec`; stagger only avoids overlapping boots/bootstraps. |
+| `pool_check_interval` | `30s` | How often the pool looks for a free slot. Lengthening this alone does **not** prevent mid-bootstrap overlap; stagger (above) does. |
 | `reclaim_policy` | `grace` | `soft` — local dev; `hard` — immediate |
 | `reclaim_grace` | `15m` | When `reclaim_policy` is `grace` |
 | `reconciliation_interval` | `5m` | Reclaim interval during `run` |

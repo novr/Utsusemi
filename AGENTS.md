@@ -18,7 +18,7 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 |------|----------------|------|
 | CLI | `cmd/utsusemi` | Cobra commands, prompts, `loadConfigRuntime` / `loadValidatedRuntime` / `buildAgentFromRuntime`, configure flows |
 | Agent | `internal/agent` | `utsusemi.lock` for `run`, signal drain, delegates to pool |
-| Pool | `internal/pool` | Spawn loop, backoff, in-flight tracking, **reclaim**, **purge** (`clean`), **poolDrain** (`drain`) |
+| Pool | `internal/pool` | Spawn loop, backoff, in-flight tracking, fill staggered until idle-ready, **reclaim**, **purge** (`clean`), **poolDrain** (`drain`) |
 | Spawn | `internal/spawn` | One job lifecycle: clone → register → bootstrap → wait → teardown; `SlotControl` for poolDrain |
 | Drain IPC | `internal/drainctl` | `{StateDir}/drain.request` / `drain.status` (CLI ↔ running agent) |
 | VMs | `internal/provider` | Tart / executor abstraction |

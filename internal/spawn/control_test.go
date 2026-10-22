@@ -17,12 +17,15 @@ import (
 
 type gateProvider struct {
 	provider.Stub
-	mu           sync.Mutex
-	execStarted  chan struct{}
-	claimOnce    sync.Once
-	emitClaim    bool
-	cloneDelay   time.Duration
-	cloneStarted chan struct{}
+	mu             sync.Mutex
+	execStarted    chan struct{}
+	claimOnce      sync.Once
+	emitClaim      bool
+	emitListening  bool
+	listeningOnce  sync.Once
+	cloneDelay     time.Duration
+	cloneStarted   chan struct{}
+	cloneErr       error
 }
 
 func (p *gateProvider) IsRunning(context.Context, string) (bool, error) {
@@ -36,6 +39,9 @@ func (p *gateProvider) Clone(ctx context.Context, _, _ string) error {
 		default:
 			close(p.cloneStarted)
 		}
+	}
+	if p.cloneErr != nil {
+		return p.cloneErr
 	}
 	if p.cloneDelay > 0 {
 		select {
@@ -57,8 +63,16 @@ func (p *gateProvider) ExecStdin(ctx context.Context, _ string, _ string, _ []st
 		}
 	}
 	emit := p.emitClaim
+	emitListen := p.emitListening
 	p.mu.Unlock()
 
+	if emitListen {
+		p.listeningOnce.Do(func() {
+			if w := provider.StdoutTap(ctx); w != nil {
+				_, _ = io.WriteString(w, "Listening for Jobs\n")
+			}
+		})
+	}
 	if emit {
 		p.claimOnce.Do(func() {
 			if w := provider.StdoutTap(ctx); w != nil {
@@ -110,7 +124,7 @@ func TestSlotControlAbandonIdleUnclaimed(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := spawner.Run(context.Background(), "utsusemi-idle", ctrl)
+		_, err := spawner.Run(context.Background(), "utsusemi-idle", ctrl, nil)
 		done <- err
 	}()
 
@@ -149,7 +163,7 @@ func TestSlotControlAbandonIdleIgnoresClaimed(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := spawner.Run(context.Background(), "utsusemi-claimed", ctrl)
+		_, err := spawner.Run(context.Background(), "utsusemi-claimed", ctrl, nil)
 		done <- err
 	}()
 
@@ -189,7 +203,7 @@ func TestSlotControlAbandonDuringClone(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		_, err := spawner.Run(context.Background(), "utsusemi-clone", ctrl)
+		_, err := spawner.Run(context.Background(), "utsusemi-clone", ctrl, nil)
 		done <- err
 	}()
 
@@ -207,5 +221,117 @@ func TestSlotControlAbandonDuringClone(t *testing.T) {
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("clone abandon timed out")
+	}
+}
+
+func TestIdleReadyOnListening(t *testing.T) {
+	readyTimeout = 50 * time.Millisecond
+	readyPollInterval = 5 * time.Millisecond
+	listeningGrace = time.Hour
+	t.Cleanup(func() {
+		readyTimeout = 3 * time.Minute
+		readyPollInterval = 2 * time.Second
+		listeningGrace = 5 * time.Minute
+	})
+
+	gp := &gateProvider{
+		Stub:          *provider.NewStub(2),
+		execStarted:   make(chan struct{}),
+		emitListening: true,
+	}
+	spawner := testSpawner(t, gp)
+	ctrl := NewSlotControl()
+
+	idleCh := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		_, err := spawner.Run(context.Background(), "utsusemi-listen", ctrl, func() { close(idleCh) })
+		done <- err
+	}()
+
+	select {
+	case <-idleCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("onIdleReady not called after Listening")
+	}
+	ctrl.Force()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("spawn did not stop")
+	}
+}
+
+func TestIdleReadyOnListeningGrace(t *testing.T) {
+	readyTimeout = 50 * time.Millisecond
+	readyPollInterval = 5 * time.Millisecond
+	listeningGrace = 40 * time.Millisecond
+	t.Cleanup(func() {
+		readyTimeout = 3 * time.Minute
+		readyPollInterval = 2 * time.Second
+		listeningGrace = 5 * time.Minute
+	})
+
+	gp := &gateProvider{
+		Stub:        *provider.NewStub(2),
+		execStarted: make(chan struct{}),
+	}
+	spawner := testSpawner(t, gp)
+	ctrl := NewSlotControl()
+
+	var calls int
+	var mu sync.Mutex
+	idleCh := make(chan struct{})
+	done := make(chan error, 1)
+	go func() {
+		_, err := spawner.Run(context.Background(), "utsusemi-grace", ctrl, func() {
+			mu.Lock()
+			calls++
+			if calls == 1 {
+				close(idleCh)
+			}
+			mu.Unlock()
+		})
+		done <- err
+	}()
+
+	select {
+	case <-gp.execStarted:
+	case <-time.After(2 * time.Second):
+		t.Fatal("exec did not start")
+	}
+	select {
+	case <-idleCh:
+	case <-time.After(2 * time.Second):
+		t.Fatal("onIdleReady not called after listeningGrace")
+	}
+	ctrl.Force()
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("spawn did not stop")
+	}
+	mu.Lock()
+	n := calls
+	mu.Unlock()
+	if n != 1 {
+		t.Fatalf("onIdleReady calls=%d, want 1", n)
+	}
+}
+
+func TestIdleReadyNotCalledOnEarlyCloneFailure(t *testing.T) {
+	gp := &gateProvider{
+		Stub:     *provider.NewStub(2),
+		cloneErr: errors.New("clone failed"),
+	}
+	spawner := testSpawner(t, gp)
+
+	var calls int
+	_, err := spawner.Run(context.Background(), "utsusemi-fail", nil, func() { calls++ })
+	if err == nil {
+		t.Fatal("expected clone error")
+	}
+	if calls != 0 {
+		t.Fatalf("onIdleReady calls=%d, want 0 (pool releases warming on Run return)", calls)
 	}
 }

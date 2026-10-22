@@ -104,7 +104,8 @@ func TestPoolDrainAbandonsUnclaimedAndRefills(t *testing.T) {
 	}
 	cfg := testPoolConfig(t)
 	cfg.PoolSize = 1
-	cfg.PoolCheckInterval = config.Duration(20 * time.Millisecond)
+	// Long interval: refill must come from post-drain tick, not the check ticker.
+	cfg.PoolCheckInterval = config.Duration(time.Hour)
 	cfg.JobTimeout = config.Duration(5 * time.Second)
 	cfg.SpawnTimeout = config.Duration(5 * time.Second)
 	p := newTestPool(t, cfg, gp, noopRegistrar{})
@@ -139,7 +140,7 @@ func TestPoolDrainAbandonsUnclaimedAndRefills(t *testing.T) {
 		t.Fatalf("state=%s err=%s", st.State, st.Error)
 	}
 
-	// After drain, pool should spawn again.
+	// After drain, pool should spawn again without waiting for pool_check_interval.
 	deadline := time.Now().Add(3 * time.Second)
 	for gp.calls() < 2 && time.Now().Before(deadline) {
 		time.Sleep(20 * time.Millisecond)
