@@ -43,9 +43,11 @@ type Pool struct {
 	logger          *slog.Logger
 	monitor         *notify.Monitor
 	effectivePrefix string // VMNamePrefix + hostID + "-"; scopes reclaim to this host
+	runCtx          context.Context // set for the duration of Run; used by async tick
 
 	mu                    sync.Mutex
 	active                int
+	warming               int // spawns in [clone … idle-ready); at most one
 	failures              int
 	shortExits            int
 	consecutiveReadyFails int
@@ -113,6 +115,7 @@ func NewWithOptions(opts Options) *Pool {
 }
 
 func (p *Pool) Run(ctx context.Context) error {
+	p.runCtx = ctx
 	// Write freeze before publishing agent.json so a new session never pairs with
 	// an old snapshot (status would be pending and must not apply those knobs).
 	session := p.leases.NewAgentSession()
@@ -219,21 +222,41 @@ func (p *Pool) tick(ctx context.Context) {
 		p.mu.Unlock()
 		return
 	}
+	if p.warming > 0 {
+		p.mu.Unlock()
+		return
+	}
 	if p.active >= p.cfg.PoolSize {
 		p.mu.Unlock()
 		return
 	}
 	p.active++
+	p.warming++
 	p.mu.Unlock()
 
 	p.inFlight.Add(1)
 	go func() {
 		defer p.inFlight.Done()
+
+		releaseWarming := sync.OnceFunc(func() {
+			p.mu.Lock()
+			p.warming--
+			p.mu.Unlock()
+		})
+		// Async tick: onIdleReady can run on the tart stdout tee path; must not
+		// block runner I/O on evaluateAlerts / webhook HTTP.
+		onIdleReady := func() {
+			releaseWarming()
+			go p.tick(ctx)
+		}
 		defer func() {
 			p.mu.Lock()
 			p.active--
 			p.mu.Unlock()
+			releaseWarming()
+			// Clear poolDrain before refill tick so drain completion can spawn.
 			p.maybeFinishPoolDrain()
+			go p.tick(ctx)
 		}()
 
 		vmName, err := p.newVMName()
@@ -264,7 +287,7 @@ func (p *Pool) tick(ctx context.Context) {
 			p.mu.Unlock()
 		}()
 
-		result, err := p.spawner.Run(ctx, vmName, ctrl)
+		result, err := p.spawner.Run(ctx, vmName, ctrl, onIdleReady)
 		if result.ReachedReady {
 			p.noteReadyOK()
 		}

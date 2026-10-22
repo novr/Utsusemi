@@ -304,4 +304,8 @@ func (p *Pool) finishPoolDrain(errMsg string) {
 		"forced", forced,
 		"error", st.errMsg,
 	)
+	// Force-timeout finish does not go through the spawn defer; refill here.
+	if ctx := p.runCtx; ctx != nil {
+		go p.tick(ctx)
+	}
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"sync"
 	"time"
 
 	"github.com/novr/utsusemi/internal/config"
@@ -35,7 +36,17 @@ var (
 	teardownRetryWait  = 500 * time.Millisecond
 	teardownAttemptBud = 30 * time.Second
 	deleteRunnerTries  = 2
+	// listeningGrace is how long after job ExecStdin starts before idle-ready
+	// is forced without seeing "Listening for Jobs" (marker drift fallback).
+	listeningGrace = 5 * time.Minute
 )
+
+// SetListeningGraceForTest sets listeningGrace and returns the previous value.
+func SetListeningGraceForTest(d time.Duration) time.Duration {
+	prev := listeningGrace
+	listeningGrace = d
+	return prev
+}
 
 type Options struct {
 	Config    *config.Config
@@ -62,9 +73,19 @@ func (s *Spawner) SetSession(session *lease.AgentSession) {
 	s.session = session
 }
 
-func (s *Spawner) Run(ctx context.Context, vmName string, ctrl *SlotControl) (Result, error) {
+// Run runs one VM lifecycle. onIdleReady is invoked at most once when the
+// runner is idle-ready: Listening marker, claim marker, or listeningGrace
+// after job ExecStdin starts. Early failures do not call it — the pool
+// releases its fill gate when Run returns. SlotControl remains pool→spawn
+// stop signals only.
+func (s *Spawner) Run(ctx context.Context, vmName string, ctrl *SlotControl, onIdleReady func()) (Result, error) {
 	cfg := s.opts.Config
 	log := s.opts.Logger.With("vm", vmName)
+	idleReady := sync.OnceFunc(func() {
+		if onIdleReady != nil {
+			onIdleReady()
+		}
+	})
 	spawnStart := time.Now()
 	metrics := LastSpawn{
 		At:            spawnStart.UTC(),
@@ -181,6 +202,7 @@ func (s *Spawner) Run(ctx context.Context, vmName string, ctrl *SlotControl) (Re
 	defer jobCancel()
 
 	var claim claimScanner
+	claim.onIdleReady = idleReady
 	jobCtx = provider.WithStdoutTap(jobCtx, &claim)
 
 	log.Info("waiting for job", "runner_id", runnerID, "runner_version", cfg.RunnerVersion,
@@ -194,6 +216,13 @@ func (s *Spawner) Run(ctx context.Context, vmName string, ctrl *SlotControl) (Re
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
+
+	// Marker-drift fallback: if bootstrap is still running without Listening /
+	// claim markers after listeningGrace, release the pool fill gate. Slow
+	// installs can hit this; prefer Listening/claim markers when present.
+	graceTimer := time.NewTimer(listeningGrace)
+	defer graceTimer.Stop()
+	graceCh := graceTimer.C
 
 	finishJob := func() Result {
 		_ = claim.Flush()
@@ -231,6 +260,12 @@ func (s *Spawner) Run(ctx context.Context, vmName string, ctrl *SlotControl) (Re
 			if !claim.Claimed() {
 				cancelReason = "pool_drain"
 				jobCancel()
+			}
+		case <-graceCh:
+			graceCh = nil
+			if !claim.Listening() && !claim.Claimed() {
+				log.Warn("idle-ready grace elapsed without Listening or claim marker; releasing fill gate")
+				idleReady()
 			}
 		case err := <-execDone:
 			metrics.JobMs = time.Since(jobPhase).Milliseconds()

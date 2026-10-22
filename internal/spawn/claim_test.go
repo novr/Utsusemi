@@ -32,6 +32,43 @@ func TestClaimScannerIgnoresUnrelated(t *testing.T) {
 	if c.Claimed() {
 		t.Fatal("expected unclaimed")
 	}
+	if !c.Listening() {
+		t.Fatal("expected listening")
+	}
+}
+
+func TestClaimScannerListeningCallbackOnce(t *testing.T) {
+	var n int
+	c := claimScanner{onIdleReady: func() { n++ }}
+	if _, err := c.Write([]byte("… Listening for Jobs\nListening for Jobs\n")); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("onIdleReady calls=%d, want 1", n)
+	}
+	if !c.Listening() {
+		t.Fatal("expected listening")
+	}
+	if c.Claimed() {
+		t.Fatal("Listening must not imply claimed")
+	}
+}
+
+func TestClaimScannerClaimedFiresIdleReady(t *testing.T) {
+	var n int
+	c := claimScanner{onIdleReady: func() { n++ }}
+	if _, err := c.Write([]byte("Running job: precheck\n")); err != nil {
+		t.Fatal(err)
+	}
+	if n != 1 {
+		t.Fatalf("onIdleReady calls=%d, want 1", n)
+	}
+	if !c.Claimed() {
+		t.Fatal("expected claimed")
+	}
+	if c.Listening() {
+		t.Fatal("claim without Listening should not set listening")
+	}
 }
 
 func TestClaimScannerFlushPartialLine(t *testing.T) {
