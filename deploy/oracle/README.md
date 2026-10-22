@@ -77,15 +77,16 @@ instance missing) is safe to re-apply — Terraform only creates what is still a
    Re-run after instance replacement (`user_data` changes recreate the VM and wipe
    `/etc/utsusemi-broker`).
 
-4. On each Mac: `utsusemi configure app --broker "$(terraform output -raw broker_url)"`.
+4. On each Mac: `utsusemi configure app --broker "$(terraform output -raw broker_url)"`
+   (hosted default `https://utsusemi.duckdns.org` already points here).
 5. If the org uses a GitHub IP allow list: enable **IP allow list configuration for installed
    GitHub Apps** (UtsusemiApp lists the broker reserved IPv4), and add each Mac egress `/32`.
-6. After cutover, stop the Cloudflare Worker deployment (`worker/` is legacy once Oracle is live).
 
 ## Operator notes
 
-- `registration.broker_url` must be `https://` with a hostname (e.g. `https://broker.example.com`);
-  bare `https://<IPv4>` is rejected by `utsusemi configure app`.
+- `registration.broker_url` needs `https://` and a DNS hostname Caddy can certify
+  (e.g. `https://broker.example.com`). Bare `https://<IPv4>` is the wrong shape for this stack.
+- `worker/` remains in-tree for alternate deployments; this stack does not require it.
 - Broker listens on loopback only; Caddy is the only public entrypoint.
 - SSH (22) is restricted to `operator_ssh_cidr` in the NSG. When `create_vcn = true`, the subnet uses a
   permissive security list so NSG rules are effective (OCI requires both to allow traffic).
@@ -107,4 +108,4 @@ Until you have one:
 
 Minimal path: register a cheap domain, add `A` → `terraform output -raw reserved_public_ip`, update `broker_fqdn` and re-apply or edit `/etc/caddy/Caddyfile` on the instance.
 
-Without any domain, use the **Workers broker** or a **loopback broker on your Mac** (`utsusemi broker`) instead of this stack.
+Without any domain, use a **loopback broker on your Mac** (`utsusemi broker`) or another HTTPS endpoint you control instead of this stack.
