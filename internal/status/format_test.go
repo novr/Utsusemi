@@ -64,6 +64,29 @@ func TestFormatTextRunning(t *testing.T) {
 	}
 }
 
+func TestFormatTextPoolDrain(t *testing.T) {
+	out := FormatText(Report{
+		Target: "org:my-org",
+		Agent:  AgentInfo{State: AgentRunning, PID: 1},
+		VMs:    VMsInfo{Running: 1, Total: 1, PoolSize: 1},
+		PoolDrain: &PoolDrainInfo{
+			State:    "running",
+			Active:   1,
+			Forced:   true,
+			Deadline: "2026-01-02T03:04:05Z",
+		},
+		Health: HealthInfo{FreeDiskGB: 42.1, Status: "ok"},
+		Credential: credentialview.Info{
+			Mode:    "github_pat",
+			Present: true,
+		},
+	})
+	want := "pool_drain: running active=1 forced deadline=2026-01-02T03:04:05Z"
+	if !strings.Contains(out, want) {
+		t.Fatalf("missing %q:\n%s", want, out)
+	}
+}
+
 func TestFormatTextDrainingVMs(t *testing.T) {
 	out := FormatText(Report{
 		Target:   "org:my-org (group 1)",

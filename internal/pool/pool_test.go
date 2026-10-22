@@ -2,6 +2,7 @@ package pool
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"strings"
 	"sync"
@@ -27,7 +28,9 @@ func (noopRegistrar) DeleteRunner(ctx context.Context, tgt target.Target, runner
 func (noopRegistrar) ListRunners(ctx context.Context, tgt target.Target, prefix string) ([]registrar.Runner, error) {
 	return nil, nil
 }
-func (noopRegistrar) ValidateCredential(ctx context.Context, service, account string) error { return nil }
+func (noopRegistrar) ValidateCredential(ctx context.Context, service, account string) error {
+	return nil
+}
 
 type trackingRegistrar struct {
 	mu      sync.Mutex
@@ -276,7 +279,7 @@ func TestIsUnclaimedJobExit(t *testing.T) {
 
 func TestPoolBackoffOnFailure(t *testing.T) {
 	exec := provider.NewFakeExecutor()
-	exec.FailClone = context.Canceled
+	exec.FailClone = errors.New("clone failed")
 
 	p := newTestPool(t, testPoolConfig(t), provider.NewTartProvider(exec, true, nil), noopRegistrar{})
 

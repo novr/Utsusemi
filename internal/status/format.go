@@ -121,6 +121,19 @@ func FormatText(r Report) string {
 		fmt.Fprintf(&b, " (%s)", strings.Join(r.Draining, ", "))
 	}
 	b.WriteByte('\n')
+	if r.PoolDrain != nil {
+		fmt.Fprintf(&b, "pool_drain: %s active=%d", r.PoolDrain.State, r.PoolDrain.Active)
+		if r.PoolDrain.Forced {
+			b.WriteString(" forced")
+		}
+		if r.PoolDrain.Deadline != "" {
+			fmt.Fprintf(&b, " deadline=%s", r.PoolDrain.Deadline)
+		}
+		if r.PoolDrain.Error != "" {
+			fmt.Fprintf(&b, " error=%s", r.PoolDrain.Error)
+		}
+		b.WriteByte('\n')
+	}
 
 	fmt.Fprintf(&b, "disk: %.1f GB free — %s\n", r.Health.FreeDiskGB, r.Health.Status)
 	b.WriteString(credentialview.StatusLine(r.Credential))

@@ -8,6 +8,7 @@ import (
 
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/credentialview"
+	"github.com/novr/utsusemi/internal/drainctl"
 	"github.com/novr/utsusemi/internal/hostid"
 	"github.com/novr/utsusemi/internal/instancelock"
 	"github.com/novr/utsusemi/internal/keychain"
@@ -50,8 +51,20 @@ type Report struct {
 	Jobs                 []Job               `json:"jobs"`
 	VMs                  VMsInfo             `json:"vms"`
 	Draining             []string            `json:"draining"`
+	PoolDrain            *PoolDrainInfo      `json:"pool_drain,omitempty"`
 	Health               HealthInfo          `json:"health"`
 	Credential           credentialview.Info `json:"credential"`
+}
+
+// PoolDrainInfo is the operator recycle requested by `utsusemi drain`.
+// Distinct from Draining (lease-less running VM names).
+type PoolDrainInfo struct {
+	State     string `json:"state"`
+	RequestID string `json:"request_id,omitempty"`
+	Active    int    `json:"active"`
+	Forced    bool   `json:"forced,omitempty"`
+	Deadline  string `json:"deadline,omitempty"`
+	Error     string `json:"error,omitempty"`
 }
 
 // RuntimeInfo is the agent-frozen config from StateDir/runtime_config.json.
@@ -276,9 +289,36 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 		Jobs:                 emptyJobs(jobs),
 		VMs:                  vmInfo,
 		Draining:             emptyDraining(draining),
+		PoolDrain:            loadPoolDrain(stateDir),
 		Health:               health,
 		Credential:           cred,
 	}, nil
+}
+
+func loadPoolDrain(stateDir string) *PoolDrainInfo {
+	st, ok, err := drainctl.LoadStatus(stateDir)
+	if err != nil || !ok {
+		return nil
+	}
+	switch {
+	case st.State == drainctl.StateRunning:
+		// in progress
+	case drainctl.IsTerminal(st) && !st.UpdatedAt.IsZero() && time.Since(st.UpdatedAt) < 2*time.Minute:
+		// recent result for operators who just ran drain
+	default:
+		return nil
+	}
+	info := &PoolDrainInfo{
+		State:     st.State,
+		RequestID: st.RequestID,
+		Active:    st.Active,
+		Forced:    st.Forced,
+		Error:     st.Error,
+	}
+	if !st.Deadline.IsZero() {
+		info.Deadline = st.Deadline.UTC().Format(time.RFC3339)
+	}
+	return info
 }
 
 func loadRuntimeInfo(stateDir string, agent AgentInfo, session *lease.AgentSession) *RuntimeInfo {

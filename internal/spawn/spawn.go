@@ -62,7 +62,7 @@ func (s *Spawner) SetSession(session *lease.AgentSession) {
 	s.session = session
 }
 
-func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
+func (s *Spawner) Run(ctx context.Context, vmName string, ctrl *SlotControl) (Result, error) {
 	cfg := s.opts.Config
 	log := s.opts.Logger.With("vm", vmName)
 	spawnStart := time.Now()
@@ -85,12 +85,28 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 		return Result{}, fmt.Errorf("insufficient disk: %.1fGB free, need %dGB", freeGB, cfg.MinFreeDiskGB)
 	}
 
-	spawnCtx, cancel := context.WithTimeout(ctx, cfg.SpawnTimeout.Duration())
-	defer cancel()
+	spawnCtx, spawnCancel := context.WithTimeout(ctx, cfg.SpawnTimeout.Duration())
+	defer spawnCancel()
+
+	// pre-job: force or abandonIdle cancels clone/start/register without waiting for claim.
+	preJobCtx, preJobCancel := context.WithCancel(spawnCtx)
+	defer preJobCancel()
+	preJobDone := make(chan struct{})
+	defer close(preJobDone)
+	go func() {
+		select {
+		case <-ctrl.force():
+			preJobCancel()
+		case <-ctrl.abandon():
+			preJobCancel()
+		case <-preJobDone:
+		case <-preJobCtx.Done():
+		}
+	}()
 
 	phase := time.Now()
 	log.Info("cloning base image", "image", cfg.BaseImage)
-	if err := s.opts.Provider.Clone(spawnCtx, cfg.BaseImage, vmName); err != nil {
+	if err := s.opts.Provider.Clone(preJobCtx, cfg.BaseImage, vmName); err != nil {
 		return Result{}, fmt.Errorf("clone: %w", err)
 	}
 	metrics.CloneMs = time.Since(phase).Milliseconds()
@@ -116,10 +132,10 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 
 	phase = time.Now()
 	log.Info("starting vm")
-	if err := s.opts.Provider.Start(spawnCtx, vmName); err != nil {
+	if err := s.opts.Provider.Start(preJobCtx, vmName); err != nil {
 		return Result{}, fmt.Errorf("start: %w", err)
 	}
-	if err := waitUntilReady(spawnCtx, log, s.opts.Provider, vmName); err != nil {
+	if err := waitUntilReady(preJobCtx, log, s.opts.Provider, vmName); err != nil {
 		if errors.Is(err, ErrBootNotRunningBudget) {
 			log.Warn("boot failed", "reason", "boot_not_running_budget", "error", err)
 			if recErr := RecordBootNotRunning(cfg.StateDir, vmName); recErr != nil {
@@ -134,7 +150,7 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 
 	phase = time.Now()
 	log.Info("registering runner with GitHub")
-	jit, err := s.opts.Registrar.CreateJIT(spawnCtx, s.opts.Target, cfg.Labels, vmName)
+	jit, err := s.opts.Registrar.CreateJIT(preJobCtx, s.opts.Target, cfg.Labels, vmName)
 	if err != nil {
 		return Result{ReachedReady: reachedReady}, fmt.Errorf("create jit: %w", err)
 	}
@@ -159,6 +175,8 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 		}
 	}
 
+	// Parent ctx cancel (SIGINT/TERM) still kills claimed jobs. poolDrain uses
+	// SlotControl: abandonIdle only if unclaimed; Force always.
 	jobCtx, jobCancel := context.WithTimeout(ctx, cfg.JobTimeout.Duration())
 	defer jobCancel()
 
@@ -182,15 +200,38 @@ func (s *Spawner) Run(ctx context.Context, vmName string) (Result, error) {
 		return resultFromMetrics(metrics, claim.Claimed())
 	}
 
+	abandonCh := ctrl.abandon()
+	forceCh := ctrl.force()
+	cancelReason := ""
+
 	for {
 		select {
 		case <-jobCtx.Done():
 			if errors.Is(jobCtx.Err(), context.Canceled) {
-				log.Info("abandoning idle runner on shutdown")
+				switch cancelReason {
+				case "force":
+					log.Info("force-stopped runner")
+				case "pool_drain":
+					log.Info("abandoning idle runner on pool drain")
+				default:
+					log.Info("abandoning idle runner on shutdown")
+				}
 			} else {
 				log.Warn("job timeout reached")
 			}
 			return Result{ReachedReady: reachedReady}, jobCtx.Err()
+		case <-forceCh:
+			forceCh = nil
+			cancelReason = "force"
+			log.Info("force-stopping runner")
+			jobCancel()
+		case <-abandonCh:
+			abandonCh = nil
+			_ = claim.Flush()
+			if !claim.Claimed() {
+				cancelReason = "pool_drain"
+				jobCancel()
+			}
 		case err := <-execDone:
 			metrics.JobMs = time.Since(jobPhase).Milliseconds()
 			log.Info("spawn phase complete", "phase", "job", "duration_ms", metrics.JobMs,
