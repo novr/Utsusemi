@@ -49,13 +49,28 @@ func TestCheckRunnerVersionMismatch(t *testing.T) {
 func TestCheckRunnerVersionOlderThanLatest(t *testing.T) {
 	release := releaseClient(t, "2.337.0")
 	checks := recordChecks(func(add checkFn) {
-		checkRunnerVersion(context.Background(), &config.Config{RunnerVersion: "2.300.0", StateDir: t.TempDir()}, release, add)
+		checkRunnerVersion(context.Background(), &config.Config{
+			RunnerVersion: "2.300.0",
+			StateDir:      t.TempDir(),
+			Registration:  config.Registration{Mode: config.ModeHostedApp},
+		}, release, add)
 	})
 	if len(checks) != 1 || checks[0].Status != StatusWarn || checks[0].Name != "runner_version" {
 		t.Fatalf("checks=%+v", checks)
 	}
-	if !strings.Contains(checks[0].Message, "--runner-version latest") {
-		t.Fatalf("warn should suggest re-pin; msg=%q", checks[0].Message)
+	if !strings.Contains(checks[0].Message, "utsusemi configure app --runner-version latest") {
+		t.Fatalf("warn should suggest copy-pasteable re-pin; msg=%q", checks[0].Message)
+	}
+
+	pat := recordChecks(func(add checkFn) {
+		checkRunnerVersion(context.Background(), &config.Config{
+			RunnerVersion: "2.300.0",
+			StateDir:      t.TempDir(),
+			Registration:  config.Registration{Mode: config.ModeGitHubPAT},
+		}, release, add)
+	})
+	if len(pat) != 1 || !strings.Contains(pat[0].Message, "utsusemi configure token --runner-version latest") {
+		t.Fatalf("PAT warn should suggest configure token; checks=%+v", pat)
 	}
 }
 
