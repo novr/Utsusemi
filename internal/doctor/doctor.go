@@ -194,7 +194,7 @@ func checkRunnerVersion(ctx context.Context, cfg *config.Config, release *runner
 		release = &runnerrelease.Client{HTTPClient: &http.Client{Timeout: 15 * time.Second}}
 	}
 	if latest, err := release.Latest(ctx); err == nil && runnerrelease.Older(snap.Configured, latest) {
-		add("runner_version", StatusWarn, msg+fmt.Sprintf("; latest GitHub release is %s — bump runner_version (host cache installs it; matching the base image is optional)", latest))
+		add("runner_version", StatusWarn, msg+fmt.Sprintf("; latest GitHub release is %s — run `%s` then restart the agent (host cache installs it; matching the base image is optional)", latest, configureRunnerVersionLatestCmd(cfg)))
 		return
 	}
 	if snap.Mismatch() {
@@ -250,6 +250,13 @@ func checkMultiHost(ctx context.Context, in Input, host hostid.Info, add func(st
 	default:
 		add("multi_host", StatusOK, fmt.Sprintf("%d host identifier(s) and %d runner(s) under prefix", len(ids), len(runners)))
 	}
+}
+
+func configureRunnerVersionLatestCmd(cfg *config.Config) string {
+	if cfg != nil && cfg.Registration.Mode == config.ModeGitHubPAT {
+		return "utsusemi configure token --runner-version latest"
+	}
+	return "utsusemi configure app --runner-version latest"
 }
 
 func orDash(s string) string {

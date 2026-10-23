@@ -65,7 +65,7 @@ Re-running `configure` merges **only changed flags** so hand-edited keys (`state
 
 If `configure edit` changes `org` / `runner_group_id`, the next `validate` / `run` / `list` re-exchanges the host JWT when the embedded target no longer matches. Use `configure app --refresh` to update the credential immediately.
 
-`--runner-version latest` pins to the current [actions/runner](https://github.com/actions/runner/releases) release so JIT registration is not rejected when GitHub raises the minimum.
+`--runner-version` defaults to `latest`: configure resolves the current [actions/runner](https://github.com/actions/runner/releases) release and pins a concrete version into `config.yaml` (config itself must not contain `latest`). Offline or API failures: pass an explicit `--runner-version x.y.z`. Re-pin later with `--runner-version latest`.
 
 Examples: [examples/config.template.yaml](examples/config.template.yaml), [examples/config.pat.yaml](examples/config.pat.yaml), [examples/config.local-broker.yaml](examples/config.local-broker.yaml).
 
@@ -214,7 +214,7 @@ mounts:
 
 On agent start, Utsusemi caches `runner_version` under `{state_dir}/runner-cache/` and mounts it read-only (`utsusemi-runner-cache`) so each spawn does not download from GitHub. A matching runner already in the image skips install. Restart the agent after changing `runner_version` so the cache refreshes.
 
-Keep `runner_version` at GitHub’s current [Actions runner](https://github.com/actions/runner/releases) release. A stale runner can register then exit without claiming a job (`utsusemi doctor` **warns** when older than latest). Repeated `runner finished quickly without claiming a job` means that unclaimed-exit window — short successful jobs are not treated as this failure. `base_image:…:latest` refreshes the Tart image on agent start only; bump `runner_version` separately (host cache installs it even when the image ships an older runner).
+Keep `runner_version` at GitHub’s current [Actions runner](https://github.com/actions/runner/releases) release (re-pin with `utsusemi configure app --runner-version latest`, or `configure token` for PAT). A stale runner can register then exit without claiming a job (`utsusemi doctor` **warns** when older than latest). Repeated `runner finished quickly without claiming a job` means that unclaimed-exit window — short successful jobs are not treated as this failure. `base_image:…:latest` refreshes the Tart image on agent start only; bump `runner_version` separately (host cache installs it even when the image ships an older runner).
 
 > **Note:** Optional `env:` in `config.yaml` sets literal variables on the guest bootstrap / `run.sh` process (e.g. `http_proxy`). Keys must be `[A-Za-z_][A-Za-z0-9_]*`. No `$VAR` expansion; `RUNNER_*` keys are reserved. Do not put secrets in `config.yaml` — values appear on the guest process argv and are visible to every job on that agent.
 >

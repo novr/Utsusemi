@@ -41,6 +41,8 @@ type configureMergeInput struct {
 	Target     configureTargetInput
 	App        configureAppInput
 	Opts       sharedConfigOptions
+	// LatestRunnerVersion, when set, replaces the GitHub Releases lookup.
+	LatestRunnerVersion func(context.Context) (string, error)
 }
 
 type configureMergeResult struct {
@@ -53,10 +55,6 @@ type configureMergeResult struct {
 }
 
 func mergeConfigureConfig(cmd *cobra.Command, in configureMergeInput) (configureMergeResult, error) {
-	if err := resolveRunnerVersionFlag(cmd.Context(), cmd, &in.Opts); err != nil {
-		return configureMergeResult{}, err
-	}
-
 	existing, existingCfg, err := loadExistingConfig(in.OutputPath)
 	if err != nil {
 		return configureMergeResult{}, err
@@ -72,6 +70,14 @@ func mergeConfigureConfig(cmd *cobra.Command, in configureMergeInput) (configure
 		cfg = &config.Config{
 			Registration: config.Registration{Mode: string(in.Mode)},
 		}
+	}
+
+	latest := in.LatestRunnerVersion
+	if latest == nil {
+		latest = fetchLatestRunnerVersion
+	}
+	if err := resolveRunnerVersionFlag(cmd.Context(), cmd, &in.Opts, existing, latest); err != nil {
+		return configureMergeResult{}, err
 	}
 
 	orgChanged := cmd.Flags().Changed("org")
@@ -260,16 +266,33 @@ func validateSharedConfigOptionValues(opts sharedConfigOptions) error {
 	return nil
 }
 
-func resolveRunnerVersionFlag(ctx context.Context, cmd *cobra.Command, opts *sharedConfigOptions) error {
-	if !cmd.Flags().Changed("runner-version") {
+func fetchLatestRunnerVersion(ctx context.Context) (string, error) {
+	return runnerrelease.Latest(ctx, &http.Client{Timeout: 15 * time.Second})
+}
+
+func resolveRunnerVersionFlag(
+	ctx context.Context,
+	cmd *cobra.Command,
+	opts *sharedConfigOptions,
+	existing bool,
+	latest func(context.Context) (string, error),
+) error {
+	if !strings.EqualFold(strings.TrimSpace(opts.runnerVer), "latest") {
 		return nil
 	}
-	if strings.TrimSpace(opts.runnerVer) != "latest" {
+	if existing && !cmd.Flags().Changed("runner-version") {
 		return nil
 	}
-	version, err := runnerrelease.Latest(ctx, &http.Client{Timeout: 15 * time.Second})
+	if latest == nil {
+		latest = fetchLatestRunnerVersion
+	}
+	version, err := latest(ctx)
 	if err != nil {
-		return fmt.Errorf("resolve --runner-version latest: %w", err)
+		return fmt.Errorf("resolve --runner-version latest: %w; pass an explicit --runner-version x.y.z", err)
+	}
+	version = strings.TrimSpace(version)
+	if version == "" || strings.EqualFold(version, "latest") {
+		return fmt.Errorf("resolve --runner-version latest: empty or invalid version; pass an explicit --runner-version x.y.z")
 	}
 	opts.runnerVer = version
 	return nil

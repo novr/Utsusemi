@@ -47,6 +47,9 @@ func Validate(cfg *Config, p provider.VMProvider) (target.Target, error) {
 	if strings.TrimSpace(cfg.RunnerVersion) == "" {
 		return target.Target{}, fmt.Errorf("runner_version is required")
 	}
+	if strings.EqualFold(strings.TrimSpace(cfg.RunnerVersion), "latest") {
+		return target.Target{}, fmt.Errorf("runner_version must be a concrete version (configure --runner-version latest resolves and pins)")
+	}
 	if cfg.PoolSize <= 0 {
 		return target.Target{}, fmt.Errorf("pool_size must be positive")
 	}
