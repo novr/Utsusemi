@@ -41,6 +41,18 @@ func (o sharedConfigOptions) apply(cfg *config.Config) {
 	cfg.MinFreeDiskGB = o.minFreeDiskGB
 }
 
+var sharedConfigFlagNames = []string{
+	"labels",
+	"base-image",
+	"runner-version",
+	"pool-size",
+	"mounts",
+	"softnet",
+	"reclaim-policy",
+	"reclaim-grace",
+	"min-free-disk-gb",
+}
+
 func addSharedConfigFlags(cmd *cobra.Command, opts *sharedConfigOptions) {
 	cmd.Flags().StringVar(&opts.labels, "labels", defaultLabels, "comma-separated runner labels")
 	cmd.Flags().StringVar(&opts.baseImage, "base-image", defaultBaseImage, "base image used to create runner VMs")
@@ -51,6 +63,15 @@ func addSharedConfigFlags(cmd *cobra.Command, opts *sharedConfigOptions) {
 	cmd.Flags().StringVar(&opts.reclaimPolicy, "reclaim-policy", config.DefaultReclaimPolicy, "reclaim policy: soft, grace, or hard")
 	cmd.Flags().DurationVar(&opts.reclaimGrace, "reclaim-grace", config.DefaultReclaimGrace, "grace window when reclaim-policy is grace")
 	cmd.Flags().IntVar(&opts.minFreeDiskGB, "min-free-disk-gb", config.DefaultMinFreeDiskGB, "pause spawning when free disk is below this many GB")
+}
+
+func sharedConfigFlagsChanged(cmd *cobra.Command) bool {
+	for _, name := range sharedConfigFlagNames {
+		if cmd.Flags().Changed(name) {
+			return true
+		}
+	}
+	return false
 }
 
 func splitLabels(value string) []string {

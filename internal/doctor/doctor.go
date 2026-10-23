@@ -178,7 +178,7 @@ func checkMounts(cfg *config.Config, add func(string, Status, string)) {
 func checkRunnerVersion(ctx context.Context, cfg *config.Config, release *runnerrelease.Client, add func(string, Status, string)) {
 	snap := spawn.LoadRunnerVersionSnapshot(cfg.RunnerVersion, cfg.StateDir)
 	if snap.Configured == "" {
-		add("runner_version", StatusFail, "runner_version is empty")
+		add("runner_version", StatusFail, "runner_version is empty — run `"+pinRunnerVersionLatestCmd+"` then restart the agent")
 		return
 	}
 	msg := "configured " + snap.Configured
@@ -194,7 +194,7 @@ func checkRunnerVersion(ctx context.Context, cfg *config.Config, release *runner
 		release = &runnerrelease.Client{HTTPClient: &http.Client{Timeout: 15 * time.Second}}
 	}
 	if latest, err := release.Latest(ctx); err == nil && runnerrelease.Older(snap.Configured, latest) {
-		add("runner_version", StatusWarn, msg+fmt.Sprintf("; latest GitHub release is %s — run `%s` then restart the agent (host cache installs it; matching the base image is optional)", latest, configureRunnerVersionLatestCmd(cfg)))
+		add("runner_version", StatusWarn, msg+fmt.Sprintf("; latest GitHub release is %s — run `%s` then restart the agent (host cache installs it; matching the base image is optional)", latest, pinRunnerVersionLatestCmd))
 		return
 	}
 	if snap.Mismatch() {
@@ -252,12 +252,7 @@ func checkMultiHost(ctx context.Context, in Input, host hostid.Info, add func(st
 	}
 }
 
-func configureRunnerVersionLatestCmd(cfg *config.Config) string {
-	if cfg != nil && cfg.Registration.Mode == config.ModeGitHubPAT {
-		return "utsusemi configure token --runner-version latest"
-	}
-	return "utsusemi configure app --runner-version latest"
-}
+const pinRunnerVersionLatestCmd = "utsusemi configure edit --runner-version latest"
 
 func orDash(s string) string {
 	if s == "" {
