@@ -14,7 +14,7 @@ pool_size: 1
 # mounts:
 #   - ~/utsusemi-cache/swiftpm
 #   - ~/utsusemi-toolchains:ro
-# env: literal for bootstrap / run.sh; inherited by job step shells (see README)
+# env: literal guest env; host job steps inherit process env (see README)
 # env:
-#   HTTP_PROXY: http://proxy.example:8080
+#   http_proxy: http://proxy.example:8080
 

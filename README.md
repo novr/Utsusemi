@@ -249,9 +249,11 @@ utsusemi doctor
 
 > **Warning:** do not assume the runner version bundled in your base image is acceptable to GitHub. GitHub periodically deprecates old runner versions; a JIT runner that is too old will register and then exit after ~28 s **without claiming a job**, causing the pool to respawn with growing backoffs until the agent stops. Always install a current runner from [github.com/actions/runner/releases](https://github.com/actions/runner/releases) and set `runner_version` in `config.yaml` to match. Repeated `runner finished quickly without claiming a job` warnings mean the runner left in that window **with no job assignment in its output** — short successful jobs (e.g. a quick `precheck`) are not treated as this failure.
 
-> **Note:** Optional `env:` in `config.yaml` sets literal variables on the guest bootstrap / `run.sh` process (e.g. `HTTP_PROXY`). Keys must be `[A-Za-z_][A-Za-z0-9_]*`. No `$VAR` expansion; `RUNNER_*` keys are reserved. Do not put secrets in `config.yaml`. Values appear on the guest process argv.
+> **Note:** Optional `env:` in `config.yaml` sets literal variables on the guest bootstrap / `run.sh` process (e.g. `http_proxy`). Keys must be `[A-Za-z_][A-Za-z0-9_]*`. No `$VAR` expansion; `RUNNER_*` keys are reserved. Do not put secrets in `config.yaml` — values appear on the guest process argv and are visible to every job on that agent.
 >
-> The Actions runner inherits that process environment into job step shells (`printenv` / `$HTTP_PROXY`). It does **not** populate the workflow `${{ env }}` context — use workflow `env:` when a value must appear there, or for app/SDK paths:
+> The Actions runner inherits that process environment into **host** job step processes (`printenv` / `$http_proxy`). It does **not** add those keys to the workflow `env` context (`${{ env.NAME }}`), and job containers do not receive arbitrary host env automatically.
+>
+> Keep app/SDK paths and repo-portable settings in workflow `env:` (even if a process `printenv` would also show a `config.env` value):
 > ```yaml
 > jobs:
 >   build:
@@ -259,7 +261,7 @@ utsusemi doctor
 >       ANDROID_HOME: /opt/homebrew/share/android-commandlinetools
 > ```
 >
-> The runner also loads `{runner}/.env` when `Runner.Listener` starts (including via `run.sh --jitconfig`). Prefer `config.env` so settings stay with the agent rather than baked into the VM image.
+> `{runner}/.env` is also loaded when `Runner.Listener` starts (including `run.sh --jitconfig`). Prefer `config.env` so host-wide settings are reapplied every spawn from the agent config instead of baking them into the VM image.
 
 ## Multi-host setup
 
