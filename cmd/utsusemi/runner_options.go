@@ -44,7 +44,7 @@ func (o sharedConfigOptions) apply(cfg *config.Config) {
 func addSharedConfigFlags(cmd *cobra.Command, opts *sharedConfigOptions) {
 	cmd.Flags().StringVar(&opts.labels, "labels", defaultLabels, "comma-separated runner labels")
 	cmd.Flags().StringVar(&opts.baseImage, "base-image", defaultBaseImage, "base image used to create runner VMs")
-	cmd.Flags().StringVar(&opts.runnerVer, "runner-version", defaultRunnerVersion, "actions runner version (default latest resolves from GitHub at configure time and pins into config)")
+	cmd.Flags().StringVar(&opts.runnerVer, "runner-version", defaultRunnerVersion, "actions runner version, or latest to resolve and pin at configure time")
 	cmd.Flags().IntVar(&opts.poolSize, "pool-size", defaultPoolSize, "pool size")
 	cmd.Flags().StringArrayVar(&opts.mounts, "mounts", nil, "host directory share for Tart --dir (repeatable; --mounts= clears)")
 	cmd.Flags().BoolVar(&opts.softnet, "softnet", false, "use Softnet networking (disable with --softnet=false)")

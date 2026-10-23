@@ -41,7 +41,7 @@ type configureMergeInput struct {
 	Target     configureTargetInput
 	App        configureAppInput
 	Opts       sharedConfigOptions
-	// LatestRunnerVersion overrides GitHub latest lookup (tests).
+	// LatestRunnerVersion, when set, replaces the GitHub Releases lookup.
 	LatestRunnerVersion func(context.Context) (string, error)
 }
 
@@ -60,14 +60,6 @@ func mergeConfigureConfig(cmd *cobra.Command, in configureMergeInput) (configure
 		return configureMergeResult{}, err
 	}
 
-	latest := in.LatestRunnerVersion
-	if latest == nil {
-		latest = fetchLatestRunnerVersion
-	}
-	if err := resolveRunnerVersionFlag(cmd.Context(), cmd, &in.Opts, existing, latest); err != nil {
-		return configureMergeResult{}, err
-	}
-
 	var cfg *config.Config
 	if existing {
 		cfg = existingCfg
@@ -78,6 +70,14 @@ func mergeConfigureConfig(cmd *cobra.Command, in configureMergeInput) (configure
 		cfg = &config.Config{
 			Registration: config.Registration{Mode: string(in.Mode)},
 		}
+	}
+
+	latest := in.LatestRunnerVersion
+	if latest == nil {
+		latest = fetchLatestRunnerVersion
+	}
+	if err := resolveRunnerVersionFlag(cmd.Context(), cmd, &in.Opts, existing, latest); err != nil {
+		return configureMergeResult{}, err
 	}
 
 	orgChanged := cmd.Flags().Changed("org")
@@ -289,6 +289,10 @@ func resolveRunnerVersionFlag(
 	version, err := latest(ctx)
 	if err != nil {
 		return fmt.Errorf("resolve --runner-version latest: %w; pass an explicit --runner-version x.y.z", err)
+	}
+	version = strings.TrimSpace(version)
+	if version == "" || strings.EqualFold(version, "latest") {
+		return fmt.Errorf("resolve --runner-version latest: empty or invalid version; pass an explicit --runner-version x.y.z")
 	}
 	opts.runnerVer = version
 	return nil

@@ -577,7 +577,7 @@ func TestMergeConfigureConfigNewResolvesLatestDefault(t *testing.T) {
 	}
 }
 
-func TestMergeConfigureConfigExistingSkipsLatestUnlessFlag(t *testing.T) {
+func TestMergeConfigureConfigExistingSkipsLatestDefault(t *testing.T) {
 	dir := t.TempDir()
 	path := filepath.Join(dir, "config.yaml")
 	existing := &config.Config{
@@ -623,19 +623,40 @@ func TestMergeConfigureConfigExistingSkipsLatestUnlessFlag(t *testing.T) {
 	if merge.Config.RunnerVersion != "2.336.0" {
 		t.Fatalf("RunnerVersion=%q", merge.Config.RunnerVersion)
 	}
+}
 
-	cmdPin := &cobra.Command{}
-	optsPin := sharedConfigOptions{}
-	addSharedConfigFlags(cmdPin, &optsPin)
-	if err := cmdPin.ParseFlags([]string{"--runner-version", "latest"}); err != nil {
+func TestMergeConfigureConfigExistingRepinsLatestFlag(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	existing := &config.Config{
+		Target: config.TargetYAML("my-org", "", 1),
+		Registration: config.Registration{
+			Mode:      config.ModeHostedApp,
+			BrokerURL: config.DefaultHostedAppBrokerURL,
+		},
+		Labels:        []string{"self-hosted"},
+		Provider:      "tart",
+		BaseImage:     "ghcr.io/example/old:latest",
+		RunnerVersion: "2.336.0",
+		PoolSize:      1,
+	}
+	if err := writeConfig(path, existing); err != nil {
 		t.Fatal(err)
 	}
-	mergePin, err := mergeConfigureConfig(cmdPin, configureMergeInput{
+
+	cmd := &cobra.Command{}
+	opts := sharedConfigOptions{}
+	addSharedConfigFlags(cmd, &opts)
+	if err := cmd.ParseFlags([]string{"--runner-version", "latest"}); err != nil {
+		t.Fatal(err)
+	}
+	var calls int
+	merge, err := mergeConfigureConfig(cmd, configureMergeInput{
 		Mode:       configureModeApp,
 		OutputPath: path,
 		Target:     configureTargetInput{Org: "my-org", RunnerGroup: 1},
 		App:        configureAppInput{BrokerURL: config.DefaultHostedAppBrokerURL},
-		Opts:       optsPin,
+		Opts:       opts,
 		LatestRunnerVersion: func(context.Context) (string, error) {
 			calls++
 			return "2.400.0", nil
@@ -647,8 +668,80 @@ func TestMergeConfigureConfigExistingSkipsLatestUnlessFlag(t *testing.T) {
 	if calls != 1 {
 		t.Fatalf("latest calls=%d", calls)
 	}
-	if mergePin.Config.RunnerVersion != "2.400.0" {
-		t.Fatalf("RunnerVersion=%q", mergePin.Config.RunnerVersion)
+	if merge.Config.RunnerVersion != "2.400.0" {
+		t.Fatalf("RunnerVersion=%q", merge.Config.RunnerVersion)
+	}
+}
+
+func TestMergeConfigureConfigModeMismatchSkipsLatest(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+	existing := &config.Config{
+		Target: config.TargetYAML("my-org", "", 1),
+		Registration: config.Registration{
+			Mode:      config.ModeHostedApp,
+			BrokerURL: config.DefaultHostedAppBrokerURL,
+		},
+		Labels:        []string{"self-hosted"},
+		Provider:      "tart",
+		BaseImage:     "ghcr.io/example/old:latest",
+		RunnerVersion: "2.336.0",
+		PoolSize:      1,
+	}
+	if err := writeConfig(path, existing); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := &cobra.Command{}
+	opts := sharedConfigOptions{}
+	addSharedConfigFlags(cmd, &opts)
+	if err := cmd.ParseFlags([]string{"--runner-version", "latest"}); err != nil {
+		t.Fatal(err)
+	}
+	var calls int
+	_, err := mergeConfigureConfig(cmd, configureMergeInput{
+		Mode:       configureModeToken,
+		OutputPath: path,
+		Target:     configureTargetInput{Org: "my-org", RunnerGroup: 1},
+		Opts:       opts,
+		LatestRunnerVersion: func(context.Context) (string, error) {
+			calls++
+			return "2.400.0", nil
+		},
+	})
+	if err == nil {
+		t.Fatal("expected mode change error")
+	}
+	if calls != 0 {
+		t.Fatalf("latest calls=%d want 0 before mode check", calls)
+	}
+}
+
+func TestMergeConfigureConfigLatestEmptyVersion(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.yaml")
+
+	cmd := &cobra.Command{}
+	opts := sharedConfigOptions{}
+	addSharedConfigFlags(cmd, &opts)
+	if err := cmd.ParseFlags(nil); err != nil {
+		t.Fatal(err)
+	}
+	_, err := mergeConfigureConfig(cmd, configureMergeInput{
+		Mode:       configureModeApp,
+		OutputPath: path,
+		Target:     configureTargetInput{Org: "my-org", RunnerGroup: 1},
+		App:        configureAppInput{BrokerURL: config.DefaultHostedAppBrokerURL},
+		Opts:       opts,
+		LatestRunnerVersion: func(context.Context) (string, error) {
+			return "  ", nil
+		},
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if !strings.Contains(err.Error(), "empty or invalid") {
+		t.Fatalf("got %v", err)
 	}
 }
 
