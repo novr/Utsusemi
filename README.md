@@ -65,7 +65,7 @@ Re-running `configure` merges **only changed flags** so hand-edited keys (`state
 
 If `configure edit` changes `org` / `runner_group_id`, the next `validate` / `run` / `list` re-exchanges the host JWT when the embedded target no longer matches. Use `configure app --refresh` to update the credential immediately.
 
-`--runner-version latest` pins to the current [actions/runner](https://github.com/actions/runner/releases) release so JIT registration is not rejected when GitHub raises the minimum.
+`--runner-version` defaults to `latest`: configure resolves the current [actions/runner](https://github.com/actions/runner/releases) release and pins a concrete version into `config.yaml` (config itself must not contain `latest`). Offline or API failures: pass an explicit `--runner-version x.y.z`. Re-pin later with `--runner-version latest`.
 
 Examples: [examples/config.template.yaml](examples/config.template.yaml), [examples/config.pat.yaml](examples/config.pat.yaml), [examples/config.local-broker.yaml](examples/config.local-broker.yaml).
 

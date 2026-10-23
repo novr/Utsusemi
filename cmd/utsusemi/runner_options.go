@@ -12,7 +12,7 @@ import (
 const (
 	defaultLabels        = "self-hosted,macOS,tart,arm64"
 	defaultBaseImage     = "ghcr.io/cirruslabs/macos-sequoia-base:latest"
-	defaultRunnerVersion = "2.336.0"
+	defaultRunnerVersion = "latest"
 	defaultPoolSize      = 1
 )
 
@@ -44,7 +44,7 @@ func (o sharedConfigOptions) apply(cfg *config.Config) {
 func addSharedConfigFlags(cmd *cobra.Command, opts *sharedConfigOptions) {
 	cmd.Flags().StringVar(&opts.labels, "labels", defaultLabels, "comma-separated runner labels")
 	cmd.Flags().StringVar(&opts.baseImage, "base-image", defaultBaseImage, "base image used to create runner VMs")
-	cmd.Flags().StringVar(&opts.runnerVer, "runner-version", defaultRunnerVersion, "actions runner version (use latest to resolve from GitHub)")
+	cmd.Flags().StringVar(&opts.runnerVer, "runner-version", defaultRunnerVersion, "actions runner version (default latest resolves from GitHub at configure time and pins into config)")
 	cmd.Flags().IntVar(&opts.poolSize, "pool-size", defaultPoolSize, "pool size")
 	cmd.Flags().StringArrayVar(&opts.mounts, "mounts", nil, "host directory share for Tart --dir (repeatable; --mounts= clears)")
 	cmd.Flags().BoolVar(&opts.softnet, "softnet", false, "use Softnet networking (disable with --softnet=false)")

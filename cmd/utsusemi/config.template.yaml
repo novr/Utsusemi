@@ -10,6 +10,7 @@ registration:
   # broker_url: https://utsusemi.duckdns.org
 provider: tart
 base_image: ghcr.io/cirruslabs/macos-sequoia-base:latest
+# Concrete pin only (not "latest"). New setups: configure app/token defaults to resolving latest.
 runner_version: "2.336.0"
 pool_size: 1
 # reclaim_policy: grace
