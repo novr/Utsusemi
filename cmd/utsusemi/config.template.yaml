@@ -17,9 +17,9 @@ pool_size: 1
 # softnet: true    # brew install cirruslabs/cli/softnet + root
 # mounts:
 #   - ~/utsusemi-cache/swiftpm
-# Literal env for bootstrap + run.sh only (not job steps; no $VAR expansion).
+# Literal guest env (host job steps inherit process env; not workflow env context; no $VAR expansion).
 # Keys: [A-Za-z_][A-Za-z0-9_]*. Do not put secrets here. RUNNER_* reserved.
 # env:
-#   HTTP_PROXY: http://proxy.example:8080
-#   HTTPS_PROXY: http://proxy.example:8080
-#   NO_PROXY: localhost,127.0.0.1
+#   http_proxy: http://proxy.example:8080
+#   https_proxy: http://proxy.example:8080
+#   no_proxy: localhost,127.0.0.1

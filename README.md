@@ -216,16 +216,19 @@ On agent start, Utsusemi caches `runner_version` under `{state_dir}/runner-cache
 
 Keep `runner_version` at GitHub’s current [Actions runner](https://github.com/actions/runner/releases) release. A stale runner can register then exit without claiming a job (`utsusemi doctor` **warns** when older than latest). Repeated `runner finished quickly without claiming a job` means that unclaimed-exit window — short successful jobs are not treated as this failure. `base_image:…:latest` refreshes the Tart image on agent start only; bump `runner_version` separately (host cache installs it even when the image ships an older runner).
 
-> **Note:** The runner's `.env` file is consumed by the service wrapper (`svc.sh`), not by `run.sh --jitconfig`. Utsusemi invokes `run.sh` directly, so `.env` is never read.
+> **Note:** Optional `env:` in `config.yaml` sets literal variables on the guest bootstrap / `run.sh` process (e.g. `http_proxy`). Keys must be `[A-Za-z_][A-Za-z0-9_]*`. No `$VAR` expansion; `RUNNER_*` keys are reserved. Do not put secrets in `config.yaml` — values appear on the guest process argv and are visible to every job on that agent.
 >
-> - **bootstrap / `run.sh` (guest process):** set literal values under `env:` in `config.yaml` (e.g. `HTTP_PROXY`). Keys must be `[A-Za-z_][A-Za-z0-9_]*`. No `$VAR` expansion; `RUNNER_*` keys are reserved. Do not put secrets in `config.yaml`. Values appear on the guest process argv.
-> - **job steps:** use workflow `env:` (config `env` is not injected into Actions jobs):
+> The Actions runner inherits that process environment into **host** job step processes (`printenv` / `$http_proxy`). It does **not** add those keys to the workflow `env` context (`${{ env.NAME }}`), and job containers do not receive arbitrary host env automatically.
+>
+> Keep app/SDK paths and repo-portable settings in workflow `env:` (even if a process `printenv` would also show a `config.env` value):
 > ```yaml
 > jobs:
 >   build:
 >     env:
 >       ANDROID_HOME: /opt/homebrew/share/android-commandlinetools
 > ```
+>
+> `{runner}/.env` is also loaded when `Runner.Listener` starts (including `run.sh --jitconfig`). Prefer `config.env` so host-wide settings are reapplied every spawn from the agent config instead of baking them into the VM image.
 
 ## Multi-host setup
 
