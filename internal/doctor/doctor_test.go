@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -52,6 +53,9 @@ func TestCheckRunnerVersionOlderThanLatest(t *testing.T) {
 	})
 	if len(checks) != 1 || checks[0].Status != StatusWarn || checks[0].Name != "runner_version" {
 		t.Fatalf("checks=%+v", checks)
+	}
+	if !strings.Contains(checks[0].Message, "--runner-version latest") {
+		t.Fatalf("warn should suggest re-pin; msg=%q", checks[0].Message)
 	}
 }
 
