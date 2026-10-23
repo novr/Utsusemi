@@ -28,8 +28,7 @@ func newConfigureTokenCmd() *cobra.Command {
 		Args:  cobra.NoArgs,
 		Example: `  printf '%s' "$TOKEN" | utsusemi configure token --repo owner/repo
   utsusemi configure token --token "$TOKEN" --org my-org
-  utsusemi configure token --pool-size 2
-  utsusemi configure token --mounts ~/utsusemi-cache/swiftpm`,
+  utsusemi configure token --org my-org`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if runnerGroup <= 0 {
 				runnerGroup = 1

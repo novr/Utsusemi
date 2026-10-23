@@ -47,7 +47,7 @@ utsusemi configure edit|path|show
 | Targets | organization | organization or repository |
 | Credential refresh | automatic | manual |
 
-Shared flags: `--base-image`, `--pool-size`, `--labels`, `--runner-version`, `--mounts`, `--softnet`, `--reclaim-policy`, `--reclaim-grace`, `--min-free-disk-gb`, `--output`, `--force`.
+Shared knobs (`--base-image`, `--pool-size`, `--labels`, `--runner-version`, `--mounts`, `--softnet`, `--reclaim-policy`, `--reclaim-grace`, `--min-free-disk-gb`, `--force`) are available on `configure app`, `configure token`, and `configure edit`. For knob-only updates prefer **`utsusemi configure edit --…`** (mode-agnostic; no Keychain). `--output` is app/token bootstrap only; `edit` / `show` / `path` always use `--config`.
 
 `--runner-group-id` (default `1`) for organization and repository targets.
 
@@ -55,17 +55,19 @@ Re-running `configure` merges **only changed flags** so hand-edited keys (`state
 
 | Case | Rationale |
 |------|-----------|
-| `configure token` without a token | Change pool settings without rotating Keychain |
+| `configure edit --pool-size` / `--runner-version latest` | Update shared knobs without picking app vs token; no editor when flags are set |
+| `configure edit` (no shared flags) | Open `$EDITOR` on `config.yaml` |
+| `configure token` without a token | Change org/repo/runner-group (auth-adjacent YAML) without rotating Keychain |
 | `configure app`, same `--org` / `--broker` | Skip device flow when the stored credential still matches |
 | `configure app --runner-group-id` (value change) | Host JWT embeds the group — re-exchange via OAuth refresh (device flow if refresh fails) |
 | `configure app --refresh` | Renew OAuth while stopped; device flow only if the refresh token is dead |
 | Credential-only `--refresh` | OAuth does not change YAML — no overwrite prompt, no `config.yaml` rewrite |
 | `edit` / `show` / `path` use `--config` only | That path is what `run` loads; `--output` is for writing elsewhere during setup |
-| `registration.mode` change | Different Keychain layout and registrar — use `configure edit` deliberately |
+| `registration.mode` change | Different Keychain layout and registrar — use `configure edit` (editor) deliberately |
 
-If `configure edit` changes `org` / `runner_group_id`, the next `validate` / `run` / `list` re-exchanges the host JWT when the embedded target no longer matches. Use `configure app --refresh` to update the credential immediately.
+If `configure edit` (editor) changes `org` / `runner_group_id`, the next `validate` / `run` / `list` re-exchanges the host JWT when the embedded target no longer matches. Use `configure app --refresh` to update the credential immediately.
 
-`--runner-version` defaults to `latest`: configure resolves the current [actions/runner](https://github.com/actions/runner/releases) release and pins a concrete version into `config.yaml` (config itself must not contain `latest`). Offline or API failures: pass an explicit `--runner-version x.y.z`. Re-pin later with `--runner-version latest`.
+`--runner-version` defaults to `latest` on app/token configure: resolves the current [actions/runner](https://github.com/actions/runner/releases) release and pins a concrete version into `config.yaml` (config itself must not contain `latest`). Offline or API failures: pass an explicit `--runner-version x.y.z`. Re-pin later with `utsusemi configure edit --runner-version latest`.
 
 Examples: [examples/config.template.yaml](examples/config.template.yaml), [examples/config.pat.yaml](examples/config.pat.yaml), [examples/config.local-broker.yaml](examples/config.local-broker.yaml).
 
@@ -167,7 +169,7 @@ Free orgs include the default runner group (matches `--runner-group-id 1`), enab
 
 ### Runtime options
 
-Edit `config.yaml` after `configure` with `utsusemi configure edit`, or set flags on a re-run (`configure` merges changed flags only).
+Edit `config.yaml` after `configure` with `utsusemi configure edit` (shared flags patch without opening an editor, or `$EDITOR` with no flags). `configure app` / `token` still merge changed flags on re-run.
 
 | Key | Default | Notes |
 |-----|---------|-------|
@@ -194,7 +196,7 @@ Edit `config.yaml` after `configure` with `utsusemi configure edit`, or set flag
 `mounts` is a list of host paths passed to Tart's `--dir` flag. `~/` and Tart's `name:~/…` form expand to the home directory of the user running `utsusemi` (the same user as `brew services`). Each path must already exist as a directory — missing mounts make Tart refuse to start the VM. Use `utsusemi status` to see resolved paths and `utsusemi doctor` to catch missing directories before a job starts. Create the directories first, then:
 
 ```bash
-utsusemi configure app --mounts ~/utsusemi-cache/swiftpm --mounts ~/utsusemi-toolchains:ro
+utsusemi configure edit --mounts ~/utsusemi-cache/swiftpm --mounts ~/utsusemi-toolchains:ro
 brew services restart utsusemi   # mounts/softnet apply after agent restart
 ```
 
@@ -214,7 +216,7 @@ mounts:
 
 On agent start, Utsusemi caches `runner_version` under `{state_dir}/runner-cache/` and mounts it read-only (`utsusemi-runner-cache`) so each spawn does not download from GitHub. A matching runner already in the image skips install. Restart the agent after changing `runner_version` so the cache refreshes.
 
-Keep `runner_version` at GitHub’s current [Actions runner](https://github.com/actions/runner/releases) release (re-pin with `utsusemi configure app --runner-version latest`, or `configure token` for PAT). A stale runner can register then exit without claiming a job (`utsusemi doctor` **warns** when older than latest). Repeated `runner finished quickly without claiming a job` means that unclaimed-exit window — short successful jobs are not treated as this failure. `base_image:…:latest` refreshes the Tart image on agent start only; bump `runner_version` separately (host cache installs it even when the image ships an older runner).
+Keep `runner_version` at GitHub’s current [Actions runner](https://github.com/actions/runner/releases) release (re-pin with `utsusemi configure edit --runner-version latest`). A stale runner can register then exit without claiming a job (`utsusemi doctor` **warns** when older than latest). Repeated `runner finished quickly without claiming a job` means that unclaimed-exit window — short successful jobs are not treated as this failure. `base_image:…:latest` refreshes the Tart image on agent start only; bump `runner_version` separately (host cache installs it even when the image ships an older runner).
 
 > **Note:** Optional `env:` in `config.yaml` sets literal variables on the guest bootstrap / `run.sh` process (e.g. `http_proxy`). Keys must be `[A-Za-z_][A-Za-z0-9_]*`. No `$VAR` expansion; `RUNNER_*` keys are reserved. Do not put secrets in `config.yaml` — values appear on the guest process argv and are visible to every job on that agent.
 >

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	_ "embed"
 	"fmt"
 	"os"
@@ -51,14 +52,64 @@ func newConfigureShowCmd() *cobra.Command {
 }
 
 func newConfigureEditCmd() *cobra.Command {
-	return &cobra.Command{
+	var (
+		force bool
+		opts  sharedConfigOptions
+	)
+	cmd := &cobra.Command{
 		Use:   "edit",
-		Short: "Edit the config file in $EDITOR",
-		Args:  cobra.NoArgs,
+		Short: "Edit config.yaml in $EDITOR, or apply shared flags without opening an editor",
+		Example: `  utsusemi configure edit
+  utsusemi configure edit --runner-version latest
+  utsusemi configure edit --pool-size 2
+  utsusemi configure edit --mounts ~/utsusemi-cache/swiftpm`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if sharedConfigFlagsChanged(cmd) {
+				return runConfigEditPatch(cmd, configPath, opts, force, nil)
+			}
 			return runConfigEdit(cmd, configPath)
 		},
 	}
+	cmd.Flags().BoolVar(&force, "force", false, "with shared flags: update without prompting (ignored in $EDITOR mode)")
+	addSharedConfigFlags(cmd, &opts)
+	return cmd
+}
+
+func runConfigEditPatch(
+	cmd *cobra.Command,
+	path string,
+	opts sharedConfigOptions,
+	force bool,
+	latest func(context.Context) (string, error),
+) error {
+	existing, cfg, err := loadExistingConfig(path)
+	if err != nil {
+		return err
+	}
+	if !existing {
+		return fmt.Errorf("config not found at %s; run `utsusemi configure app` or `utsusemi configure token` first", path)
+	}
+	if err := confirmConfigOverwrite(path, force, cmd.InOrStdin(), cmd.OutOrStdout()); err != nil {
+		return err
+	}
+
+	if err := resolveRunnerVersionFlag(cmd.Context(), cmd, &opts, true, latest); err != nil {
+		return err
+	}
+	if err := applySharedConfigOptions(cmd, opts, cfg, false); err != nil {
+		return err
+	}
+	config.ApplyDefaults(cfg)
+	if _, err := app.ValidateConfig(cfg); err != nil {
+		return err
+	}
+	if err := writeConfig(path, cfg); err != nil {
+		return err
+	}
+	fmt.Fprintf(cmd.OutOrStdout(), "wrote config to %s\n", path)
+	fmt.Fprintln(cmd.OutOrStdout(), "next: run `utsusemi validate`, then restart the agent if it is running")
+	return nil
 }
 
 func runConfigEdit(cmd *cobra.Command, path string) error {

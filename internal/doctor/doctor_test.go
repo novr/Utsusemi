@@ -48,29 +48,32 @@ func TestCheckRunnerVersionMismatch(t *testing.T) {
 
 func TestCheckRunnerVersionOlderThanLatest(t *testing.T) {
 	release := releaseClient(t, "2.337.0")
+	for _, mode := range []string{config.ModeHostedApp, config.ModeGitHubPAT} {
+		checks := recordChecks(func(add checkFn) {
+			checkRunnerVersion(context.Background(), &config.Config{
+				RunnerVersion: "2.300.0",
+				StateDir:      t.TempDir(),
+				Registration:  config.Registration{Mode: mode},
+			}, release, add)
+		})
+		if len(checks) != 1 || checks[0].Status != StatusWarn || checks[0].Name != "runner_version" {
+			t.Fatalf("mode=%s checks=%+v", mode, checks)
+		}
+		if !strings.Contains(checks[0].Message, pinRunnerVersionLatestCmd) {
+			t.Fatalf("mode=%s warn should suggest %q; msg=%q", mode, pinRunnerVersionLatestCmd, checks[0].Message)
+		}
+	}
+}
+
+func TestCheckRunnerVersionEmpty(t *testing.T) {
 	checks := recordChecks(func(add checkFn) {
-		checkRunnerVersion(context.Background(), &config.Config{
-			RunnerVersion: "2.300.0",
-			StateDir:      t.TempDir(),
-			Registration:  config.Registration{Mode: config.ModeHostedApp},
-		}, release, add)
+		checkRunnerVersion(context.Background(), &config.Config{StateDir: t.TempDir()}, nil, add)
 	})
-	if len(checks) != 1 || checks[0].Status != StatusWarn || checks[0].Name != "runner_version" {
+	if len(checks) != 1 || checks[0].Status != StatusFail {
 		t.Fatalf("checks=%+v", checks)
 	}
-	if !strings.Contains(checks[0].Message, "utsusemi configure app --runner-version latest") {
-		t.Fatalf("warn should suggest copy-pasteable re-pin; msg=%q", checks[0].Message)
-	}
-
-	pat := recordChecks(func(add checkFn) {
-		checkRunnerVersion(context.Background(), &config.Config{
-			RunnerVersion: "2.300.0",
-			StateDir:      t.TempDir(),
-			Registration:  config.Registration{Mode: config.ModeGitHubPAT},
-		}, release, add)
-	})
-	if len(pat) != 1 || !strings.Contains(pat[0].Message, "utsusemi configure token --runner-version latest") {
-		t.Fatalf("PAT warn should suggest configure token; checks=%+v", pat)
+	if !strings.Contains(checks[0].Message, pinRunnerVersionLatestCmd) {
+		t.Fatalf("empty fail should suggest re-pin; msg=%q", checks[0].Message)
 	}
 }
 
