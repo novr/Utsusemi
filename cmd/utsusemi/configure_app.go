@@ -38,7 +38,7 @@ func newConfigureAppCmd() *cobra.Command {
 		Short: "Configure with the Utsusemi GitHub App",
 		Example: `  utsusemi configure app --org my-org
   utsusemi configure app --pool-size 2
-  utsusemi configure app --runner-version 2.328.0
+  utsusemi configure app --runner-version latest
   utsusemi configure app --mounts ~/utsusemi-cache/swiftpm
   utsusemi configure app --refresh`,
 		RunE: func(cmd *cobra.Command, args []string) error {
