@@ -249,16 +249,17 @@ utsusemi doctor
 
 > **Warning:** do not assume the runner version bundled in your base image is acceptable to GitHub. GitHub periodically deprecates old runner versions; a JIT runner that is too old will register and then exit after ~28 s **without claiming a job**, causing the pool to respawn with growing backoffs until the agent stops. Always install a current runner from [github.com/actions/runner/releases](https://github.com/actions/runner/releases) and set `runner_version` in `config.yaml` to match. Repeated `runner finished quickly without claiming a job` warnings mean the runner left in that window **with no job assignment in its output** — short successful jobs (e.g. a quick `precheck`) are not treated as this failure.
 
-> **Note:** The runner's `.env` file is consumed by the service wrapper (`svc.sh`), not by `run.sh --jitconfig`. Utsusemi invokes `run.sh` directly, so `.env` is never read.
+> **Note:** Optional `env:` in `config.yaml` sets literal variables on the guest bootstrap / `run.sh` process (e.g. `HTTP_PROXY`). Keys must be `[A-Za-z_][A-Za-z0-9_]*`. No `$VAR` expansion; `RUNNER_*` keys are reserved. Do not put secrets in `config.yaml`. Values appear on the guest process argv.
 >
-> - **bootstrap / `run.sh` (guest process):** set literal values under `env:` in `config.yaml` (e.g. `HTTP_PROXY`). Keys must be `[A-Za-z_][A-Za-z0-9_]*`. No `$VAR` expansion; `RUNNER_*` keys are reserved. Do not put secrets in `config.yaml`. Values appear on the guest process argv.
-> - **job steps:** use workflow `env:` (config `env` is not injected into Actions jobs):
+> The Actions runner inherits that process environment into job step shells (`printenv` / `$HTTP_PROXY`). It does **not** populate the workflow `${{ env }}` context — use workflow `env:` when a value must appear there, or for app/SDK paths:
 > ```yaml
 > jobs:
 >   build:
 >     env:
 >       ANDROID_HOME: /opt/homebrew/share/android-commandlinetools
 > ```
+>
+> The runner also loads `{runner}/.env` when `Runner.Listener` starts (including via `run.sh --jitconfig`). Prefer `config.env` so settings stay with the agent rather than baked into the VM image.
 
 ## Multi-host setup
 
