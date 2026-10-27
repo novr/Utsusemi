@@ -13,3 +13,7 @@ func registerListCompletions(cmd *cobra.Command) {
 	}
 	cmd.ValidArgs = args
 }
+
+func registerPullRunnerCompletions(cmd *cobra.Command) {
+	cmd.ValidArgs = []cobra.Completion{"latest"}
+}

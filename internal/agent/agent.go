@@ -90,7 +90,17 @@ func (a *Agent) Run(ctx context.Context) error {
 	defer lock.Release()
 
 	a.logger.Info("syncing base image", "image", a.cfg.BaseImage, "note", "first download can take several minutes")
-	if err := a.provider.SyncImage(ctx, a.cfg.BaseImage); err != nil {
+	imgLock, err := instancelock.AcquireImage(ctx, a.cfg.StateDir, a.cfg.BaseImage)
+	if err != nil {
+		err = fmt.Errorf("sync base image: %w", err)
+		if shouldAlertFatal(ctx, err) {
+			a.pool.AlertFatal(ctx, err)
+		}
+		return err
+	}
+	err = a.provider.SyncImage(ctx, a.cfg.BaseImage)
+	_ = imgLock.Release()
+	if err != nil {
 		err = fmt.Errorf("sync base image: %w", err)
 		if shouldAlertFatal(ctx, err) {
 			a.pool.AlertFatal(ctx, err)

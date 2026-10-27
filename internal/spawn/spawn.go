@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/novr/utsusemi/internal/config"
+	"github.com/novr/utsusemi/internal/instancelock"
 	"github.com/novr/utsusemi/internal/lease"
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/registrar"
@@ -127,8 +128,8 @@ func (s *Spawner) Run(ctx context.Context, vmName string, ctrl *SlotControl, onI
 
 	phase := time.Now()
 	log.Info("cloning base image", "image", cfg.BaseImage)
-	if err := s.opts.Provider.Clone(preJobCtx, cfg.BaseImage, vmName); err != nil {
-		return Result{}, fmt.Errorf("clone: %w", err)
+	if err := cloneBaseImage(preJobCtx, s.opts.Provider, cfg.StateDir, cfg.BaseImage, vmName); err != nil {
+		return Result{}, err
 	}
 	metrics.CloneMs = time.Since(phase).Milliseconds()
 	log.Info("spawn phase complete", "phase", "clone", "duration_ms", metrics.CloneMs)
@@ -374,6 +375,20 @@ func withTeardownBudget(fn func(context.Context) error) error {
 	ctx, cancel := context.WithTimeout(context.Background(), teardownAttemptBud)
 	defer cancel()
 	return fn(ctx)
+}
+
+func cloneBaseImage(ctx context.Context, vmProvider provider.VMProvider, stateDir, baseImage, vmName string) error {
+	if stateDir != "" {
+		imgLock, err := instancelock.AcquireImage(ctx, stateDir, baseImage)
+		if err != nil {
+			return fmt.Errorf("image lock: %w", err)
+		}
+		defer imgLock.Release()
+	}
+	if err := vmProvider.Clone(ctx, baseImage, vmName); err != nil {
+		return fmt.Errorf("clone: %w", err)
+	}
+	return nil
 }
 
 func stopAndDeleteBestEffort(log *slog.Logger, vmProvider provider.VMProvider, name string) {

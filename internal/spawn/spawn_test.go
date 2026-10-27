@@ -283,6 +283,7 @@ func TestSpawnPassesJITOnStdin(t *testing.T) {
 			BaseImage:     "image",
 			RunnerVersion: "2.336.0",
 			Labels:        []string{"self-hosted"},
+			StateDir:      t.TempDir(),
 			SpawnTimeout:  config.Duration(30 * time.Second),
 			JobTimeout:    config.Duration(30 * time.Second),
 			MinFreeDiskGB: 1,

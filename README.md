@@ -185,7 +185,7 @@ Edit `config.yaml` after `configure` with `utsusemi configure edit` (shared flag
 
 `provider: tart`
 
-- **base_image** / `--base-image` — pull on agent start ([Tart](https://tart.run/))
+- **base_image** / `--base-image` — synced on agent start (`Provider.SyncImage`), or earlier with `utsusemi pull image` ([Tart](https://tart.run/) today)
 - **min_free_disk_gb** — default `50`
 - **Keychain** — unlock: `security unlock-keychain login.keychain`; headless: `security set-keychain-settings -t 0 ~/Library/Keychains/login.keychain-db`
 - **Networking** — [Tart FAQ](https://tart.run/faq/); optional `softnet: true` for NAT / lease isolation — `brew install cirruslabs/cli/softnet` and grant root (SUID or passwordless sudo). Softnet does **not** stabilize Tart guest-agent GRPC / `tart exec`.
@@ -216,7 +216,7 @@ mounts:
 
 On agent start, Utsusemi caches `runner_version` under `{state_dir}/runner-cache/` and mounts it read-only (`utsusemi-runner-cache`) so each spawn does not download from GitHub. A matching runner already in the image skips install. Restart the agent after changing `runner_version` so the cache refreshes.
 
-Keep `runner_version` at GitHub’s current [Actions runner](https://github.com/actions/runner/releases) release (re-pin with `utsusemi configure edit --runner-version latest`). A stale runner can register then exit without claiming a job (`utsusemi doctor` **warns** when older than latest). Repeated `runner finished quickly without claiming a job` means that unclaimed-exit window — short successful jobs are not treated as this failure. `base_image:…:latest` refreshes the Tart image on agent start only; bump `runner_version` separately (host cache installs it even when the image ships an older runner).
+Keep `runner_version` at GitHub’s current [Actions runner](https://github.com/actions/runner/releases) release (re-pin with `utsusemi configure edit --runner-version latest`). A stale runner can register then exit without claiming a job (`utsusemi doctor` **warns** when older than latest). Repeated `runner finished quickly without claiming a job` means that unclaimed-exit window — short successful jobs are not treated as this failure. Agent start still pulls `base_image`. `utsusemi pull image <image>` can fetch a ref earlier; the name a running agent will clone next has to wait until the agent is stopped. `pull runner` does not change `runner_version` (host cache installs the pinned version even when the image ships an older runner).
 
 > **Note:** Optional `env:` in `config.yaml` sets literal variables on the guest bootstrap / `run.sh` process (e.g. `http_proxy`). Keys must be `[A-Za-z_][A-Za-z0-9_]*`. No `$VAR` expansion; `RUNNER_*` keys are reserved. Do not put secrets in `config.yaml` — values appear on the guest process argv and are visible to every job on that agent.
 >
@@ -269,10 +269,14 @@ utsusemi run --log=/path/to.log
 utsusemi drain                  # recycle pool; agent stays up
 utsusemi drain --timeout=30m
 utsusemi drain --force
+utsusemi pull image <image>    # provider SyncImage; does not change config
+utsusemi pull runner <latest|version>
 brew services start utsusemi
 ```
 
 `validate` / `configure edit` change `config.yaml` for the **next** agent start; `status` shows the running agent’s start-time settings under `runtime:`. Restart (or `brew services restart utsusemi`) to apply YAML changes.
+
+`utsusemi pull image <image>` syncs that base image through the configured provider (`SyncImage`) and does not change `config.yaml`. Stop the agent before pulling the image it will clone next. A running agent can pull a different image name; the next start waits until that pull finishes before syncing the same name. `utsusemi pull runner latest` (or an explicit version) caches that tarball only: it does not pin `runner_version`, and it leaves other cached tarballs in place. An existing tarball is not replaced.
 
 ### Alerts
 

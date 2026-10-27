@@ -84,6 +84,8 @@ type Options struct {
 	HTTPClient *http.Client
 	BaseURL    string
 	Logger     *slog.Logger
+	// SkipPrune leaves other cached tarballs in place after a download.
+	SkipPrune bool
 }
 
 // Cached reports whether a non-empty runner tarball is present for version/arch.
@@ -132,8 +134,10 @@ func Ensure(ctx context.Context, stateDir, version, arch string, opts Options) e
 	for attempt := 1; attempt <= maxDownloadTries; attempt++ {
 		lastErr = downloadOnce(ctx, client, url, dest)
 		if lastErr == nil {
-			if err := pruneOther(Dir(stateDir), filepath.Base(dest)); err != nil {
-				log.Warn("prune old runner cache failed", "error", err)
+			if !opts.SkipPrune {
+				if err := pruneOther(Dir(stateDir), filepath.Base(dest)); err != nil {
+					log.Warn("prune old runner cache failed", "error", err)
+				}
 			}
 			log.Info("runner tarball cached", "version", version, "arch", arch)
 			return nil

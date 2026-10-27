@@ -39,6 +39,7 @@ func initRootCmd() {
 
 		rootCmd.AddCommand(newCleanCmd())
 		rootCmd.AddCommand(newDrainCmd())
+		rootCmd.AddCommand(newPullCmd())
 	})
 }
 
