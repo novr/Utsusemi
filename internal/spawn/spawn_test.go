@@ -631,10 +631,13 @@ func TestBootstrapRequiresJITOnStdin(t *testing.T) {
 }
 
 func TestBootstrapSystemProxyScriptAvoidsHostPaths(t *testing.T) {
-	for _, forbidden := range []string{"/usr/sbin/networksetup", "/sbin/route", "setautoproxystate"} {
+	for _, forbidden := range []string{"/usr/sbin/networksetup", "setautoproxystate"} {
 		if strings.Contains(bootstrapScript, forbidden) {
 			t.Fatalf("bootstrap.sh contains %s", forbidden)
 		}
+	}
+	if !strings.Contains(bootstrapScript, `route_bin="/sbin/route"`) {
+		t.Fatal("bootstrap.sh must fall back to /sbin/route when route is not on PATH")
 	}
 }
 
