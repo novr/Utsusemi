@@ -42,10 +42,19 @@ apply_system_proxy() {
     exit 1
   fi
 
+  # tart exec's PATH often has no /sbin. Tests put a fake `route` first on PATH.
+  local route_bin="route"
+  if ! command -v route >/dev/null 2>&1; then
+    route_bin="/sbin/route"
+  fi
+  if [ ! -x "$route_bin" ] && ! command -v "$route_bin" >/dev/null 2>&1; then
+    echo "bootstrap: route not found" >&2
+    exit 1
+  fi
   local iface=""
   local _
   for _ in 1 2 3 4 5 6 7 8 9 10; do
-    iface="$(route -n get default 2>/dev/null | awk '$1 == "interface:" { print $2; exit }' || true)"
+    iface="$("$route_bin" -n get default 2>/dev/null | awk '$1 == "interface:" { print $2; exit }' || true)"
     if [ -n "$iface" ]; then
       break
     fi
