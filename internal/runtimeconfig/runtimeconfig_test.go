@@ -22,8 +22,8 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 		SpawnTimeout:  config.Duration(10 * time.Minute),
 		JobTimeout:    config.Duration(6 * time.Hour),
 		SystemProxy: &config.SystemProxy{
-			HTTP:   "192.168.64.1:8888",
-			HTTPS:  "192.168.64.1:8888",
+			HTTP:   "proxy.example:8080",
+			HTTPS:  "proxy.example:8080",
 			Bypass: []string{"localhost"},
 		},
 	}
@@ -43,7 +43,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	if got.Target != "org:my-org (group 5)" {
 		t.Fatalf("target=%q", got.Target)
 	}
-	if got.SystemProxyHTTP != "192.168.64.1:8888" || got.SystemProxyHTTPS != "192.168.64.1:8888" || len(got.SystemProxyBypass) != 1 || got.SystemProxyBypass[0] != "localhost" {
+	if got.SystemProxyHTTP != "proxy.example:8080" || got.SystemProxyHTTPS != "proxy.example:8080" || len(got.SystemProxyBypass) != 1 || got.SystemProxyBypass[0] != "localhost" {
 		t.Fatalf("system_proxy=%q %q %v", got.SystemProxyHTTP, got.SystemProxyHTTPS, got.SystemProxyBypass)
 	}
 	if _, err := filepath.Rel(dir, filepath.Join(dir, fileName)); err != nil {

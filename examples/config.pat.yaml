@@ -21,8 +21,8 @@ pool_size: 1
 # host:port only. Quote IPv6 ("[2001:db8::1]:443") and bypass entries that contain * or <. Omitting bypass keeps the image exclusions.
 # Guest needs passwordless sudo. Restart the agent to apply. softnet cannot reach the host.
 # system_proxy:
-#   http: 192.168.64.1:8888
-#   https: 192.168.64.1:8888
+#   http: proxy.example:8080
+#   https: proxy.example:8080
 #   bypass:
 #     - localhost
 #     - 127.0.0.1

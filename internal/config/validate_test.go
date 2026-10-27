@@ -241,7 +241,7 @@ func TestValidateSystemProxy(t *testing.T) {
 	}
 	ok := base()
 	ok.SystemProxy = &SystemProxy{
-		HTTP:   "192.168.64.1:8888",
+		HTTP:   "proxy.example:8080",
 		HTTPS:  "[2001:db8::1]:443",
 		Bypass: []string{"localhost", "*.local", "<local>"},
 	}
@@ -249,7 +249,7 @@ func TestValidateSystemProxy(t *testing.T) {
 		t.Fatal(err)
 	}
 	env := SystemProxyEnv(ok.SystemProxy)
-	if env["UTSUSEMI_SYSTEM_PROXY_HTTP_HOST"] != "192.168.64.1" || env["UTSUSEMI_SYSTEM_PROXY_HTTP_PORT"] != "8888" {
+	if env["UTSUSEMI_SYSTEM_PROXY_HTTP_HOST"] != "proxy.example" || env["UTSUSEMI_SYSTEM_PROXY_HTTP_PORT"] != "8080" {
 		t.Fatalf("http endpoint = %v", env)
 	}
 	if env["UTSUSEMI_SYSTEM_PROXY_HTTPS_HOST"] != "2001:db8::1" || env["UTSUSEMI_SYSTEM_PROXY_HTTPS_PORT"] != "443" {
@@ -258,12 +258,12 @@ func TestValidateSystemProxy(t *testing.T) {
 	if env["UTSUSEMI_SYSTEM_PROXY_BYPASS"] != "localhost,*.local,<local>" {
 		t.Fatalf("bypass = %q", env["UTSUSEMI_SYSTEM_PROXY_BYPASS"])
 	}
-	if strings.Contains(env["UTSUSEMI_SYSTEM_PROXY_BYPASS"], "192.168.64.1") {
+	if strings.Contains(env["UTSUSEMI_SYSTEM_PROXY_BYPASS"], "proxy.example") {
 		t.Fatalf("bypass must not gain the proxy host: %q", env["UTSUSEMI_SYSTEM_PROXY_BYPASS"])
 	}
 
 	noBypass := base()
-	noBypass.SystemProxy = &SystemProxy{HTTPS: "192.168.64.1:8888"}
+	noBypass.SystemProxy = &SystemProxy{HTTPS: "proxy.example:8080"}
 	if _, err := Validate(noBypass, provider.NewStub(2)); err != nil {
 		t.Fatal(err)
 	}
@@ -286,16 +286,16 @@ func TestValidateSystemProxy(t *testing.T) {
 	}{
 		{name: "empty", sp: &SystemProxy{}, want: "requires http or https"},
 		{name: "bypass only", sp: &SystemProxy{Bypass: []string{"localhost"}}, want: "requires http or https"},
-		{name: "url", sp: &SystemProxy{HTTP: "http://192.168.64.1:8888"}, want: "host:port"},
-		{name: "userinfo", sp: &SystemProxy{HTTP: "user:pass@192.168.64.1:8888"}, want: "host:port"},
-		{name: "port", sp: &SystemProxy{HTTPS: "192.168.64.1:0"}, want: "1-65535"},
-		{name: "cidr", sp: &SystemProxy{HTTP: "192.168.64.1:8888", Bypass: []string{"192.168.64.0/24"}}, want: "',' or '/'"},
-		{name: "brackets", sp: &SystemProxy{HTTP: "192.168.64.1:8888", Bypass: []string{"<foo>"}}, want: "'<' or '>'"},
-		{name: "host space", sp: &SystemProxy{HTTP: "192.168.64.1 :8888"}, want: "whitespace or control"},
+		{name: "url", sp: &SystemProxy{HTTP: "http://proxy.example:8080"}, want: "host:port"},
+		{name: "userinfo", sp: &SystemProxy{HTTP: "user:pass@proxy.example:8080"}, want: "host:port"},
+		{name: "port", sp: &SystemProxy{HTTPS: "proxy.example:0"}, want: "1-65535"},
+		{name: "cidr", sp: &SystemProxy{HTTP: "proxy.example:8080", Bypass: []string{"10.0.0.0/24"}}, want: "',' or '/'"},
+		{name: "brackets", sp: &SystemProxy{HTTP: "proxy.example:8080", Bypass: []string{"<foo>"}}, want: "'<' or '>'"},
+		{name: "host space", sp: &SystemProxy{HTTP: "proxy.example :8080"}, want: "whitespace or control"},
 		{name: "host dash", sp: &SystemProxy{HTTP: "-proxy.example:80"}, want: "must not start with '-'"},
-		{name: "host slash", sp: &SystemProxy{HTTP: "192.168.64.0/24:80"}, want: "host:port"},
-		{name: "bypass empty token", sp: &SystemProxy{HTTP: "192.168.64.1:8888", Bypass: []string{"Empty"}}, want: "clears all exclusions"},
-		{name: "bypass dash", sp: &SystemProxy{HTTP: "192.168.64.1:8888", Bypass: []string{"-local"}}, want: "must not start with '-'"},
+		{name: "host slash", sp: &SystemProxy{HTTP: "10.0.0.0/24:80"}, want: "host:port"},
+		{name: "bypass empty token", sp: &SystemProxy{HTTP: "proxy.example:8080", Bypass: []string{"Empty"}}, want: "clears all exclusions"},
+		{name: "bypass dash", sp: &SystemProxy{HTTP: "proxy.example:8080", Bypass: []string{"-local"}}, want: "must not start with '-'"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -16,8 +16,8 @@ func TestFormatTextRunning(t *testing.T) {
 			RunnerVersion:     "2.337.0",
 			PoolSize:          2,
 			Labels:            []string{"self-hosted"},
-			SystemProxyHTTP:   "192.168.64.1:8888",
-			SystemProxyHTTPS:  "192.168.64.1:8888",
+			SystemProxyHTTP:   "proxy.example:8080",
+			SystemProxyHTTPS:  "proxy.example:8080",
 			SystemProxyBypass: []string{"localhost", "*.local"},
 		},
 		RunnerVersion: RunnerVersionInfo{
@@ -48,7 +48,7 @@ func TestFormatTextRunning(t *testing.T) {
 	for _, want := range []string{
 		"target: org:my-org (group 1)",
 		"runtime: active",
-		"system_proxy: http=192.168.64.1:8888 https=192.168.64.1:8888 bypass=localhost,*.local",
+		"system_proxy: http=proxy.example:8080 https=proxy.example:8080 bypass=localhost,*.local",
 		"base_image: ghcr.io/example/image:1",
 		"runner_version: 2.337.0 (config.yaml 2.400.0)",
 		"agent: running (pid 12345, uptime 2h15m)",
@@ -178,7 +178,7 @@ func TestFormatTextBootNotRunningBudget(t *testing.T) {
 
 func TestFormatTextSystemProxyOnlyWhenActive(t *testing.T) {
 	rt := &RuntimeInfo{
-		SystemProxyHTTP: "192.168.64.1:8888",
+		SystemProxyHTTP: "proxy.example:8080",
 	}
 	for _, state := range []string{"pending", "stale"} {
 		rt.State = state

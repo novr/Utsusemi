@@ -16,7 +16,7 @@ func TestCloneIndependentSlices(t *testing.T) {
 		Mounts:    []string{"/tmp/x"},
 		Env:       map[string]string{"HTTP_PROXY": "http://proxy:8080"},
 		SystemProxy: &SystemProxy{
-			HTTP:   "192.168.64.1:8888",
+			HTTP:   "proxy.example:8080",
 			Bypass: []string{"localhost"},
 		},
 	}
@@ -40,7 +40,7 @@ func TestCloneIndependentSlices(t *testing.T) {
 	if got.Env["HTTP_PROXY"] != "http://proxy:8080" {
 		t.Fatalf("env map leaked: %v", got.Env)
 	}
-	if got.SystemProxy == cfg.SystemProxy || got.SystemProxy.HTTP != "192.168.64.1:8888" || got.SystemProxy.Bypass[0] != "localhost" {
+	if got.SystemProxy == cfg.SystemProxy || got.SystemProxy.HTTP != "proxy.example:8080" || got.SystemProxy.Bypass[0] != "localhost" {
 		t.Fatalf("system proxy leaked: %+v", got.SystemProxy)
 	}
 }

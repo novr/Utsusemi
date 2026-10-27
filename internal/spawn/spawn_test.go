@@ -645,7 +645,10 @@ func TestBootstrapSystemProxyUnsetDoesNotCallSudo(t *testing.T) {
 		t.Fatal(err)
 	}
 	bin := t.TempDir()
-	writeFake(t, bin, "sudo", "#!/bin/bash\necho sudo called >&2\nexit 9\n")
+	writeFake(t, bin, "sudo", `#!/bin/bash
+echo sudo called >&2
+exit 9
+`)
 	cmd := exec.Command("bash", "-c", bootstrapScript)
 	cmd.Env = bootstrapTestEnv(home, "PATH="+bin+":"+os.Getenv("PATH"))
 	cmd.Stdin = strings.NewReader("encoded-jit")
@@ -663,29 +666,32 @@ func TestBootstrapSystemProxyAppliesDefaultRoute(t *testing.T) {
 	writeRunnerListenerStub(t, home, "2.336.0")
 	envOut := filepath.Join(home, "env.txt")
 	argsOut := filepath.Join(home, "args.txt")
-	runStub := "#!/bin/bash\nenv | sort > " + shellQuote(envOut) + "\nprintf '%s\\n' \"$@\" > " + shellQuote(argsOut) + "\n"
+	runStub := fmt.Sprintf(`#!/bin/bash
+env | sort > %s
+printf '%%s\n' "$@" > %s
+`, shellQuote(envOut), shellQuote(argsOut))
 	if err := os.WriteFile(filepath.Join(home, "run.sh"), []byte(runStub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	logPath := filepath.Join(work, "calls.txt")
 	order := filepath.Join(work, "order.txt")
-	orderBody := "" +
-		"An asterisk (*) denotes that a network service is disabled.\n" +
-		"(1) Extra\n" +
-		"(Hardware Port: Extra, Device: en01)\n" +
-		"\n" +
-		"(2) *Thunderbolt Bridge\n" +
-		"(Hardware Port: Thunderbolt Bridge, Device: en0)\n" +
-		"\n" +
-		"(3) Wi-Fi\n" +
-		"(Hardware Port: Wi-Fi, Device: en1)\n"
+	orderBody := `An asterisk (*) denotes that a network service is disabled.
+(1) Extra
+(Hardware Port: Extra, Device: en01)
+
+(2) *Thunderbolt Bridge
+(Hardware Port: Thunderbolt Bridge, Device: en0)
+
+(3) Wi-Fi
+(Hardware Port: Wi-Fi, Device: en1)
+`
 	if err := os.WriteFile(order, []byte(orderBody), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	bin := t.TempDir()
-	writeFake(t, bin, "route", "#!/bin/bash\nif [ \"$1\" = -n ] && [ \"$2\" = get ] && [ \"$3\" = default ]; then echo 'interface: en0'; exit 0; fi\necho unexpected route >&2\nexit 1\n")
-	writeFake(t, bin, "sudo", "#!/bin/bash\nif [ \"${1:-}\" != -n ]; then echo 'sudo without -n' >&2; exit 3; fi\nshift\n\"$@\"\n")
-	writeFake(t, bin, "networksetup", "#!/bin/bash\n{\nprintf '%s\\n' \"$@\"\necho ---\n} >> \"$PROXY_LOG\"\nif [ \"$1\" = -listnetworkserviceorder ]; then cat \"$ORDER_FILE\"; exit 0; fi\nif [ -n \"${FAIL_ON:-}\" ] && [ \"$1\" = \"$FAIL_ON\" ]; then exit 9; fi\nexit 0\n")
+	writeFake(t, bin, "route", proxyRouteScript)
+	writeFake(t, bin, "sudo", proxySudoScript)
+	writeFake(t, bin, "networksetup", proxyNetworksetupScript)
 
 	cmd := exec.Command("bash", "-c", bootstrapScript)
 	cmd.Dir = work
@@ -694,10 +700,10 @@ func TestBootstrapSystemProxyAppliesDefaultRoute(t *testing.T) {
 		"PROXY_LOG="+logPath,
 		"ORDER_FILE="+order,
 		"HTTP_PROXY=http://proxy.example:8080",
-		"UTSUSEMI_SYSTEM_PROXY_HTTP_HOST=192.168.64.1",
-		"UTSUSEMI_SYSTEM_PROXY_HTTP_PORT=8888",
-		"UTSUSEMI_SYSTEM_PROXY_HTTPS_HOST=192.168.64.1",
-		"UTSUSEMI_SYSTEM_PROXY_HTTPS_PORT=8888",
+		"UTSUSEMI_SYSTEM_PROXY_HTTP_HOST=proxy.example",
+		"UTSUSEMI_SYSTEM_PROXY_HTTP_PORT=8080",
+		"UTSUSEMI_SYSTEM_PROXY_HTTPS_HOST=proxy.example",
+		"UTSUSEMI_SYSTEM_PROXY_HTTPS_PORT=8080",
 		"UTSUSEMI_SYSTEM_PROXY_BYPASS=localhost,127.0.0.1,<local>,*.local",
 	)
 	cmd.Stdin = strings.NewReader("encoded-jit")
@@ -708,9 +714,9 @@ func TestBootstrapSystemProxyAppliesDefaultRoute(t *testing.T) {
 	want := [][]string{
 		{"-listnetworkserviceorder"},
 		{"-setproxyautodiscovery", "Thunderbolt Bridge", "off"},
-		{"-setwebproxy", "Thunderbolt Bridge", "192.168.64.1", "8888", "off"},
+		{"-setwebproxy", "Thunderbolt Bridge", "proxy.example", "8080", "off"},
 		{"-setwebproxystate", "Thunderbolt Bridge", "on"},
-		{"-setsecurewebproxy", "Thunderbolt Bridge", "192.168.64.1", "8888", "off"},
+		{"-setsecurewebproxy", "Thunderbolt Bridge", "proxy.example", "8080", "off"},
 		{"-setsecurewebproxystate", "Thunderbolt Bridge", "on"},
 		{"-setproxybypassdomains", "Thunderbolt Bridge", "localhost", "127.0.0.1", "<local>", "*.local"},
 	}
@@ -751,7 +757,7 @@ func TestBootstrapSystemProxyOmitsBypassWhenUnset(t *testing.T) {
 	want := [][]string{
 		{"-listnetworkserviceorder"},
 		{"-setproxyautodiscovery", "Ethernet", "off"},
-		{"-setwebproxy", "Ethernet", "192.168.64.1", "8888", "off"},
+		{"-setwebproxy", "Ethernet", "proxy.example", "8080", "off"},
 		{"-setwebproxystate", "Ethernet", "on"},
 	}
 	if len(calls) != len(want) {
@@ -772,7 +778,9 @@ func TestBootstrapSystemProxyNoRoute(t *testing.T) {
 }
 
 func TestBootstrapSystemProxyNoService(t *testing.T) {
-	_, err := runSystemProxyBootstrapErr(t, systemProxyOpts{order: "(1) Wi-Fi\n(Hardware Port: Wi-Fi, Device: en1)\n"})
+	_, err := runSystemProxyBootstrapErr(t, systemProxyOpts{order: `(1) Wi-Fi
+(Hardware Port: Wi-Fi, Device: en1)
+`})
 	if err == nil {
 		t.Fatal("expected failure when the default route has no service")
 	}
@@ -814,13 +822,20 @@ func runSystemProxyBootstrapErr(t *testing.T, opts systemProxyOpts) (string, err
 	home := t.TempDir()
 	work := t.TempDir()
 	argsOut := filepath.Join(home, "args.txt")
-	if err := os.WriteFile(filepath.Join(home, "run.sh"), []byte("#!/bin/bash\nprintf '%s\\n' \"$@\" > "+shellQuote(argsOut)+"\n"), 0o755); err != nil {
+	runStub := fmt.Sprintf(`#!/bin/bash
+printf '%%s\n' "$@" > %s
+`, shellQuote(argsOut))
+	if err := os.WriteFile(filepath.Join(home, "run.sh"), []byte(runStub), 0o755); err != nil {
 		t.Fatal(err)
 	}
 	writeRunnerListenerStub(t, home, "2.336.0")
 	order := opts.order
 	if order == "" {
-		order = "(1) Ethernet\n(Hardware Port: Ethernet, Device: en0)\n(2) Wi-Fi\n(Hardware Port: Wi-Fi, Device: en1)\n"
+		order = `(1) Ethernet
+(Hardware Port: Ethernet, Device: en0)
+(2) Wi-Fi
+(Hardware Port: Wi-Fi, Device: en1)
+`
 	}
 	orderPath := filepath.Join(work, "order.txt")
 	if err := os.WriteFile(orderPath, []byte(order), 0o644); err != nil {
@@ -828,25 +843,23 @@ func runSystemProxyBootstrapErr(t *testing.T, opts systemProxyOpts) (string, err
 	}
 	logPath := filepath.Join(work, "calls.txt")
 	bin := t.TempDir()
-	route := "#!/bin/bash\nif [ \"$1\" = -n ] && [ \"$2\" = get ] && [ \"$3\" = default ]; then\n"
+	route := proxyRouteScript
 	if opts.emptyRoute {
-		route += "exit 0\nfi\nexit 1\n"
-	} else {
-		route += "echo 'interface: en0'; exit 0\nfi\nexit 1\n"
+		route = proxyRouteEmptyScript
 	}
 	writeFake(t, bin, "route", route)
+	sudo := proxySudoScript
 	if opts.sudoFail {
-		writeFake(t, bin, "sudo", "#!/bin/bash\nexit 3\n")
-	} else {
-		writeFake(t, bin, "sudo", "#!/bin/bash\nif [ \"${1:-}\" != -n ]; then exit 3; fi\nshift\n\"$@\"\n")
+		sudo = proxySudoFailScript
 	}
-	writeFake(t, bin, "networksetup", "#!/bin/bash\n{\nprintf '%s\\n' \"$@\"\necho ---\n} >> \"$PROXY_LOG\"\nif [ \"$1\" = -listnetworkserviceorder ]; then cat \"$ORDER_FILE\"; exit 0; fi\nif [ -n \"${FAIL_ON:-}\" ] && [ \"$1\" = \"$FAIL_ON\" ]; then exit 9; fi\nexit 0\n")
+	writeFake(t, bin, "sudo", sudo)
+	writeFake(t, bin, "networksetup", proxyNetworksetupScript)
 	extra := []string{
 		"PATH=" + bin + ":" + os.Getenv("PATH"),
 		"PROXY_LOG=" + logPath,
 		"ORDER_FILE=" + orderPath,
-		"UTSUSEMI_SYSTEM_PROXY_HTTP_HOST=192.168.64.1",
-		"UTSUSEMI_SYSTEM_PROXY_HTTP_PORT=8888",
+		"UTSUSEMI_SYSTEM_PROXY_HTTP_HOST=proxy.example",
+		"UTSUSEMI_SYSTEM_PROXY_HTTP_PORT=8080",
 	}
 	if opts.failOn != "" {
 		extra = append(extra, "FAIL_ON="+opts.failOn)
@@ -867,6 +880,50 @@ func runSystemProxyBootstrapErr(t *testing.T, opts systemProxyOpts) (string, err
 	}
 	return logPath, nil
 }
+
+const proxyRouteScript = `#!/bin/bash
+if [ "$1" = -n ] && [ "$2" = get ] && [ "$3" = default ]; then
+  echo 'interface: en0'
+  exit 0
+fi
+echo unexpected route >&2
+exit 1
+`
+
+const proxyRouteEmptyScript = `#!/bin/bash
+if [ "$1" = -n ] && [ "$2" = get ] && [ "$3" = default ]; then
+  exit 0
+fi
+exit 1
+`
+
+const proxySudoScript = `#!/bin/bash
+if [ "${1:-}" != -n ]; then
+  echo 'sudo without -n' >&2
+  exit 3
+fi
+shift
+"$@"
+`
+
+const proxySudoFailScript = `#!/bin/bash
+exit 3
+`
+
+const proxyNetworksetupScript = `#!/bin/bash
+{
+  printf '%s\n' "$@"
+  echo ---
+} >> "$PROXY_LOG"
+if [ "$1" = -listnetworkserviceorder ]; then
+  cat "$ORDER_FILE"
+  exit 0
+fi
+if [ -n "${FAIL_ON:-}" ] && [ "$1" = "$FAIL_ON" ]; then
+  exit 9
+fi
+exit 0
+`
 
 func writeFake(t *testing.T, dir, name, body string) {
 	t.Helper()

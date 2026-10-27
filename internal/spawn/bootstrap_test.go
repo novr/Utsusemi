@@ -68,35 +68,35 @@ func TestGuestEnvSystemProxyDoesNotSetProcessProxy(t *testing.T) {
 		RunnerVersion: "2.336.0",
 		Env: map[string]string{
 			"http_proxy": "http://proxy.example:8080",
-			"no_proxy":   "192.168.64.0/24",
+			"no_proxy":   "10.0.0.0/8",
 		},
 		SystemProxy: &config.SystemProxy{
-			HTTP:   "192.168.64.1:8888",
-			HTTPS:  "192.168.64.1:8888",
+			HTTP:   "proxy.example:8080",
+			HTTPS:  "proxy.example:8080",
 			Bypass: []string{"localhost", "*.local"},
 		},
 	}
 	env := GuestEnv(cfg, p)
-	if env["UTSUSEMI_SYSTEM_PROXY_HTTP_HOST"] != "192.168.64.1" || env["UTSUSEMI_SYSTEM_PROXY_HTTP_PORT"] != "8888" {
+	if env["UTSUSEMI_SYSTEM_PROXY_HTTP_HOST"] != "proxy.example" || env["UTSUSEMI_SYSTEM_PROXY_HTTP_PORT"] != "8080" {
 		t.Fatalf("http = %q %q", env["UTSUSEMI_SYSTEM_PROXY_HTTP_HOST"], env["UTSUSEMI_SYSTEM_PROXY_HTTP_PORT"])
 	}
-	if env["UTSUSEMI_SYSTEM_PROXY_HTTPS_HOST"] != "192.168.64.1" || env["UTSUSEMI_SYSTEM_PROXY_HTTPS_PORT"] != "8888" {
+	if env["UTSUSEMI_SYSTEM_PROXY_HTTPS_HOST"] != "proxy.example" || env["UTSUSEMI_SYSTEM_PROXY_HTTPS_PORT"] != "8080" {
 		t.Fatalf("https = %q %q", env["UTSUSEMI_SYSTEM_PROXY_HTTPS_HOST"], env["UTSUSEMI_SYSTEM_PROXY_HTTPS_PORT"])
 	}
 	if env["UTSUSEMI_SYSTEM_PROXY_BYPASS"] != "localhost,*.local" {
 		t.Fatalf("bypass = %q", env["UTSUSEMI_SYSTEM_PROXY_BYPASS"])
 	}
-	if strings.Contains(env["UTSUSEMI_SYSTEM_PROXY_BYPASS"], "192.168.64.1") {
+	if strings.Contains(env["UTSUSEMI_SYSTEM_PROXY_BYPASS"], "proxy.example") {
 		t.Fatalf("bypass gained proxy host: %q", env["UTSUSEMI_SYSTEM_PROXY_BYPASS"])
 	}
-	if env["http_proxy"] != "http://proxy.example:8080" || env["no_proxy"] != "192.168.64.0/24" {
+	if env["http_proxy"] != "http://proxy.example:8080" || env["no_proxy"] != "10.0.0.0/8" {
 		t.Fatalf("process proxy env changed: %v", env)
 	}
 	if _, ok := env["https_proxy"]; ok {
 		t.Fatal("system_proxy must not create https_proxy")
 	}
 
-	omit := &config.Config{RunnerVersion: "2.336.0", SystemProxy: &config.SystemProxy{HTTP: "10.0.0.1:8888"}}
+	omit := &config.Config{RunnerVersion: "2.336.0", SystemProxy: &config.SystemProxy{HTTP: "10.0.0.1:9"}}
 	omitted := GuestEnv(omit, p)
 	if _, ok := omitted["UTSUSEMI_SYSTEM_PROXY_BYPASS"]; ok {
 		t.Fatal("omitted bypass must not set BYPASS")

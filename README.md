@@ -234,12 +234,12 @@ Keep `runner_version` at GitHub’s current [Actions runner](https://github.com/
 >
 > `env` is process environment only. URLSession / CFNetwork (SwiftPM `binaryTarget`) does not read `http_proxy`. Optional `system_proxy` sets the guest macOS system HTTP(S) proxy for those clients and does not change `config.env`. curl, git, and the runner tarball download still use `env`, or the host runner cache when the tarball is already there.
 >
-> Values are `host:port`. At least one of `http` or `https` is required. Quote an IPv6 endpoint (`"[2001:db8::1]:443"`); unquoted `[` is a YAML sequence. `bypass` entries are hostnames or IPs, not CIDR; quote `"*.local"` and `"<local>"`. Omitting `bypass` leaves the image's existing exclusions. The guest user needs passwordless `sudo`. With `softnet: true` the guest cannot reach the host, so a proxy at `192.168.64.1` is unreachable. Restart the agent after changing this. It does not fix a missing host route, DNS, or a proxy that hangs after CONNECT.
+> Values are `host:port`. At least one of `http` or `https` is required. Quote an IPv6 endpoint (`"[2001:db8::1]:443"`); unquoted `[` is a YAML sequence. `bypass` entries are hostnames or IPs, not CIDR; quote `"*.local"` and `"<local>"`. Omitting `bypass` leaves the image's existing exclusions. The guest user needs passwordless `sudo`. With `softnet: true` the guest cannot reach the host, so a proxy running there is unreachable. Restart the agent after changing this. It does not fix a missing host route, DNS, or a proxy that hangs after CONNECT.
 >
 > ```yaml
 > system_proxy:
->   http: 192.168.64.1:8888
->   https: 192.168.64.1:8888
+>   http: proxy.example:8080
+>   https: proxy.example:8080
 >   bypass:
 >     - localhost
 >     - 127.0.0.1
