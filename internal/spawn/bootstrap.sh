@@ -9,6 +9,101 @@ if [ -z "${JIT_CONFIG}" ]; then
   echo "jit config is required on stdin" >&2
   exit 1
 fi
+
+# System proxy is the default-route service only. Other enabled services on a
+# Tart guest can reject networksetup and would fail the spawn. sudo -n avoids
+# a password prompt on a tty-less tart exec. DHCP can lag the guest agent.
+apply_system_proxy() {
+  local http_host="${UTSUSEMI_SYSTEM_PROXY_HTTP_HOST:-}"
+  local http_port="${UTSUSEMI_SYSTEM_PROXY_HTTP_PORT:-}"
+  local https_host="${UTSUSEMI_SYSTEM_PROXY_HTTPS_HOST:-}"
+  local https_port="${UTSUSEMI_SYSTEM_PROXY_HTTPS_PORT:-}"
+  if [ -z "$http_host" ] && [ -z "$https_host" ]; then
+    if [ -n "$http_port" ] || [ -n "$https_port" ]; then
+      echo "bootstrap: system proxy port without host" >&2
+      exit 1
+    fi
+    return 0
+  fi
+  if [ -n "$http_host" ] && [ -z "$http_port" ]; then
+    echo "bootstrap: system proxy http host without port" >&2
+    exit 1
+  fi
+  if [ -z "$http_host" ] && [ -n "$http_port" ]; then
+    echo "bootstrap: system proxy http port without host" >&2
+    exit 1
+  fi
+  if [ -n "$https_host" ] && [ -z "$https_port" ]; then
+    echo "bootstrap: system proxy https host without port" >&2
+    exit 1
+  fi
+  if [ -z "$https_host" ] && [ -n "$https_port" ]; then
+    echo "bootstrap: system proxy https port without host" >&2
+    exit 1
+  fi
+
+  local iface=""
+  local _
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    iface="$(route -n get default 2>/dev/null | awk '$1 == "interface:" { print $2; exit }' || true)"
+    if [ -n "$iface" ]; then
+      break
+    fi
+    sleep 0.5
+  done
+  if [ -z "$iface" ]; then
+    echo "bootstrap: no default route for system proxy" >&2
+    exit 1
+  fi
+
+  local order
+  order="$(sudo -n networksetup -listnetworkserviceorder)" || exit 1
+  local svc
+  svc="$(printf '%s\n' "$order" | awk -v dev="$iface" '
+/^\([0-9]+\)/ {
+  name = $0
+  sub(/^\([0-9]+\)[[:space:]]*/, "", name)
+  sub(/^\*[[:space:]]*/, "", name)
+  gsub(/^[[:space:]]+|[[:space:]]+$/, "", name)
+  next
+}
+/Device:/ {
+  line = $0
+  sub(/.*Device:[[:space:]]*/, "", line)
+  sub(/[),].*/, "", line)
+  gsub(/^[[:space:]]+|[[:space:]]+$/, "", line)
+  if (line == dev && name != "") {
+    print name
+    exit
+  }
+}
+')"
+  if [ -z "$svc" ]; then
+    echo "bootstrap: no network service for ${iface}" >&2
+    exit 1
+  fi
+  echo "bootstrap: system proxy on ${svc} (${iface})" >&2
+
+  sudo -n networksetup -setproxyautodiscovery "$svc" off
+  if [ -n "$http_host" ]; then
+    sudo -n networksetup -setwebproxy "$svc" "$http_host" "$http_port" off
+    sudo -n networksetup -setwebproxystate "$svc" on
+  fi
+  if [ -n "$https_host" ]; then
+    sudo -n networksetup -setsecurewebproxy "$svc" "$https_host" "$https_port" off
+    sudo -n networksetup -setsecurewebproxystate "$svc" on
+  fi
+  if [ -n "${UTSUSEMI_SYSTEM_PROXY_BYPASS:-}" ]; then
+    # *.local must not expand to filenames in the guest cwd.
+    set -f
+    local domains
+    IFS=',' read -r -a domains <<< "${UTSUSEMI_SYSTEM_PROXY_BYPASS}"
+    sudo -n networksetup -setproxybypassdomains "$svc" "${domains[@]}"
+    set +f
+  fi
+}
+apply_system_proxy
+
 mkdir -p "$RUNNER_HOME"
 cd "$RUNNER_HOME"
 
@@ -57,4 +152,7 @@ else
   echo "bootstrap: runner download+install took $((SECONDS - t0))s" >&2
 fi
 
+unset UTSUSEMI_SYSTEM_PROXY_HTTP_HOST UTSUSEMI_SYSTEM_PROXY_HTTP_PORT \
+  UTSUSEMI_SYSTEM_PROXY_HTTPS_HOST UTSUSEMI_SYSTEM_PROXY_HTTPS_PORT \
+  UTSUSEMI_SYSTEM_PROXY_BYPASS
 ./run.sh --jitconfig "${JIT_CONFIG}"

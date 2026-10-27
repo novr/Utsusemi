@@ -17,4 +17,15 @@ pool_size: 1
 # env: literal guest env; host job steps inherit process env (see README)
 # env:
 #   http_proxy: http://proxy.example:8080
+# macOS system proxy for URLSession / CFNetwork. Does not set http_proxy (curl still uses env).
+# host:port only. Quote IPv6 ("[2001:db8::1]:443") and bypass entries that contain * or <. Omitting bypass keeps the image exclusions.
+# Guest needs passwordless sudo. Restart the agent to apply. softnet cannot reach the host.
+# system_proxy:
+#   http: proxy.example:8080
+#   https: proxy.example:8080
+#   bypass:
+#     - localhost
+#     - 127.0.0.1
+#     - "<local>"
+#     - "*.local"
 

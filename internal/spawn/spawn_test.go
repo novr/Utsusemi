@@ -326,7 +326,15 @@ func TestSpawnUsesKeychainRegistrarInterface(_ *testing.T) {
 }
 
 func bootstrapTestEnv(home string, extra ...string) []string {
-	env := append(os.Environ(),
+	base := os.Environ()
+	env := make([]string, 0, len(base)+len(extra)+3)
+	for _, entry := range base {
+		if strings.HasPrefix(entry, "UTSUSEMI_SYSTEM_PROXY_") {
+			continue
+		}
+		env = append(env, entry)
+	}
+	env = append(env,
 		"RUNNER_VERSION=2.336.0",
 		"RUNNER_ARCH=osx-arm64",
 		"RUNNER_HOME="+home,
@@ -620,4 +628,343 @@ func TestBootstrapRequiresJITOnStdin(t *testing.T) {
 	if err := cmd.Run(); err == nil {
 		t.Fatal("expected failure when stdin is empty")
 	}
+}
+
+func TestBootstrapSystemProxyScriptAvoidsHostPaths(t *testing.T) {
+	for _, forbidden := range []string{"/usr/sbin/networksetup", "/sbin/route", "setautoproxystate"} {
+		if strings.Contains(bootstrapScript, forbidden) {
+			t.Fatalf("bootstrap.sh contains %s", forbidden)
+		}
+	}
+}
+
+func TestBootstrapSystemProxyUnsetDoesNotCallSudo(t *testing.T) {
+	home := t.TempDir()
+	writeRunnerListenerStub(t, home, "2.336.0")
+	if err := os.WriteFile(filepath.Join(home, "run.sh"), []byte("#!/bin/bash\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	writeFake(t, bin, "sudo", `#!/bin/bash
+echo sudo called >&2
+exit 9
+`)
+	cmd := exec.Command("bash", "-c", bootstrapScript)
+	cmd.Env = bootstrapTestEnv(home, "PATH="+bin+":"+os.Getenv("PATH"))
+	cmd.Stdin = strings.NewReader("encoded-jit")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("bootstrap failed: %v: %s", err, out)
+	}
+}
+
+func TestBootstrapSystemProxyAppliesDefaultRoute(t *testing.T) {
+	home := t.TempDir()
+	work := t.TempDir()
+	if err := os.WriteFile(filepath.Join(work, "foo.local"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	writeRunnerListenerStub(t, home, "2.336.0")
+	envOut := filepath.Join(home, "env.txt")
+	argsOut := filepath.Join(home, "args.txt")
+	runStub := fmt.Sprintf(`#!/bin/bash
+env | sort > %s
+printf '%%s\n' "$@" > %s
+`, shellQuote(envOut), shellQuote(argsOut))
+	if err := os.WriteFile(filepath.Join(home, "run.sh"), []byte(runStub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(work, "calls.txt")
+	order := filepath.Join(work, "order.txt")
+	orderBody := `An asterisk (*) denotes that a network service is disabled.
+(1) Extra
+(Hardware Port: Extra, Device: en01)
+
+(2) *Thunderbolt Bridge
+(Hardware Port: Thunderbolt Bridge, Device: en0)
+
+(3) Wi-Fi
+(Hardware Port: Wi-Fi, Device: en1)
+`
+	if err := os.WriteFile(order, []byte(orderBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	writeFake(t, bin, "route", proxyRouteScript)
+	writeFake(t, bin, "sudo", proxySudoScript)
+	writeFake(t, bin, "networksetup", proxyNetworksetupScript)
+
+	cmd := exec.Command("bash", "-c", bootstrapScript)
+	cmd.Dir = work
+	cmd.Env = bootstrapTestEnv(home,
+		"PATH="+bin+":"+os.Getenv("PATH"),
+		"PROXY_LOG="+logPath,
+		"ORDER_FILE="+order,
+		"HTTP_PROXY=http://proxy.example:8080",
+		"UTSUSEMI_SYSTEM_PROXY_HTTP_HOST=proxy.example",
+		"UTSUSEMI_SYSTEM_PROXY_HTTP_PORT=8080",
+		"UTSUSEMI_SYSTEM_PROXY_HTTPS_HOST=proxy.example",
+		"UTSUSEMI_SYSTEM_PROXY_HTTPS_PORT=8080",
+		"UTSUSEMI_SYSTEM_PROXY_BYPASS=localhost,127.0.0.1,<local>,*.local",
+	)
+	cmd.Stdin = strings.NewReader("encoded-jit")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("bootstrap failed: %v: %s", err, out)
+	}
+	calls := readProxyCalls(t, logPath)
+	want := [][]string{
+		{"-listnetworkserviceorder"},
+		{"-setproxyautodiscovery", "Thunderbolt Bridge", "off"},
+		{"-setwebproxy", "Thunderbolt Bridge", "proxy.example", "8080", "off"},
+		{"-setwebproxystate", "Thunderbolt Bridge", "on"},
+		{"-setsecurewebproxy", "Thunderbolt Bridge", "proxy.example", "8080", "off"},
+		{"-setsecurewebproxystate", "Thunderbolt Bridge", "on"},
+		{"-setproxybypassdomains", "Thunderbolt Bridge", "localhost", "127.0.0.1", "<local>", "*.local"},
+	}
+	if len(calls) != len(want) {
+		t.Fatalf("calls=%q", calls)
+	}
+	for i := range want {
+		if strings.Join(calls[i], "\n") != strings.Join(want[i], "\n") {
+			t.Fatalf("call %d = %q, want %q", i, calls[i], want[i])
+		}
+	}
+	joined := strings.Join(flatten(calls), "\n")
+	if strings.Contains(joined, "Wi-Fi") || strings.Contains(joined, "Extra") || strings.Contains(joined, "foo.local") {
+		t.Fatalf("unexpected target or glob: %s", joined)
+	}
+	envText, err := os.ReadFile(envOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(envText), "UTSUSEMI_SYSTEM_PROXY_") {
+		t.Fatalf("control vars reached run.sh:\n%s", envText)
+	}
+	if !strings.Contains(string(envText), "HTTP_PROXY=http://proxy.example:8080") {
+		t.Fatalf("http_proxy missing from run.sh:\n%s", envText)
+	}
+	args, err := os.ReadFile(argsOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(args) != "--jitconfig\nencoded-jit\n" {
+		t.Fatalf("run.sh args = %q", args)
+	}
+}
+
+func TestBootstrapSystemProxyOmitsBypassWhenUnset(t *testing.T) {
+	logPath := runSystemProxyBootstrap(t, systemProxyOpts{})
+	calls := readProxyCalls(t, logPath)
+	want := [][]string{
+		{"-listnetworkserviceorder"},
+		{"-setproxyautodiscovery", "Ethernet", "off"},
+		{"-setwebproxy", "Ethernet", "proxy.example", "8080", "off"},
+		{"-setwebproxystate", "Ethernet", "on"},
+	}
+	if len(calls) != len(want) {
+		t.Fatalf("calls=%q", calls)
+	}
+	for i := range want {
+		if strings.Join(calls[i], "\n") != strings.Join(want[i], "\n") {
+			t.Fatalf("call %d = %q, want %q", i, calls[i], want[i])
+		}
+	}
+}
+
+func TestBootstrapSystemProxyNoRoute(t *testing.T) {
+	_, err := runSystemProxyBootstrapErr(t, systemProxyOpts{emptyRoute: true})
+	if err == nil {
+		t.Fatal("expected failure without a default route")
+	}
+}
+
+func TestBootstrapSystemProxyNoService(t *testing.T) {
+	_, err := runSystemProxyBootstrapErr(t, systemProxyOpts{order: `(1) Wi-Fi
+(Hardware Port: Wi-Fi, Device: en1)
+`})
+	if err == nil {
+		t.Fatal("expected failure when the default route has no service")
+	}
+}
+
+func TestBootstrapSystemProxyNetworksetupFailure(t *testing.T) {
+	_, err := runSystemProxyBootstrapErr(t, systemProxyOpts{failOn: "-setwebproxy"})
+	if err == nil {
+		t.Fatal("expected failure when networksetup fails")
+	}
+}
+
+func TestBootstrapSystemProxySudoFailure(t *testing.T) {
+	_, err := runSystemProxyBootstrapErr(t, systemProxyOpts{sudoFail: true})
+	if err == nil {
+		t.Fatal("expected failure when sudo -n fails")
+	}
+}
+
+type systemProxyOpts struct {
+	emptyRoute bool
+	order      string
+	failOn     string
+	sudoFail   bool
+	bypass     bool
+}
+
+func runSystemProxyBootstrap(t *testing.T, opts systemProxyOpts) string {
+	t.Helper()
+	logPath, err := runSystemProxyBootstrapErr(t, opts)
+	if err != nil {
+		t.Fatalf("bootstrap failed: %v", err)
+	}
+	return logPath
+}
+
+func runSystemProxyBootstrapErr(t *testing.T, opts systemProxyOpts) (string, error) {
+	t.Helper()
+	home := t.TempDir()
+	work := t.TempDir()
+	argsOut := filepath.Join(home, "args.txt")
+	runStub := fmt.Sprintf(`#!/bin/bash
+printf '%%s\n' "$@" > %s
+`, shellQuote(argsOut))
+	if err := os.WriteFile(filepath.Join(home, "run.sh"), []byte(runStub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	writeRunnerListenerStub(t, home, "2.336.0")
+	order := opts.order
+	if order == "" {
+		order = `(1) Ethernet
+(Hardware Port: Ethernet, Device: en0)
+(2) Wi-Fi
+(Hardware Port: Wi-Fi, Device: en1)
+`
+	}
+	orderPath := filepath.Join(work, "order.txt")
+	if err := os.WriteFile(orderPath, []byte(order), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	logPath := filepath.Join(work, "calls.txt")
+	bin := t.TempDir()
+	route := proxyRouteScript
+	if opts.emptyRoute {
+		route = proxyRouteEmptyScript
+	}
+	writeFake(t, bin, "route", route)
+	sudo := proxySudoScript
+	if opts.sudoFail {
+		sudo = proxySudoFailScript
+	}
+	writeFake(t, bin, "sudo", sudo)
+	writeFake(t, bin, "networksetup", proxyNetworksetupScript)
+	extra := []string{
+		"PATH=" + bin + ":" + os.Getenv("PATH"),
+		"PROXY_LOG=" + logPath,
+		"ORDER_FILE=" + orderPath,
+		"UTSUSEMI_SYSTEM_PROXY_HTTP_HOST=proxy.example",
+		"UTSUSEMI_SYSTEM_PROXY_HTTP_PORT=8080",
+	}
+	if opts.failOn != "" {
+		extra = append(extra, "FAIL_ON="+opts.failOn)
+	}
+	if opts.bypass {
+		extra = append(extra, "UTSUSEMI_SYSTEM_PROXY_BYPASS=localhost")
+	}
+	cmd := exec.Command("bash", "-c", bootstrapScript)
+	cmd.Dir = work
+	cmd.Env = bootstrapTestEnv(home, extra...)
+	cmd.Stdin = strings.NewReader("encoded-jit")
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		if _, statErr := os.Stat(argsOut); statErr == nil {
+			t.Fatalf("run.sh ran after bootstrap error: %v: %s", err, out)
+		}
+		return logPath, err
+	}
+	return logPath, nil
+}
+
+const proxyRouteScript = `#!/bin/bash
+if [ "$1" = -n ] && [ "$2" = get ] && [ "$3" = default ]; then
+  echo 'interface: en0'
+  exit 0
+fi
+echo unexpected route >&2
+exit 1
+`
+
+const proxyRouteEmptyScript = `#!/bin/bash
+if [ "$1" = -n ] && [ "$2" = get ] && [ "$3" = default ]; then
+  exit 0
+fi
+exit 1
+`
+
+const proxySudoScript = `#!/bin/bash
+if [ "${1:-}" != -n ]; then
+  echo 'sudo without -n' >&2
+  exit 3
+fi
+shift
+"$@"
+`
+
+const proxySudoFailScript = `#!/bin/bash
+exit 3
+`
+
+const proxyNetworksetupScript = `#!/bin/bash
+{
+  printf '%s\n' "$@"
+  echo ---
+} >> "$PROXY_LOG"
+if [ "$1" = -listnetworkserviceorder ]; then
+  cat "$ORDER_FILE"
+  exit 0
+fi
+if [ -n "${FAIL_ON:-}" ] && [ "$1" = "$FAIL_ON" ]; then
+  exit 9
+fi
+exit 0
+`
+
+func writeFake(t *testing.T, dir, name, body string) {
+	t.Helper()
+	if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o755); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func shellQuote(path string) string {
+	return "'" + strings.ReplaceAll(path, "'", "'\\''") + "'"
+}
+
+func readProxyCalls(t *testing.T, path string) [][]string {
+	t.Helper()
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls [][]string
+	var cur []string
+	for _, line := range strings.Split(string(data), "\n") {
+		if line == "---" {
+			calls = append(calls, cur)
+			cur = nil
+			continue
+		}
+		if line == "" {
+			continue
+		}
+		cur = append(cur, line)
+	}
+	if len(cur) > 0 {
+		calls = append(calls, cur)
+	}
+	return calls
+}
+
+func flatten(calls [][]string) []string {
+	var out []string
+	for _, call := range calls {
+		out = append(out, call...)
+	}
+	return out
 }

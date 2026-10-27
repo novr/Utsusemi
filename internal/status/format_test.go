@@ -11,11 +11,14 @@ func TestFormatTextRunning(t *testing.T) {
 	out := FormatText(Report{
 		Target: "org:my-org (group 1)",
 		Runtime: &RuntimeInfo{
-			State:         "active",
-			BaseImage:     "ghcr.io/example/image:1",
-			RunnerVersion: "2.337.0",
-			PoolSize:      2,
-			Labels:        []string{"self-hosted"},
+			State:             "active",
+			BaseImage:         "ghcr.io/example/image:1",
+			RunnerVersion:     "2.337.0",
+			PoolSize:          2,
+			Labels:            []string{"self-hosted"},
+			SystemProxyHTTP:   "proxy.example:8080",
+			SystemProxyHTTPS:  "proxy.example:8080",
+			SystemProxyBypass: []string{"localhost", "*.local"},
 		},
 		RunnerVersion: RunnerVersionInfo{
 			Configured: "2.400.0",
@@ -45,6 +48,7 @@ func TestFormatTextRunning(t *testing.T) {
 	for _, want := range []string{
 		"target: org:my-org (group 1)",
 		"runtime: active",
+		"system_proxy: http=proxy.example:8080 https=proxy.example:8080 bypass=localhost,*.local",
 		"base_image: ghcr.io/example/image:1",
 		"runner_version: 2.337.0 (config.yaml 2.400.0)",
 		"agent: running (pid 12345, uptime 2h15m)",
@@ -169,6 +173,25 @@ func TestFormatTextBootNotRunningBudget(t *testing.T) {
 	want := "boot_not_running_budget: count=9 last=2026-09-24T14:55:37Z vm=utsusemi-x"
 	if !strings.Contains(out, want) {
 		t.Fatalf("missing %q:\n%s", want, out)
+	}
+}
+
+func TestFormatTextSystemProxyOnlyWhenActive(t *testing.T) {
+	rt := &RuntimeInfo{
+		SystemProxyHTTP: "proxy.example:8080",
+	}
+	for _, state := range []string{"pending", "stale"} {
+		rt.State = state
+		out := FormatText(Report{
+			Target:     "org:my-org",
+			Runtime:    rt,
+			Agent:      AgentInfo{State: AgentStopped},
+			Health:     HealthInfo{Status: "ok"},
+			Credential: credentialview.Info{Mode: "github_pat"},
+		})
+		if strings.Contains(out, "system_proxy:") {
+			t.Fatalf("state %s printed system_proxy:\n%s", state, out)
+		}
 	}
 }
 

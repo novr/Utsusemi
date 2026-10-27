@@ -69,21 +69,24 @@ type PoolDrainInfo struct {
 
 // RuntimeInfo is the agent-frozen config from StateDir/runtime_config.json.
 type RuntimeInfo struct {
-	State         string   `json:"state"` // active | stale | pending
-	SavedAt       string   `json:"saved_at,omitempty"`
-	AgentID       string   `json:"agent_id,omitempty"`
-	Target        string   `json:"target,omitempty"`
-	BaseImage     string   `json:"base_image,omitempty"`
-	RunnerVersion string   `json:"runner_version,omitempty"`
-	PoolSize      int      `json:"pool_size,omitempty"`
-	Labels        []string `json:"labels,omitempty"`
-	ReclaimPolicy string   `json:"reclaim_policy,omitempty"`
-	MinFreeDiskGB int      `json:"min_free_disk_gb,omitempty"`
-	Softnet       bool     `json:"softnet"`
-	Mounts        []string `json:"mounts,omitempty"`
-	SpawnTimeout  string   `json:"spawn_timeout,omitempty"`
-	JobTimeout    string   `json:"job_timeout,omitempty"`
-	VMNamePrefix  string   `json:"vm_name_prefix,omitempty"`
+	State             string   `json:"state"` // active | stale | pending
+	SavedAt           string   `json:"saved_at,omitempty"`
+	AgentID           string   `json:"agent_id,omitempty"`
+	Target            string   `json:"target,omitempty"`
+	BaseImage         string   `json:"base_image,omitempty"`
+	RunnerVersion     string   `json:"runner_version,omitempty"`
+	PoolSize          int      `json:"pool_size,omitempty"`
+	Labels            []string `json:"labels,omitempty"`
+	ReclaimPolicy     string   `json:"reclaim_policy,omitempty"`
+	MinFreeDiskGB     int      `json:"min_free_disk_gb,omitempty"`
+	Softnet           bool     `json:"softnet"`
+	Mounts            []string `json:"mounts,omitempty"`
+	SystemProxyHTTP   string   `json:"system_proxy_http,omitempty"`
+	SystemProxyHTTPS  string   `json:"system_proxy_https,omitempty"`
+	SystemProxyBypass []string `json:"system_proxy_bypass,omitempty"`
+	SpawnTimeout      string   `json:"spawn_timeout,omitempty"`
+	JobTimeout        string   `json:"job_timeout,omitempty"`
+	VMNamePrefix      string   `json:"vm_name_prefix,omitempty"`
 }
 
 type BootNotRunningInfo struct {
@@ -327,21 +330,24 @@ func loadRuntimeInfo(stateDir string, agent AgentInfo, session *lease.AgentSessi
 		return nil
 	}
 	info := &RuntimeInfo{
-		State:         "stale",
-		SavedAt:       snap.SavedAt.UTC().Format(time.RFC3339),
-		AgentID:       snap.AgentID,
-		Target:        snap.Target,
-		BaseImage:     snap.BaseImage,
-		RunnerVersion: snap.RunnerVersion,
-		PoolSize:      snap.PoolSize,
-		Labels:        snap.Labels,
-		ReclaimPolicy: snap.ReclaimPolicy,
-		MinFreeDiskGB: snap.MinFreeDiskGB,
-		Softnet:       snap.Softnet,
-		Mounts:        snap.Mounts,
-		SpawnTimeout:  snap.SpawnTimeout,
-		JobTimeout:    snap.JobTimeout,
-		VMNamePrefix:  snap.VMNamePrefix,
+		State:             "stale",
+		SavedAt:           snap.SavedAt.UTC().Format(time.RFC3339),
+		AgentID:           snap.AgentID,
+		Target:            snap.Target,
+		BaseImage:         snap.BaseImage,
+		RunnerVersion:     snap.RunnerVersion,
+		PoolSize:          snap.PoolSize,
+		Labels:            snap.Labels,
+		ReclaimPolicy:     snap.ReclaimPolicy,
+		MinFreeDiskGB:     snap.MinFreeDiskGB,
+		Softnet:           snap.Softnet,
+		Mounts:            snap.Mounts,
+		SystemProxyHTTP:   snap.SystemProxyHTTP,
+		SystemProxyHTTPS:  snap.SystemProxyHTTPS,
+		SystemProxyBypass: snap.SystemProxyBypass,
+		SpawnTimeout:      snap.SpawnTimeout,
+		JobTimeout:        snap.JobTimeout,
+		VMNamePrefix:      snap.VMNamePrefix,
 	}
 	if agent.State != AgentRunning || session == nil || snap.AgentID == "" {
 		return info
