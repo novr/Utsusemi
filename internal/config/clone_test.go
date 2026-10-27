@@ -15,6 +15,10 @@ func TestCloneIndependentSlices(t *testing.T) {
 		Labels:    []string{"a", "b"},
 		Mounts:    []string{"/tmp/x"},
 		Env:       map[string]string{"HTTP_PROXY": "http://proxy:8080"},
+		SystemProxy: &SystemProxy{
+			HTTP:   "192.168.64.1:8888",
+			Bypass: []string{"localhost"},
+		},
 	}
 	got := Clone(cfg)
 	if got == cfg {
@@ -25,6 +29,8 @@ func TestCloneIndependentSlices(t *testing.T) {
 	cfg.Labels[0] = "mutated"
 	cfg.Mounts[0] = "/tmp/y"
 	cfg.Env["HTTP_PROXY"] = "mutated"
+	cfg.SystemProxy.HTTP = "10.0.0.1:9"
+	cfg.SystemProxy.Bypass[0] = "mutated"
 	if got.BaseImage != "img:1" || got.PoolSize != 2 {
 		t.Fatalf("value fields leaked: %+v", got)
 	}
@@ -34,11 +40,14 @@ func TestCloneIndependentSlices(t *testing.T) {
 	if got.Env["HTTP_PROXY"] != "http://proxy:8080" {
 		t.Fatalf("env map leaked: %v", got.Env)
 	}
+	if got.SystemProxy == cfg.SystemProxy || got.SystemProxy.HTTP != "192.168.64.1:8888" || got.SystemProxy.Bypass[0] != "localhost" {
+		t.Fatalf("system proxy leaked: %+v", got.SystemProxy)
+	}
 }
 
 func TestCloneNilSlicesStayNil(t *testing.T) {
 	got := Clone(&Config{BaseImage: "img:1"})
-	if got.Labels != nil || got.Mounts != nil || got.Env != nil {
-		t.Fatalf("nil slices/maps: labels=%v mounts=%v env=%v", got.Labels, got.Mounts, got.Env)
+	if got.Labels != nil || got.Mounts != nil || got.Env != nil || got.SystemProxy != nil {
+		t.Fatalf("nil slices/maps: labels=%v mounts=%v env=%v proxy=%v", got.Labels, got.Mounts, got.Env, got.SystemProxy)
 	}
 }

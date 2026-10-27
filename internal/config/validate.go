@@ -92,11 +92,14 @@ func Validate(cfg *Config, p provider.VMProvider) (target.Target, error) {
 	if err := validateEnv(cfg.Env); err != nil {
 		return target.Target{}, err
 	}
+	if err := validateSystemProxy(cfg.SystemProxy); err != nil {
+		return target.Target{}, err
+	}
 	return tgt, nil
 }
 
 // validateEnv checks literal guest env keys/values for tart exec `env KEY=value`.
-// Values are not expanded; RUNNER_ keys are reserved for bootstrap.
+// Values are not expanded; RUNNER_ and UTSUSEMI_SYSTEM_PROXY_ keys are reserved for bootstrap.
 func validateEnv(env map[string]string) error {
 	for key, value := range env {
 		if key == "" {
@@ -107,6 +110,9 @@ func validateEnv(env map[string]string) error {
 		}
 		if strings.HasPrefix(key, "RUNNER_") {
 			return fmt.Errorf("env key %q is reserved (RUNNER_ prefix)", key)
+		}
+		if strings.HasPrefix(key, systemProxyEnvPrefix) {
+			return fmt.Errorf("env key %q is reserved (%s prefix)", key, systemProxyEnvPrefix)
 		}
 		if strings.ContainsAny(value, "\x00\n\r") {
 			return fmt.Errorf("env %q value must not contain NUL or newline", key)

@@ -7,6 +7,23 @@ import (
 	"github.com/novr/utsusemi/internal/credentialview"
 )
 
+func systemProxyLine(rt *RuntimeInfo) string {
+	if rt == nil {
+		return ""
+	}
+	var parts []string
+	if rt.SystemProxyHTTP != "" {
+		parts = append(parts, "http="+rt.SystemProxyHTTP)
+	}
+	if rt.SystemProxyHTTPS != "" {
+		parts = append(parts, "https="+rt.SystemProxyHTTPS)
+	}
+	if len(rt.SystemProxyBypass) > 0 {
+		parts = append(parts, "bypass="+strings.Join(rt.SystemProxyBypass, ","))
+	}
+	return strings.Join(parts, " ")
+}
+
 func FormatText(r Report) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "target: %s\n", r.Target)
@@ -32,6 +49,9 @@ func FormatText(r Report) string {
 			}
 			if r.Runtime.Target != "" {
 				fmt.Fprintf(&b, "  target: %s\n", r.Runtime.Target)
+			}
+			if line := systemProxyLine(r.Runtime); r.Runtime.State == "active" && line != "" {
+				fmt.Fprintf(&b, "  system_proxy: %s\n", line)
 			}
 		}
 	}

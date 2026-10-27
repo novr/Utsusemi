@@ -45,7 +45,14 @@ func (s BootstrapSpec) Env() map[string]string {
 }
 
 func BootstrapEnv(cfg *config.Config, p provider.VMProvider) map[string]string {
-	return BootstrapSpecFor(cfg, p).Env()
+	out := BootstrapSpecFor(cfg, p).Env()
+	if cfg == nil {
+		return out
+	}
+	for k, v := range config.SystemProxyEnv(cfg.SystemProxy) {
+		out[k] = v
+	}
+	return out
 }
 
 // GuestEnv merges config.env (literal) with BootstrapEnv. Bootstrap keys win.

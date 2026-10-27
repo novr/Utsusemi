@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/target"
 )
@@ -207,6 +209,7 @@ func TestValidateEnv(t *testing.T) {
 		{name: "dash option key", env: map[string]string{"-u": "HOME"}, want: "must match"},
 		{name: "leading digit", env: map[string]string{"1FOO": "x"}, want: "must match"},
 		{name: "reserved", env: map[string]string{"RUNNER_HOME": "/tmp"}, want: "reserved"},
+		{name: "system proxy reserved", env: map[string]string{"UTSUSEMI_SYSTEM_PROXY_HTTP_HOST": "10.0.0.1"}, want: "reserved"},
 		{name: "newline value", env: map[string]string{"FOO": "a\nb"}, want: "NUL or newline"},
 	}
 	for _, tc := range cases {
@@ -221,5 +224,108 @@ func TestValidateEnv(t *testing.T) {
 				t.Fatalf("err = %v, want substring %q", err, tc.want)
 			}
 		})
+	}
+}
+
+func TestValidateSystemProxy(t *testing.T) {
+	base := func() *Config {
+		return &Config{
+			Target:        target.ConfigYAML{Org: "my-org", RunnerGroupID: 1},
+			Labels:        []string{"self-hosted", "macOS"},
+			Registration:  Registration{Mode: ModeGitHubPAT},
+			Provider:      "tart",
+			BaseImage:     "ghcr.io/example/image:1",
+			RunnerVersion: "2.336.0",
+			PoolSize:      1,
+		}
+	}
+	ok := base()
+	ok.SystemProxy = &SystemProxy{
+		HTTP:   "192.168.64.1:8888",
+		HTTPS:  "[2001:db8::1]:443",
+		Bypass: []string{"localhost", "*.local", "<local>"},
+	}
+	if _, err := Validate(ok, provider.NewStub(2)); err != nil {
+		t.Fatal(err)
+	}
+	env := SystemProxyEnv(ok.SystemProxy)
+	if env["UTSUSEMI_SYSTEM_PROXY_HTTP_HOST"] != "192.168.64.1" || env["UTSUSEMI_SYSTEM_PROXY_HTTP_PORT"] != "8888" {
+		t.Fatalf("http endpoint = %v", env)
+	}
+	if env["UTSUSEMI_SYSTEM_PROXY_HTTPS_HOST"] != "2001:db8::1" || env["UTSUSEMI_SYSTEM_PROXY_HTTPS_PORT"] != "443" {
+		t.Fatalf("https endpoint = %v", env)
+	}
+	if env["UTSUSEMI_SYSTEM_PROXY_BYPASS"] != "localhost,*.local,<local>" {
+		t.Fatalf("bypass = %q", env["UTSUSEMI_SYSTEM_PROXY_BYPASS"])
+	}
+	if strings.Contains(env["UTSUSEMI_SYSTEM_PROXY_BYPASS"], "192.168.64.1") {
+		t.Fatalf("bypass must not gain the proxy host: %q", env["UTSUSEMI_SYSTEM_PROXY_BYPASS"])
+	}
+
+	noBypass := base()
+	noBypass.SystemProxy = &SystemProxy{HTTPS: "192.168.64.1:8888"}
+	if _, err := Validate(noBypass, provider.NewStub(2)); err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := SystemProxyEnv(noBypass.SystemProxy)["UTSUSEMI_SYSTEM_PROXY_BYPASS"]; ok {
+		t.Fatal("omitted bypass must not set BYPASS")
+	}
+	if _, ok := SystemProxyEnv(noBypass.SystemProxy)["UTSUSEMI_SYSTEM_PROXY_HTTP_HOST"]; ok {
+		t.Fatal("http must stay unset")
+	}
+	dashed := base()
+	dashed.SystemProxy = &SystemProxy{HTTP: "my-proxy.example:8080"}
+	if _, err := Validate(dashed, provider.NewStub(2)); err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name string
+		sp   *SystemProxy
+		want string
+	}{
+		{name: "empty", sp: &SystemProxy{}, want: "requires http or https"},
+		{name: "bypass only", sp: &SystemProxy{Bypass: []string{"localhost"}}, want: "requires http or https"},
+		{name: "url", sp: &SystemProxy{HTTP: "http://192.168.64.1:8888"}, want: "host:port"},
+		{name: "userinfo", sp: &SystemProxy{HTTP: "user:pass@192.168.64.1:8888"}, want: "host:port"},
+		{name: "port", sp: &SystemProxy{HTTPS: "192.168.64.1:0"}, want: "1-65535"},
+		{name: "cidr", sp: &SystemProxy{HTTP: "192.168.64.1:8888", Bypass: []string{"192.168.64.0/24"}}, want: "',' or '/'"},
+		{name: "brackets", sp: &SystemProxy{HTTP: "192.168.64.1:8888", Bypass: []string{"<foo>"}}, want: "'<' or '>'"},
+		{name: "host space", sp: &SystemProxy{HTTP: "192.168.64.1 :8888"}, want: "whitespace or control"},
+		{name: "host dash", sp: &SystemProxy{HTTP: "-proxy.example:80"}, want: "must not start with '-'"},
+		{name: "host slash", sp: &SystemProxy{HTTP: "192.168.64.0/24:80"}, want: "host:port"},
+		{name: "bypass empty token", sp: &SystemProxy{HTTP: "192.168.64.1:8888", Bypass: []string{"Empty"}}, want: "clears all exclusions"},
+		{name: "bypass dash", sp: &SystemProxy{HTTP: "192.168.64.1:8888", Bypass: []string{"-local"}}, want: "must not start with '-'"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := base()
+			cfg.SystemProxy = tc.sp
+			_, err := Validate(cfg, provider.NewStub(2))
+			if err == nil {
+				t.Fatal("expected error")
+			}
+			if !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("err = %v, want substring %q", err, tc.want)
+			}
+		})
+	}
+
+	var parsed Config
+	if err := yaml.Unmarshal([]byte("system_proxy: {}\n"), &parsed); err != nil {
+		t.Fatal(err)
+	}
+	if parsed.SystemProxy == nil {
+		t.Fatal("empty system_proxy mapping must be present")
+	}
+	parsed.Labels = []string{"self-hosted"}
+	parsed.Registration.Mode = ModeGitHubPAT
+	parsed.Provider = "tart"
+	parsed.BaseImage = "ghcr.io/example/image:1"
+	parsed.RunnerVersion = "2.336.0"
+	parsed.PoolSize = 1
+	parsed.Target = target.ConfigYAML{Org: "my-org", RunnerGroupID: 1}
+	if _, err := Validate(&parsed, provider.NewStub(2)); err == nil {
+		t.Fatal("expected empty system_proxy to fail validation")
 	}
 }

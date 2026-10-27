@@ -85,6 +85,7 @@ type Config struct {
 	Softnet                bool              `yaml:"softnet,omitempty"`
 	Mounts                 []string          `yaml:"mounts,omitempty"`
 	Env                    map[string]string `yaml:"env,omitempty"`
+	SystemProxy            *SystemProxy      `yaml:"system_proxy,omitempty"`
 	ReclaimPolicy          string            `yaml:"reclaim_policy,omitempty"`
 	ReclaimGrace           Duration          `yaml:"reclaim_grace,omitempty"`
 }
@@ -150,7 +151,7 @@ func ApplyDefaults(cfg *Config) {
 	applyDefaults(cfg)
 }
 
-// Clone returns a deep copy of cfg. Labels, Mounts, and Env are independent.
+// Clone returns a deep copy of cfg. Labels, Mounts, Env, and SystemProxy are independent.
 // The result is intended as an agent-owned freeze; callers must not write it back
 // into shared Load-time config.
 func Clone(cfg *Config) *Config {
@@ -169,6 +170,13 @@ func Clone(cfg *Config) *Config {
 		for k, v := range cfg.Env {
 			out.Env[k] = v
 		}
+	}
+	if cfg.SystemProxy != nil {
+		sp := *cfg.SystemProxy
+		if cfg.SystemProxy.Bypass != nil {
+			sp.Bypass = append([]string(nil), cfg.SystemProxy.Bypass...)
+		}
+		out.SystemProxy = &sp
 	}
 	return &out
 }
