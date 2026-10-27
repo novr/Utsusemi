@@ -56,7 +56,7 @@ func assertCompletionContains(t *testing.T, output string, want ...string) {
 func TestShellCompletionTopLevel(t *testing.T) {
 	out := shellCompletions(t, "")
 	assertCompletionContains(t, out,
-		"run", "broker", "validate", "status", "doctor", "list", "configure", "clean", "drain", "version",
+		"run", "broker", "validate", "status", "doctor", "list", "configure", "clean", "drain", "pull", "version",
 	)
 }
 
@@ -78,4 +78,14 @@ func TestShellCompletionListTargets(t *testing.T) {
 func TestShellCompletionListTargetPrefix(t *testing.T) {
 	out := shellCompletions(t, "list", "v")
 	assertCompletionContains(t, out, "vms")
+}
+
+func TestShellCompletionPullSubcommands(t *testing.T) {
+	out := shellCompletions(t, "pull", "")
+	assertCompletionContains(t, out, "image", "runner")
+}
+
+func TestShellCompletionPullRunnerVersion(t *testing.T) {
+	out := shellCompletions(t, "pull", "runner", "")
+	assertCompletionContains(t, out, "latest")
 }
