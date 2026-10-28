@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -642,6 +643,97 @@ func TestBootstrapSystemProxyScriptAvoidsHostPaths(t *testing.T) {
 	}
 }
 
+func TestBootstrapKeepsActionCacheFlagForRunSh(t *testing.T) {
+	runIdx := strings.LastIndex(bootstrapScript, "\n./run.sh")
+	if runIdx < 0 {
+		t.Fatal("bootstrap.sh missing ./run.sh")
+	}
+	unsetIdx := strings.LastIndex(bootstrapScript[:runIdx], "unset ")
+	if unsetIdx < 0 {
+		t.Fatal("bootstrap.sh missing unset before run.sh")
+	}
+	chunk := bootstrapScript[unsetIdx:runIdx]
+	for _, key := range []string{
+		"UTSUSEMI_ACTION_CACHE_BIN_DIR",
+		"UTSUSEMI_ACTION_CACHE_DATA_DIR",
+		"UTSUSEMI_ACTION_CACHE_ADDR",
+	} {
+		if !strings.Contains(chunk, key) {
+			t.Fatalf("unset before run.sh must include %s", key)
+		}
+	}
+	for _, field := range strings.Fields(chunk) {
+		if field == "UTSUSEMI_ACTION_CACHE" {
+			t.Fatal("unset before run.sh must not clear UTSUSEMI_ACTION_CACHE")
+		}
+	}
+
+	home := t.TempDir()
+	writeRunnerListenerStub(t, home, "2.336.0")
+	binMount := t.TempDir()
+	dataDir := t.TempDir()
+	writeFake(t, binMount, "utsusemi", actionCacheServeStub)
+	if err := os.WriteFile(filepath.Join(binMount, "hook.js"), []byte("/* test hook */\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	nodeBin := filepath.Join(home, "externals", "node20", "bin")
+	if err := os.MkdirAll(nodeBin, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(nodeBin, "node"), []byte("#!/bin/bash\nexit 0\n"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	if err := ln.Close(); err != nil {
+		t.Fatal(err)
+	}
+	addr := fmt.Sprintf("127.0.0.1:%d", port)
+
+	envOut := filepath.Join(home, "env.txt")
+	runStub := fmt.Sprintf(`#!/bin/bash
+env | sort > %s
+`, shellQuote(envOut))
+	if err := os.WriteFile(filepath.Join(home, "run.sh"), []byte(runStub), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	cmd := exec.Command("bash", "-c", bootstrapScript)
+	// bootstrap copies cache bin under $HOME/utsusemi-action-cache (not RUNNER_HOME).
+	cmd.Env = bootstrapTestEnv(home,
+		"HOME="+home,
+		"UTSUSEMI_ACTION_CACHE=1",
+		"UTSUSEMI_ACTION_CACHE_BIN_DIR="+binMount,
+		"UTSUSEMI_ACTION_CACHE_DATA_DIR="+dataDir,
+		"UTSUSEMI_ACTION_CACHE_ADDR="+addr,
+	)
+	cmd.Stdin = strings.NewReader("encoded-jit")
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("bootstrap failed: %v: %s", err, out)
+	}
+	envText, err := os.ReadFile(envOut)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := "\n" + string(envText) + "\n"
+	if !strings.Contains(got, "\nUTSUSEMI_ACTION_CACHE=1\n") {
+		t.Fatalf("run.sh env missing UTSUSEMI_ACTION_CACHE=1:\n%s", envText)
+	}
+	for _, key := range []string{
+		"\nUTSUSEMI_ACTION_CACHE_BIN_DIR=",
+		"\nUTSUSEMI_ACTION_CACHE_DATA_DIR=",
+		"\nUTSUSEMI_ACTION_CACHE_ADDR=",
+	} {
+		if strings.Contains(got, key) {
+			t.Fatalf("run.sh env still has control %s:\n%s", strings.TrimPrefix(key, "\n"), envText)
+		}
+	}
+}
+
 func TestBootstrapSystemProxyUnsetDoesNotCallSudo(t *testing.T) {
 	home := t.TempDir()
 	writeRunnerListenerStub(t, home, "2.336.0")
@@ -935,6 +1027,41 @@ func writeFake(t *testing.T, dir, name, body string) {
 		t.Fatal(err)
 	}
 }
+
+// actionCacheServeStub is a stand-in for `utsusemi cache-serve` that only
+// answers /healthz so bootstrap can finish wrapping node and reach run.sh.
+const actionCacheServeStub = `#!/bin/bash
+set -euo pipefail
+addr=""
+while [ $# -gt 0 ]; do
+  case "$1" in
+    cache-serve) shift ;;
+    --addr) addr="${2:?}"; shift 2 ;;
+    --dir) shift 2 ;;
+    *) shift ;;
+  esac
+done
+port="${addr##*:}"
+exec python3 - "$port" <<'PY'
+import sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+
+class Handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/healthz":
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b"ok")
+            return
+        self.send_response(404)
+        self.end_headers()
+
+    def log_message(self, *_args):
+        pass
+
+HTTPServer(("127.0.0.1", int(sys.argv[1])), Handler).serve_forever()
+PY
+`
 
 func shellQuote(path string) string {
 	return "'" + strings.ReplaceAll(path, "'", "'\\''") + "'"
