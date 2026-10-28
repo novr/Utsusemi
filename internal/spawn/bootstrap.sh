@@ -185,7 +185,10 @@ start_action_cache() {
   xattr -d com.apple.quarantine "${guest_dir}/utsusemi" 2>/dev/null || true
   xattr -d com.apple.quarantine "${guest_dir}/hook.js" 2>/dev/null || true
 
+  # Background cache-serve must not outlive run.sh: tart exec waits on the
+  # bootstrap shell's process group, so a leftover serve blocks VM teardown.
   "${guest_dir}/utsusemi" cache-serve --addr "$addr" --dir "$data_dir" &
+  UTSUSEMI_CACHE_SERVE_PID=$!
   local ready=0
   for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
     if curl -fsS --connect-timeout 1 --max-time 2 "http://${addr}/healthz" >/dev/null 2>&1; then
@@ -219,7 +222,16 @@ start_action_cache() {
   fi
   echo "bootstrap: action cache listening on ${addr} (wrapped ${wrapped} node)" >&2
 }
+UTSUSEMI_CACHE_SERVE_PID=""
 start_action_cache
+stop_action_cache() {
+  if [ -n "${UTSUSEMI_CACHE_SERVE_PID:-}" ]; then
+    kill "$UTSUSEMI_CACHE_SERVE_PID" 2>/dev/null || true
+    wait "$UTSUSEMI_CACHE_SERVE_PID" 2>/dev/null || true
+    UTSUSEMI_CACHE_SERVE_PID=""
+  fi
+}
+trap stop_action_cache EXIT
 
 unset UTSUSEMI_SYSTEM_PROXY_HTTP_HOST UTSUSEMI_SYSTEM_PROXY_HTTP_PORT \
   UTSUSEMI_SYSTEM_PROXY_HTTPS_HOST UTSUSEMI_SYSTEM_PROXY_HTTPS_PORT \
