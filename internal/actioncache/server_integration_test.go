@@ -179,6 +179,56 @@ func TestWireProtoFieldNames(t *testing.T) {
 	}
 }
 
+func TestEmptyRestoreKeyIgnored(t *testing.T) {
+	_, base, stop := startTestServer(t)
+	defer stop()
+	auth := fakeBearer(t, map[string]any{"repository": "acme/app"})
+	c := twirpPost(t, base, "CreateCacheEntry", auth, map[string]any{"key": "keep", "version": "v"})
+	u := uploadURLFrom(c)
+	req, _ := http.NewRequest(http.MethodPut, u, strings.NewReader("x"))
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	twirpPost(t, base, "FinalizeCacheEntryUpload", auth, map[string]any{
+		"key": "keep", "version": "v", "size_bytes": "1",
+	})
+	get := twirpPost(t, base, "GetCacheEntryDownloadURL", auth, map[string]any{
+		"key": "missing", "version": "v", "restore_keys": []string{""},
+	})
+	if get["ok"] != false {
+		t.Fatalf("empty restore_key must not match: %#v", get)
+	}
+}
+
+func TestEvictPurgesStalePending(t *testing.T) {
+	dir := t.TempDir()
+	store, err := NewStore(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	id, ok, err := store.Reserve("acme/app", "abandoned", "v")
+	if err != nil || !ok {
+		t.Fatalf("reserve: ok=%v err=%v", ok, err)
+	}
+	metaPath := filepath.Join(store.entryDir(id), metaName)
+	meta, err := loadMeta(metaPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	meta.CreatedAt = time.Now().UTC().Add(-pendingTTL - time.Minute)
+	if err := writeMeta(metaPath, *meta); err != nil {
+		t.Fatal(err)
+	}
+	if err := store.EvictLRU(1, func() (float64, error) { return 100, nil }); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(store.entryDir(id)); !os.IsNotExist(err) {
+		t.Fatalf("stale pending should be purged: %v", err)
+	}
+}
+
 func TestStalePendingReclaimed(t *testing.T) {
 	store, base, stop := startTestServer(t)
 	defer stop()

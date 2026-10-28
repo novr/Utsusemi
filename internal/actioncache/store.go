@@ -1,10 +1,12 @@
 package actioncache
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -122,47 +124,105 @@ func (s *Store) Reserve(repo, key, version string) (id string, ok bool, err erro
 }
 
 func (s *Store) PutBlock(id, blockID string, data []byte) error {
-	return s.withStoreLock(func() error {
-		dir := s.entryDir(id)
-		meta, err := loadMeta(filepath.Join(dir, metaName))
-		if err != nil {
-			return err
-		}
-		if meta.Final {
-			return fmt.Errorf("entry already finalized")
-		}
-		safe := sanitizeBlockID(blockID)
-		path := filepath.Join(dir, blocksDir, safe)
-		tmp := path + ".tmp"
-		if err := os.WriteFile(tmp, data, 0o644); err != nil {
-			return err
-		}
-		return os.Rename(tmp, path)
-	})
+	return s.PutBlockFrom(id, blockID, bytes.NewReader(data))
 }
 
 func (s *Store) PutSingle(id string, data []byte) error {
+	return s.PutSingleFrom(id, bytes.NewReader(data))
+}
+
+func (s *Store) PutBlockFrom(id, blockID string, r io.Reader) error {
+	dir := s.entryDir(id)
+	safe := sanitizeBlockID(blockID)
+	dest := filepath.Join(dir, blocksDir, safe)
+	tmp, err := s.beginPendingWrite(id, dir)
+	if err != nil {
+		return err
+	}
+	if err := writeReaderFile(tmp, r); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return s.finishPendingWrite(id, tmp, dest)
+}
+
+func (s *Store) PutSingleFrom(id string, r io.Reader) error {
+	dir := s.entryDir(id)
+	dest := filepath.Join(dir, blobName)
+	tmp, err := s.beginPendingWrite(id, dir)
+	if err != nil {
+		return err
+	}
+	if err := writeReaderFile(tmp, r); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	return s.finishPendingWrite(id, tmp, dest)
+}
+
+// beginPendingWrite checks the entry is writable under the store lock, then
+// returns a temp path. The caller copies bytes without holding the lock.
+func (s *Store) beginPendingWrite(id, dir string) (tmp string, err error) {
+	err = s.withStoreLock(func() error {
+		meta, loadErr := loadMeta(filepath.Join(dir, metaName))
+		if loadErr != nil {
+			return loadErr
+		}
+		if meta.Final {
+			return fmt.Errorf("entry already finalized")
+		}
+		if mkErr := os.MkdirAll(filepath.Join(dir, blocksDir), 0o755); mkErr != nil {
+			return mkErr
+		}
+		f, createErr := os.CreateTemp(dir, id+".*.tmp")
+		if createErr != nil {
+			return createErr
+		}
+		tmp = f.Name()
+		return f.Close()
+	})
+	return tmp, err
+}
+
+func (s *Store) finishPendingWrite(id, tmp, dest string) error {
 	return s.withStoreLock(func() error {
-		dir := s.entryDir(id)
-		meta, err := loadMeta(filepath.Join(dir, metaName))
+		defer os.Remove(tmp)
+		meta, err := loadMeta(filepath.Join(s.entryDir(id), metaName))
 		if err != nil {
 			return err
 		}
 		if meta.Final {
 			return fmt.Errorf("entry already finalized")
 		}
-		path := filepath.Join(dir, blobName)
-		tmp := path + ".tmp"
-		if err := os.WriteFile(tmp, data, 0o644); err != nil {
+		if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 			return err
 		}
-		return os.Rename(tmp, path)
+		return os.Rename(tmp, dest)
 	})
 }
 
+func writeReaderFile(path string, r io.Reader) error {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		return err
+	}
+	_, copyErr := io.Copy(f, r)
+	closeErr := f.Close()
+	if copyErr != nil {
+		_ = os.Remove(path)
+		return copyErr
+	}
+	if closeErr != nil {
+		_ = os.Remove(path)
+		return closeErr
+	}
+	return nil
+}
+
 func (s *Store) CommitBlocks(id string, blockIDs []string) error {
-	return s.withStoreLock(func() error {
-		dir := s.entryDir(id)
+	dir := s.entryDir(id)
+	var blockPaths []string
+	if err := s.withStoreLock(func() error {
 		meta, err := loadMeta(filepath.Join(dir, metaName))
 		if err != nil {
 			return err
@@ -170,28 +230,53 @@ func (s *Store) CommitBlocks(id string, blockIDs []string) error {
 		if meta.Final {
 			return fmt.Errorf("entry already finalized")
 		}
-		outPath := filepath.Join(dir, blobName)
-		tmp := outPath + ".tmp"
-		f, err := os.Create(tmp)
+		blockPaths = make([]string, 0, len(blockIDs))
+		for _, bid := range blockIDs {
+			blockPaths = append(blockPaths, filepath.Join(dir, blocksDir, sanitizeBlockID(bid)))
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+
+	tmp, err := s.beginPendingWrite(id, dir)
+	if err != nil {
+		return err
+	}
+	f, err := os.OpenFile(tmp, os.O_WRONLY|os.O_TRUNC, 0o644)
+	if err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+	for _, path := range blockPaths {
+		in, openErr := os.Open(path)
+		if openErr != nil {
+			_ = f.Close()
+			_ = os.Remove(tmp)
+			return openErr
+		}
+		_, copyErr := io.Copy(f, in)
+		_ = in.Close()
+		if copyErr != nil {
+			_ = f.Close()
+			_ = os.Remove(tmp)
+			return copyErr
+		}
+	}
+	if err := f.Close(); err != nil {
+		_ = os.Remove(tmp)
+		return err
+	}
+
+	outPath := filepath.Join(dir, blobName)
+	return s.withStoreLock(func() error {
+		defer os.Remove(tmp)
+		meta, err := loadMeta(filepath.Join(dir, metaName))
 		if err != nil {
 			return err
 		}
-		defer f.Close()
-		for _, bid := range blockIDs {
-			safe := sanitizeBlockID(bid)
-			b, readErr := os.ReadFile(filepath.Join(dir, blocksDir, safe))
-			if readErr != nil {
-				_ = os.Remove(tmp)
-				return readErr
-			}
-			if _, writeErr := f.Write(b); writeErr != nil {
-				_ = os.Remove(tmp)
-				return writeErr
-			}
-		}
-		if err := f.Close(); err != nil {
-			_ = os.Remove(tmp)
-			return err
+		if meta.Final {
+			return fmt.Errorf("entry already finalized")
 		}
 		if err := os.Rename(tmp, outPath); err != nil {
 			return err
@@ -257,11 +342,11 @@ func (s *Store) Lookup(repo, primary string, restoreKeys []string, version strin
 
 	var best *hit
 	err := s.withStoreLock(func() error {
-		for _, want := range keys {
-			exact := false
-			if want == primary {
-				exact = true
+		for i, want := range keys {
+			if want == "" {
+				continue
 			}
+			exact := i == 0
 			matches, listErr := s.listFinal(repo, version)
 			if listErr != nil {
 				return listErr
@@ -332,12 +417,16 @@ func (s *Store) listFinal(repo, version string) ([]hit, error) {
 }
 
 // EvictLRU deletes oldest-used final entries until freeBytesFn reports at least
-// needFreeGB free, or the store is empty. Pending entries are left alone.
+// needFreeGB free, or the store is empty. Stale pending entries (abandoned
+// uploads older than pendingTTL) are always removed first.
 func (s *Store) EvictLRU(needFreeGB int, freeBytesFn func() (float64, error)) error {
 	if needFreeGB <= 0 || freeBytesFn == nil {
 		return nil
 	}
 	return s.withStoreLock(func() error {
+		if err := s.purgeStalePendingLocked(); err != nil {
+			return err
+		}
 		for {
 			freeGB, err := freeBytesFn()
 			if err != nil {
@@ -358,6 +447,31 @@ func (s *Store) EvictLRU(needFreeGB int, freeBytesFn func() (float64, error)) er
 			}
 		}
 	})
+}
+
+func (s *Store) purgeStalePendingLocked() error {
+	entries, err := os.ReadDir(s.root)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		meta, loadErr := loadMeta(filepath.Join(s.entryDir(e.Name()), metaName))
+		if loadErr != nil || meta == nil || meta.Final {
+			continue
+		}
+		age := now.Sub(meta.CreatedAt)
+		if age < pendingTTL {
+			continue
+		}
+		if rmErr := os.RemoveAll(s.entryDir(e.Name())); rmErr != nil {
+			return rmErr
+		}
+	}
+	return nil
 }
 
 func (s *Store) oldestFinalLocked() (id string, ok bool, err error) {

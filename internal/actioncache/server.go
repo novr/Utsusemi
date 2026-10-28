@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -167,11 +168,6 @@ func (s *Server) handleBlob(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPut:
 		limited := http.MaxBytesReader(w, r.Body, maxUploadBytes)
-		body, err := io.ReadAll(limited)
-		if err != nil {
-			http.Error(w, err.Error(), http.StatusRequestEntityTooLarge)
-			return
-		}
 		switch comp {
 		case "block":
 			blockID := q.Get("blockid")
@@ -179,13 +175,22 @@ func (s *Server) handleBlob(w http.ResponseWriter, r *http.Request) {
 				http.Error(w, "blockid required", http.StatusBadRequest)
 				return
 			}
-			if err := s.Store.PutBlock(id, blockID, body); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+			if err := s.Store.PutBlockFrom(id, blockID, limited); err != nil {
+				status := http.StatusBadRequest
+				if isTooLarge(err) {
+					status = http.StatusRequestEntityTooLarge
+				}
+				http.Error(w, err.Error(), status)
 				return
 			}
 			w.Header().Set("x-ms-request-id", id)
 			w.WriteHeader(http.StatusCreated)
 		case "blocklist":
+			body, err := io.ReadAll(limited)
+			if err != nil {
+				http.Error(w, err.Error(), http.StatusBadRequest)
+				return
+			}
 			ids, err := parseBlockList(body)
 			if err != nil {
 				http.Error(w, err.Error(), http.StatusBadRequest)
@@ -198,8 +203,12 @@ func (s *Server) handleBlob(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("x-ms-request-id", id)
 			w.WriteHeader(http.StatusCreated)
 		default:
-			if err := s.Store.PutSingle(id, body); err != nil {
-				http.Error(w, err.Error(), http.StatusBadRequest)
+			if err := s.Store.PutSingleFrom(id, limited); err != nil {
+				status := http.StatusBadRequest
+				if isTooLarge(err) {
+					status = http.StatusRequestEntityTooLarge
+				}
+				http.Error(w, err.Error(), status)
 				return
 			}
 			w.Header().Set("x-ms-request-id", id)
@@ -336,6 +345,11 @@ func jsonStringSlice(raw map[string]any, keys ...string) []string {
 		return out
 	}
 	return nil
+}
+
+func isTooLarge(err error) bool {
+	var maxErr *http.MaxBytesError
+	return errors.As(err, &maxErr)
 }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {

@@ -223,7 +223,6 @@ start_action_cache() {
   echo "bootstrap: action cache listening on ${addr} (wrapped ${wrapped} node)" >&2
 }
 UTSUSEMI_CACHE_SERVE_PID=""
-start_action_cache
 stop_action_cache() {
   if [ -n "${UTSUSEMI_CACHE_SERVE_PID:-}" ]; then
     kill "$UTSUSEMI_CACHE_SERVE_PID" 2>/dev/null || true
@@ -231,7 +230,9 @@ stop_action_cache() {
     UTSUSEMI_CACHE_SERVE_PID=""
   fi
 }
+# Install before start_action_cache so ready/wrap failures still kill cache-serve.
 trap stop_action_cache EXIT
+start_action_cache
 
 unset UTSUSEMI_SYSTEM_PROXY_HTTP_HOST UTSUSEMI_SYSTEM_PROXY_HTTP_PORT \
   UTSUSEMI_SYSTEM_PROXY_HTTPS_HOST UTSUSEMI_SYSTEM_PROXY_HTTPS_PORT \

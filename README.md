@@ -225,6 +225,8 @@ Each spawn copies a staged `utsusemi` binary into the guest, starts a loopback c
 
 This is **not** GitHub’s 10GB / 7-day / branch ACL cache. Entries are keyed by a best-effort repo namespace from the job token (signature is not verified). Every job on the agent shares one host store and can read or write any namespace — treat the host as one trust boundary. Prefer a single-repo target when isolation matters.
 
+Guest blob uploads go to `http://127.0.0.1:19527`. If the job inherits `http_proxy` / `HTTPS_PROXY` (or `system_proxy`) that does not exclude loopback, Azure SDK uploads may fail or bypass the local store — keep `127.0.0.1` / `localhost` in the proxy bypass list when using both.
+
 Manual check (not a CI gate): agent with `action_cache: true` and runner label `utsusemi-e2e`, then:
 
 ```bash
@@ -232,7 +234,7 @@ gh workflow run action-cache-e2e.yml --repo novr/Utsusemi
 gh run watch --repo novr/Utsusemi
 ```
 
-The workflow primes then restores across two VM spawns (`actions/cache` and `setup-node` `cache:`). Confirm jobs succeed and GitHub’s cache UI does not grow for those keys.
+The workflow primes then restores across VM spawns and asserts a finalized entry exists under the guest mount (`utsusemi-action-cache`) so a GitHub cloud fallback cannot pass.
 
 #### Pre-installed runner (low-latency)
 

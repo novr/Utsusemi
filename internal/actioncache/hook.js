@@ -69,7 +69,7 @@ function patch(mod) {
     } catch (_) {
       // fall through to original
     }
-    return orig.call(this, options, callback);
+    return orig.apply(this, arguments);
   };
 }
 
