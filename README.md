@@ -229,7 +229,7 @@ This is **not** GitHub’s 10GB / 7-day / branch ACL cache. Entries are keyed by
 
 Guest blob uploads go to `http://127.0.0.1:19527`. If the job inherits `http_proxy` / `HTTPS_PROXY` (or `system_proxy`) that does not exclude loopback, Azure SDK uploads may fail or bypass the local store — keep `127.0.0.1` / `localhost` in the proxy bypass list when using both.
 
-Manual check (not a CI gate): run the E2E agent from [`e2e/config.yaml`](e2e/config.yaml) (`action_cache` + label `utsusemi-e2e`; own `state_dir` / Keychain), then:
+Manual check (not a CI gate): from the repository root, run the E2E agent via [`e2e/config.yaml`](e2e/config.yaml) (`action_cache` + label `utsusemi-e2e`; `state_dir: e2e/.state`), then:
 
 ```bash
 utsusemi configure token --config e2e/config.yaml --repo novr/Utsusemi
