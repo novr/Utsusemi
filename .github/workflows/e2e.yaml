@@ -1,6 +1,6 @@
 # Manual Tart / GitHub E2E for opt-in action_cache. Not a CI gate.
 # Requires a warm utsusemi agent with action_cache: true and label utsusemi-e2e.
-name: Action cache E2E
+name: E2E
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: action-cache-e2e
+  group: e2e
   cancel-in-progress: true
 
 env:

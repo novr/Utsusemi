@@ -232,7 +232,7 @@ Guest blob uploads go to `http://127.0.0.1:19527`. If the job inherits `http_pro
 Manual check (not a CI gate): agent with `action_cache: true` and runner label `utsusemi-e2e`, then:
 
 ```bash
-gh workflow run action-cache-e2e.yml --repo novr/Utsusemi
+gh workflow run e2e.yaml --repo novr/Utsusemi
 gh run watch --repo novr/Utsusemi
 ```
 

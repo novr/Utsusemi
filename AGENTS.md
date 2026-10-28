@@ -181,7 +181,7 @@ Deploy broker separately from CLI. After JWT signing or route changes, operators
 
 - **Go 1.23** (`go.mod`). Do not use `testing.T.Context()` (Go 1.24+).
 - Tests: `provider.FakeExecutor`, `trackingRegistrar`, `keychain.MemoryStore`.
-- **Action cache**: `internal/actioncache` integration tests gate `make test`. Real Tart / GitHub E2E is manual only: `.github/workflows/action-cache-e2e.yml` (`workflow_dispatch`, label `utsusemi-e2e`; see README Local Actions cache). Not a CI gate.
+- **Action cache**: `internal/actioncache` integration tests gate `make test`. Real Tart / GitHub E2E is manual only: `.github/workflows/e2e.yaml` (`workflow_dispatch`, label `utsusemi-e2e`; see README Local Actions cache). Not a CI gate.
 
 ### Release and Homebrew
 
