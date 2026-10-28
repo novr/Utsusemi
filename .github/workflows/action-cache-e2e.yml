@@ -4,8 +4,6 @@ name: Action cache E2E
 
 on:
   workflow_dispatch:
-  # Temporary: register the workflow on GitHub so workflow_dispatch is usable; remove after first PR.
-  pull_request:
 
 permissions:
   contents: read
