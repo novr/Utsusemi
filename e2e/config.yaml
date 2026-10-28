@@ -1,0 +1,32 @@
+# Config for the agent that serves `.github/workflows/e2e.yaml`.
+# Own state_dir / vm_name_prefix / Keychain — not a daily agent.
+# Secrets stay in Keychain — never in this file.
+#
+#   utsusemi configure token --config e2e/config.yaml --repo novr/Utsusemi
+#   utsusemi run --config e2e/config.yaml --log
+#   gh workflow run e2e.yaml --repo novr/Utsusemi
+target:
+  repo: novr/Utsusemi
+labels:
+  - self-hosted
+  - macOS
+  - ARM64
+  - utsusemi
+  - utsusemi-e2e
+registration:
+  mode: github_pat
+  credential_keychain_service: utsusemi-credential-novr-utsusemi
+provider: tart
+base_image: ghcr.io/cirruslabs/macos-tahoe-xcode:27
+runner_version: "2.338.2"
+pool_size: 1
+pool_check_interval: 30s
+reconciliation_interval: 5m0s
+spawn_timeout: 10m0s
+job_timeout: 6h0s
+min_free_disk_gb: 50
+vm_name_prefix: utsusemi-novr-
+state_dir: ~/.local/state/utsusemi-novr
+action_cache: true
+reclaim_policy: grace
+reclaim_grace: 15m0s
