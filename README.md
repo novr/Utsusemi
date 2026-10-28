@@ -223,18 +223,22 @@ brew services restart utsusemi
 
 Each spawn copies a staged `utsusemi` binary into the guest, starts a loopback cache server, and wraps the runner’s Node so only CacheService Twirp calls go local. Artifact upload still uses GitHub. Clear the store with `rm -rf "{state_dir}/action-cache"` (`utsusemi clean` does not). A poisoned entry affects later jobs until removed — same tradeoff as writable `mounts`. Disk pressure still uses `min_free_disk_gb` (LRU eviction before the spawn disk check).
 
+When on, host job step processes see `UTSUSEMI_ACTION_CACHE=1` (`printenv` / Node `process.env`) for diagnostics. It is not in the workflow `env` context (`${{ env.UTSUSEMI_ACTION_CACHE }}` / `if: env.*`), and job containers do not inherit it. Routing still comes from the Node wrap, not from that variable.
+
 This is **not** GitHub’s 10GB / 7-day / branch ACL cache. Entries are keyed by a best-effort repo namespace from the job token (signature is not verified). Every job on the agent shares one host store and can read or write any namespace — treat the host as one trust boundary. Prefer a single-repo target when isolation matters.
 
 Guest blob uploads go to `http://127.0.0.1:19527`. If the job inherits `http_proxy` / `HTTPS_PROXY` (or `system_proxy`) that does not exclude loopback, Azure SDK uploads may fail or bypass the local store — keep `127.0.0.1` / `localhost` in the proxy bypass list when using both.
 
-Manual check (not a CI gate): agent with `action_cache: true` and runner label `utsusemi-e2e`, then:
+Manual check (not a CI gate): from the repository root, run the E2E agent via [`e2e/config.yaml`](e2e/config.yaml) (`action_cache` + label `utsusemi-e2e`; `state_dir: e2e/.state`), then:
 
 ```bash
-gh workflow run action-cache-e2e.yml --repo novr/Utsusemi
+utsusemi configure token --config e2e/config.yaml --repo novr/Utsusemi
+utsusemi run --config e2e/config.yaml --log
+gh workflow run e2e.yaml --repo novr/Utsusemi
 gh run watch --repo novr/Utsusemi
 ```
 
-The workflow primes then restores across VM spawns and asserts a finalized entry exists under the guest mount (`utsusemi-action-cache`) so a GitHub cloud fallback cannot pass.
+The workflow primes then restores across VM spawns and asserts a finalized entry exists under the guest mount (`utsusemi-action-cache`) so a GitHub cloud fallback cannot pass. Each job also requires process env `UTSUSEMI_ACTION_CACHE=1` with control path/addr vars unset.
 
 #### Pre-installed runner (low-latency)
 

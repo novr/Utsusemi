@@ -1,6 +1,6 @@
 # Manual Tart / GitHub E2E for opt-in action_cache. Not a CI gate.
-# Requires a warm utsusemi agent with action_cache: true and label utsusemi-e2e.
-name: Action cache E2E
+# Warm agent: e2e/config.yaml (action_cache + label utsusemi-e2e).
+name: E2E
 
 on:
   workflow_dispatch:
@@ -9,7 +9,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: action-cache-e2e
+  group: e2e
   cancel-in-progress: true
 
 env:
@@ -24,6 +24,17 @@ jobs:
       - ARM64
       - utsusemi-e2e
     steps:
+      - name: Require UTSUSEMI_ACTION_CACHE in process env
+        run: |
+          set -euo pipefail
+          # Host job steps inherit bootstrap env; workflow env context does not.
+          test "${UTSUSEMI_ACTION_CACHE:-}" = "1"
+          if [ -n "${UTSUSEMI_ACTION_CACHE_BIN_DIR:-}" ] || [ -n "${UTSUSEMI_ACTION_CACHE_DATA_DIR:-}" ] || [ -n "${UTSUSEMI_ACTION_CACHE_ADDR:-}" ]; then
+            echo "control action-cache env leaked into job" >&2
+            env | grep '^UTSUSEMI_ACTION_CACHE' >&2 || true
+            exit 1
+          fi
+
       - name: Write payload
         run: |
           set -euo pipefail
@@ -54,6 +65,16 @@ jobs:
       - ARM64
       - utsusemi-e2e
     steps:
+      - name: Require UTSUSEMI_ACTION_CACHE in process env
+        run: |
+          set -euo pipefail
+          test "${UTSUSEMI_ACTION_CACHE:-}" = "1"
+          if [ -n "${UTSUSEMI_ACTION_CACHE_BIN_DIR:-}" ] || [ -n "${UTSUSEMI_ACTION_CACHE_DATA_DIR:-}" ] || [ -n "${UTSUSEMI_ACTION_CACHE_ADDR:-}" ]; then
+            echo "control action-cache env leaked into job" >&2
+            env | grep '^UTSUSEMI_ACTION_CACHE' >&2 || true
+            exit 1
+          fi
+
       - name: Require local host store (not GitHub cloud)
         run: |
           set -euo pipefail
@@ -101,6 +122,16 @@ jobs:
     outputs:
       finals_before: ${{ steps.count_finals.outputs.n }}
     steps:
+      - name: Require UTSUSEMI_ACTION_CACHE in process env
+        run: |
+          set -euo pipefail
+          test "${UTSUSEMI_ACTION_CACHE:-}" = "1"
+          if [ -n "${UTSUSEMI_ACTION_CACHE_BIN_DIR:-}" ] || [ -n "${UTSUSEMI_ACTION_CACHE_DATA_DIR:-}" ] || [ -n "${UTSUSEMI_ACTION_CACHE_ADDR:-}" ]; then
+            echo "control action-cache env leaked into job" >&2
+            env | grep '^UTSUSEMI_ACTION_CACHE' >&2 || true
+            exit 1
+          fi
+
       - name: Count local finals before npm save
         id: count_finals
         run: |
@@ -142,6 +173,16 @@ jobs:
       - ARM64
       - utsusemi-e2e
     steps:
+      - name: Require UTSUSEMI_ACTION_CACHE in process env
+        run: |
+          set -euo pipefail
+          test "${UTSUSEMI_ACTION_CACHE:-}" = "1"
+          if [ -n "${UTSUSEMI_ACTION_CACHE_BIN_DIR:-}" ] || [ -n "${UTSUSEMI_ACTION_CACHE_DATA_DIR:-}" ] || [ -n "${UTSUSEMI_ACTION_CACHE_ADDR:-}" ]; then
+            echo "control action-cache env leaked into job" >&2
+            env | grep '^UTSUSEMI_ACTION_CACHE' >&2 || true
+            exit 1
+          fi
+
       - name: Require local host store grew after npm prime
         run: |
           set -euo pipefail

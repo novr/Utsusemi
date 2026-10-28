@@ -95,6 +95,26 @@ func newTestPool(t *testing.T, cfg *config.Config, vmProvider provider.VMProvide
 	return p
 }
 
+// startTestPoolRun starts p.Run in the background and waits for shutdown in
+// t.Cleanup so StateDir TempDir removal does not race lease/status writers.
+func startTestPoolRun(t *testing.T, p *Pool) {
+	t.Helper()
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		_ = p.Run(ctx)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		select {
+		case <-done:
+		case <-time.After(5 * time.Second):
+			t.Error("timeout waiting for pool Run to stop")
+		}
+	})
+}
+
 // newTestPoolWithPrefix creates a pool whose effectivePrefix is set explicitly.
 // Use this when testing multi-host scenarios where different prefixes matter.
 func newTestPoolWithPrefix(t *testing.T, cfg *config.Config, vmProvider provider.VMProvider, reg registrar.RunnerRegistrar, prefix string) *Pool {

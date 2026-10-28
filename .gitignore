@@ -4,6 +4,7 @@
 /.local-smoke-log/
 /bin/
 /dist/
+/e2e/.state/
 utsusemi_*_darwin.tar.gz
 checksums.txt
 *.test

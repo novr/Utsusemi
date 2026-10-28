@@ -104,10 +104,7 @@ func TestPoolStaggersSecondSpawnUntilListening(t *testing.T) {
 	cfg.JobTimeout = config.Duration(5 * time.Second)
 	cfg.SpawnTimeout = config.Duration(5 * time.Second)
 	p := newTestPool(t, cfg, gp, noopRegistrar{})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() { _ = p.Run(ctx) }()
+	startTestPoolRun(t, p)
 
 	select {
 	case <-gp.firstExec:
@@ -148,10 +145,7 @@ func TestPoolIdleReadyOnClaimWithoutListening(t *testing.T) {
 	cfg.JobTimeout = config.Duration(5 * time.Second)
 	cfg.SpawnTimeout = config.Duration(5 * time.Second)
 	p := newTestPool(t, cfg, gp, noopRegistrar{})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() { _ = p.Run(ctx) }()
+	startTestPoolRun(t, p)
 
 	select {
 	case <-gp.firstExec:
@@ -241,10 +235,7 @@ func TestPoolReleasesWarmingOnSpawnFailure(t *testing.T) {
 	cfg.JobTimeout = config.Duration(5 * time.Second)
 	cfg.SpawnTimeout = config.Duration(5 * time.Second)
 	p := newTestPool(t, cfg, gp, noopRegistrar{})
-
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() { _ = p.Run(ctx) }()
+	startTestPoolRun(t, p)
 
 	// recordFailure applies failures*10s backoff after the first clone error.
 	select {

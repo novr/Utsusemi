@@ -1,0 +1,24 @@
+target:
+    repo: novr/Utsusemi
+labels:
+    - self-hosted
+    - macOS
+    - ARM64
+    - utsusemi-e2e
+registration:
+    mode: github_pat
+    credential_keychain_service: utsusemi-credential-e2e
+provider: tart
+base_image: ghcr.io/cirruslabs/macos-tahoe-xcode:27
+runner_version: 2.338.2
+pool_size: 1
+pool_check_interval: 30s
+reconciliation_interval: 5m0s
+spawn_timeout: 10m0s
+job_timeout: 6h0m0s
+min_free_disk_gb: 50
+vm_name_prefix: utsusemi-e2e-
+state_dir: e2e/.state
+action_cache: true
+reclaim_policy: grace
+reclaim_grace: 15m0s
