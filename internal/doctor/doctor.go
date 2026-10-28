@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/novr/utsusemi/internal/actioncache"
 	"github.com/novr/utsusemi/internal/brokerhttp"
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/credentialview"
@@ -122,6 +123,7 @@ func Collect(ctx context.Context, in Input) Report {
 
 	checkRunnerVersion(ctx, in.Cfg, nil, add)
 	checkRunnerCache(in.Cfg, in.Provider, add)
+	checkActionCache(in.Cfg, add)
 	checkMounts(in.Cfg, add)
 	checkMultiHost(ctx, in, host, add)
 	checkAlerts(store, add)
@@ -211,6 +213,35 @@ func checkRunnerCache(cfg *config.Config, p provider.VMProvider, add func(string
 		return
 	}
 	add("runner_cache", StatusOK, path)
+}
+
+func checkActionCache(cfg *config.Config, add func(string, Status, string)) {
+	if !cfg.ActionCache {
+		add("action_cache", StatusOK, "disabled")
+		return
+	}
+	dir := actioncache.Dir(cfg.StateDir)
+	if err := actioncache.PrepareDir(cfg.StateDir); err != nil {
+		add("action_cache", StatusFail, err.Error())
+		return
+	}
+	probe := filepath.Join(dir, ".doctor-write")
+	if err := os.WriteFile(probe, []byte("ok"), 0o644); err != nil {
+		add("action_cache", StatusFail, fmt.Sprintf("not writable: %v", err))
+		return
+	}
+	_ = os.Remove(probe)
+	bin := filepath.Join(actioncache.BinDir(cfg.StateDir), actioncache.BinaryName)
+	hook := filepath.Join(actioncache.BinDir(cfg.StateDir), actioncache.HookName)
+	if _, err := os.Stat(bin); err != nil {
+		add("action_cache", StatusWarn, fmt.Sprintf("%s (staged bin missing; start agent once)", dir))
+		return
+	}
+	if _, err := os.Stat(hook); err != nil {
+		add("action_cache", StatusWarn, fmt.Sprintf("%s (staged hook missing; start agent once)", dir))
+		return
+	}
+	add("action_cache", StatusOK, dir)
 }
 
 func runnerArch(p provider.VMProvider) string {

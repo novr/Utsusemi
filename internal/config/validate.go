@@ -98,8 +98,11 @@ func Validate(cfg *Config, p provider.VMProvider) (target.Target, error) {
 	return tgt, nil
 }
 
+const actionCacheEnvPrefix = "UTSUSEMI_ACTION_CACHE"
+
 // validateEnv checks literal guest env keys/values for tart exec `env KEY=value`.
-// Values are not expanded; RUNNER_ and UTSUSEMI_SYSTEM_PROXY_ keys are reserved for bootstrap.
+// Values are not expanded; RUNNER_, UTSUSEMI_SYSTEM_PROXY_, and UTSUSEMI_ACTION_CACHE*
+// keys are reserved for bootstrap.
 func validateEnv(env map[string]string) error {
 	for key, value := range env {
 		if key == "" {
@@ -113,6 +116,9 @@ func validateEnv(env map[string]string) error {
 		}
 		if strings.HasPrefix(key, systemProxyEnvPrefix) {
 			return fmt.Errorf("env key %q is reserved (%s prefix)", key, systemProxyEnvPrefix)
+		}
+		if key == actionCacheEnvPrefix || strings.HasPrefix(key, actionCacheEnvPrefix+"_") {
+			return fmt.Errorf("env key %q is reserved (%s prefix)", key, actionCacheEnvPrefix)
 		}
 		if strings.ContainsAny(value, "\x00\n\r") {
 			return fmt.Errorf("env %q value must not contain NUL or newline", key)

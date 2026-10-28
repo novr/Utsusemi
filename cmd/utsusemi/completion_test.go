@@ -58,6 +58,10 @@ func TestShellCompletionTopLevel(t *testing.T) {
 	assertCompletionContains(t, out,
 		"run", "broker", "validate", "status", "doctor", "list", "configure", "clean", "drain", "pull", "version",
 	)
+	names := completionNames(t, out)
+	if slices.Contains(names, "cache-serve") {
+		t.Fatalf("hidden cache-serve must not appear in completion: %v", names)
+	}
 }
 
 func TestShellCompletionTopLevelPrefix(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"testing"
 
+	"github.com/novr/utsusemi/internal/actioncache"
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/runnercache"
@@ -83,6 +84,45 @@ func TestBuildProviderInjectsRunnerCacheMount(t *testing.T) {
 	}
 	if !foundUser {
 		t.Fatalf("missing user mount in %v", startArgs)
+	}
+}
+
+func TestBuildProviderInjectsActionCacheMounts(t *testing.T) {
+	state := t.TempDir()
+	exec := provider.NewFakeExecutor()
+	p, err := buildProvider(&config.Config{
+		StateDir:    state,
+		ActionCache: true,
+	}, exec, false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := p.Start(context.Background(), "vm-1"); err != nil {
+		t.Fatal(err)
+	}
+	var startArgs []string
+	for _, c := range exec.Calls {
+		if c.Name == "tart" && len(c.Args) > 0 && c.Args[0] == "run" {
+			startArgs = c.Args
+			break
+		}
+	}
+	if startArgs == nil {
+		t.Fatal("tart run not recorded")
+	}
+	wantData := "--dir=" + actioncache.DataMountEntry(state)
+	wantBin := "--dir=" + actioncache.BinMountEntry(state)
+	foundData, foundBin := false, false
+	for _, a := range startArgs {
+		if a == wantData {
+			foundData = true
+		}
+		if a == wantBin {
+			foundBin = true
+		}
+	}
+	if !foundData || !foundBin {
+		t.Fatalf("missing action cache mounts data=%v bin=%v in %v", foundData, foundBin, startArgs)
 	}
 }
 

@@ -53,6 +53,9 @@ func FormatText(r Report) string {
 			if line := systemProxyLine(r.Runtime); r.Runtime.State == "active" && line != "" {
 				fmt.Fprintf(&b, "  system_proxy: %s\n", line)
 			}
+			if r.Runtime.State == "active" && r.Runtime.ActionCache {
+				fmt.Fprintf(&b, "  action_cache: on\n")
+			}
 		}
 	}
 	// Prefer active freeze; otherwise show config.yaml (next start).

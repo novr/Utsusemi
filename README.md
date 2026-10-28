@@ -212,6 +212,30 @@ mounts:
 >
 > The workspace path inside every VM is identical (`/Users/admin/actions-runner/_work/<repo>/<repo>`), so even build products with absolute paths baked in restore correctly from a host-side cache.
 
+#### Local Actions cache (opt-in)
+
+`action_cache: true` makes official `actions/cache` and `setup-*` `cache:` steps use a host-side store under `{state_dir}/action-cache` instead of GitHub’s cache service. No workflow changes and no custom Action. Default is off.
+
+```bash
+utsusemi configure edit --action-cache
+brew services restart utsusemi
+```
+
+Each spawn copies a staged `utsusemi` binary into the guest, starts a loopback cache server, and wraps the runner’s Node so only CacheService Twirp calls go local. Artifact upload still uses GitHub. Clear the store with `rm -rf "{state_dir}/action-cache"` (`utsusemi clean` does not). A poisoned entry affects later jobs until removed — same tradeoff as writable `mounts`. Disk pressure still uses `min_free_disk_gb` (LRU eviction before the spawn disk check).
+
+This is **not** GitHub’s 10GB / 7-day / branch ACL cache. Entries are keyed by a best-effort repo namespace from the job token (signature is not verified). Every job on the agent shares one host store and can read or write any namespace — treat the host as one trust boundary. Prefer a single-repo target when isolation matters.
+
+Guest blob uploads go to `http://127.0.0.1:19527`. If the job inherits `http_proxy` / `HTTPS_PROXY` (or `system_proxy`) that does not exclude loopback, Azure SDK uploads may fail or bypass the local store — keep `127.0.0.1` / `localhost` in the proxy bypass list when using both.
+
+Manual check (not a CI gate): agent with `action_cache: true` and runner label `utsusemi-e2e`, then:
+
+```bash
+gh workflow run action-cache-e2e.yml --repo novr/Utsusemi
+gh run watch --repo novr/Utsusemi
+```
+
+The workflow primes then restores across VM spawns and asserts a finalized entry exists under the guest mount (`utsusemi-action-cache`) so a GitHub cloud fallback cannot pass.
+
 #### Pre-installed runner (low-latency)
 
 On agent start, Utsusemi caches `runner_version` under `{state_dir}/runner-cache/` and mounts it read-only (`utsusemi-runner-cache`) so each spawn does not download from GitHub. A matching runner already in the image skips install. Restart the agent after changing `runner_version` so the cache refreshes.

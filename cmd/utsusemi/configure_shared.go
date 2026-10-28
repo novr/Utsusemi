@@ -235,6 +235,9 @@ func applySharedConfigOptions(cmd *cobra.Command, opts sharedConfigOptions, cfg 
 	if cmd.Flags().Changed("softnet") {
 		cfg.Softnet = opts.softnet
 	}
+	if cmd.Flags().Changed("action-cache") {
+		cfg.ActionCache = opts.actionCache
+	}
 	if cmd.Flags().Changed("reclaim-policy") {
 		cfg.ReclaimPolicy = opts.reclaimPolicy
 	}
@@ -319,7 +322,7 @@ type configureSuccess struct {
 var configureAppConfigFlagNames = []string{
 	"broker", "oauth-client-id", "org", "runner-group-id",
 	"labels", "base-image", "runner-version", "pool-size",
-	"mounts", "softnet", "reclaim-policy", "reclaim-grace", "min-free-disk-gb",
+	"mounts", "softnet", "action-cache", "reclaim-policy", "reclaim-grace", "min-free-disk-gb",
 }
 
 func configureAppConfigFlagsChanged(cmd *cobra.Command) bool {

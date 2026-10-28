@@ -210,6 +210,8 @@ func TestValidateEnv(t *testing.T) {
 		{name: "leading digit", env: map[string]string{"1FOO": "x"}, want: "must match"},
 		{name: "reserved", env: map[string]string{"RUNNER_HOME": "/tmp"}, want: "reserved"},
 		{name: "system proxy reserved", env: map[string]string{"UTSUSEMI_SYSTEM_PROXY_HTTP_HOST": "10.0.0.1"}, want: "reserved"},
+		{name: "action cache reserved", env: map[string]string{"UTSUSEMI_ACTION_CACHE": "1"}, want: "reserved"},
+		{name: "action cache addr reserved", env: map[string]string{"UTSUSEMI_ACTION_CACHE_ADDR": "127.0.0.1:1"}, want: "reserved"},
 		{name: "newline value", env: map[string]string{"FOO": "a\nb"}, want: "NUL or newline"},
 	}
 	for _, tc := range cases {

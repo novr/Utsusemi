@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/novr/utsusemi/internal/actioncache"
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/instancelock"
 	"github.com/novr/utsusemi/internal/lease"
@@ -99,6 +100,13 @@ func (s *Spawner) Run(ctx context.Context, vmName string, ctrl *SlotControl, onI
 		}
 	}()
 
+	if cfg.ActionCache {
+		if err := actioncache.EvictForMinFree(cfg.StateDir, cfg.MinFreeDiskGB, func() (float64, error) {
+			return s.opts.Provider.FreeDiskGB(ctx)
+		}); err != nil {
+			log.Warn("action cache eviction failed", "error", err)
+		}
+	}
 	freeGB, err := s.opts.Provider.FreeDiskGB(ctx)
 	if err != nil {
 		return Result{}, fmt.Errorf("disk check: %w", err)

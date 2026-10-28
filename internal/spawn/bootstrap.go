@@ -1,6 +1,7 @@
 package spawn
 
 import (
+	"github.com/novr/utsusemi/internal/actioncache"
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/provider"
 	"github.com/novr/utsusemi/internal/runnercache"
@@ -51,6 +52,12 @@ func BootstrapEnv(cfg *config.Config, p provider.VMProvider) map[string]string {
 	}
 	for k, v := range config.SystemProxyEnv(cfg.SystemProxy) {
 		out[k] = v
+	}
+	if cfg.ActionCache {
+		out["UTSUSEMI_ACTION_CACHE"] = "1"
+		out["UTSUSEMI_ACTION_CACHE_BIN_DIR"] = actioncache.GuestBinDir
+		out["UTSUSEMI_ACTION_CACHE_DATA_DIR"] = actioncache.GuestDataDir
+		out["UTSUSEMI_ACTION_CACHE_ADDR"] = actioncache.DefaultAddr
 	}
 	return out
 }

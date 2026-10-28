@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/novr/utsusemi/internal/actioncache"
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/credentialview"
 	"github.com/novr/utsusemi/internal/drainctl"
@@ -80,6 +81,7 @@ type RuntimeInfo struct {
 	ReclaimPolicy     string   `json:"reclaim_policy,omitempty"`
 	MinFreeDiskGB     int      `json:"min_free_disk_gb,omitempty"`
 	Softnet           bool     `json:"softnet"`
+	ActionCache       bool     `json:"action_cache,omitempty"`
 	Mounts            []string `json:"mounts,omitempty"`
 	SystemProxyHTTP   string   `json:"system_proxy_http,omitempty"`
 	SystemProxyHTTPS  string   `json:"system_proxy_https,omitempty"`
@@ -231,7 +233,15 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 	if activeRuntime && runtimeInfo.RunnerVersion != "" {
 		runnerInfo.Runtime = runtimeInfo.RunnerVersion
 	}
-	mounts, err := provider.ResolveMountDirs(runnercache.WithRunnerCacheMount(stateDir, in.Cfg.Mounts))
+	actionCacheEnabled := in.Cfg.ActionCache
+	if activeRuntime {
+		actionCacheEnabled = runtimeInfo.ActionCache
+	}
+	mounts, err := provider.ResolveMountDirs(actioncache.WithMounts(
+		stateDir,
+		actionCacheEnabled,
+		runnercache.WithRunnerCacheMount(stateDir, in.Cfg.Mounts),
+	))
 	if err != nil {
 		return Report{}, err
 	}
@@ -341,6 +351,7 @@ func loadRuntimeInfo(stateDir string, agent AgentInfo, session *lease.AgentSessi
 		ReclaimPolicy:     snap.ReclaimPolicy,
 		MinFreeDiskGB:     snap.MinFreeDiskGB,
 		Softnet:           snap.Softnet,
+		ActionCache:       snap.ActionCache,
 		Mounts:            snap.Mounts,
 		SystemProxyHTTP:   snap.SystemProxyHTTP,
 		SystemProxyHTTPS:  snap.SystemProxyHTTPS,
