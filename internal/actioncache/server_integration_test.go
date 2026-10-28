@@ -529,11 +529,13 @@ func TestHookRewritesWithNode(t *testing.T) {
 	if err := os.WriteFile(hookPath, hook, 0o644); err != nil {
 		t.Fatal(err)
 	}
+	// Mimic @actions/http-client: CacheService calls go through https.request
+	// against ACTIONS_RESULTS_URL; the hook must re-dispatch onto http.
 	script := `
-const http = require('http');
+const https = require('https');
 const auth = process.env.AUTH;
 const body = JSON.stringify({key:'n', version:'v'});
-const req = http.request({
+const req = https.request({
   protocol: 'https:',
   hostname: 'results.actions.githubusercontent.com',
   path: '/twirp/github.actions.results.api.v1.CacheService/CreateCacheEntry',
