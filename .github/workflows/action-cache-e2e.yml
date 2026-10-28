@@ -1,0 +1,113 @@
+# Manual Tart / GitHub E2E for opt-in action_cache. Not a CI gate.
+# Requires a warm utsusemi agent with action_cache: true and label utsusemi-e2e.
+name: Action cache E2E
+
+on:
+  workflow_dispatch:
+  # Temporary: register the workflow on GitHub so workflow_dispatch is usable; remove after first PR.
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: action-cache-e2e
+  cancel-in-progress: true
+
+jobs:
+  # Fresh VM: cache miss, then post-job save into the host action-cache store.
+  prime:
+    runs-on:
+      - self-hosted
+      - macOS
+      - ARM64
+      - utsusemi-e2e
+    steps:
+      - name: Write payload
+        run: |
+          set -euo pipefail
+          mkdir -p .utsusemi-e2e-cache
+          printf '%s\n' "${{ github.run_id }}-${{ github.run_attempt }}" > .utsusemi-e2e-cache/marker
+
+      - name: Cache
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .utsusemi-e2e-cache
+          key: utsusemi-action-cache-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Expect miss
+        run: |
+          set -euo pipefail
+          if [ "${{ steps.cache.outputs.cache-hit }}" = "true" ]; then
+            echo "unexpected cache-hit on prime" >&2
+            exit 1
+          fi
+
+  # Second spawn: restore from host store across VM recycle.
+  hit:
+    needs: prime
+    runs-on:
+      - self-hosted
+      - macOS
+      - ARM64
+      - utsusemi-e2e
+    steps:
+      - name: Cache
+        id: cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .utsusemi-e2e-cache
+          key: utsusemi-action-cache-e2e-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Expect hit
+        run: |
+          set -euo pipefail
+          test "${{ steps.cache.outputs.cache-hit }}" = "true"
+          test -f .utsusemi-e2e-cache/marker
+          grep -qx "${{ github.run_id }}-${{ github.run_attempt }}" .utsusemi-e2e-cache/marker
+
+  # setup-* cache: path uses the same CacheService v2 redirect.
+  setup_node_prime:
+    needs: hit
+    runs-on:
+      - self-hosted
+      - macOS
+      - ARM64
+      - utsusemi-e2e
+    steps:
+      - name: Tiny npm project
+        run: |
+          set -euo pipefail
+          printf '%s\n' '{"name":"utsusemi-e2e","version":"0.0.0","private":true}' > package.json
+          printf '%s\n' '{"name":"utsusemi-e2e","lockfileVersion":3,"requires":true,"packages":{"":{"name":"utsusemi-e2e","version":"0.0.0","private":true}}}' > package-lock.json
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "22"
+          cache: npm
+
+  setup_node_hit:
+    needs: setup_node_prime
+    runs-on:
+      - self-hosted
+      - macOS
+      - ARM64
+      - utsusemi-e2e
+    steps:
+      - name: Tiny npm project
+        run: |
+          set -euo pipefail
+          printf '%s\n' '{"name":"utsusemi-e2e","version":"0.0.0","private":true}' > package.json
+          printf '%s\n' '{"name":"utsusemi-e2e","lockfileVersion":3,"requires":true,"packages":{"":{"name":"utsusemi-e2e","version":"0.0.0","private":true}}}' > package-lock.json
+
+      - id: node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Expect npm cache hit
+        run: |
+          set -euo pipefail
+          test "${{ steps.node.outputs.cache-hit }}" = "true"

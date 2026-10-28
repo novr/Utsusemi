@@ -23,6 +23,7 @@ type sharedConfigOptions struct {
 	poolSize      int
 	mounts        []string
 	softnet       bool
+	actionCache   bool
 	reclaimPolicy string
 	reclaimGrace  time.Duration
 	minFreeDiskGB int
@@ -36,6 +37,7 @@ func (o sharedConfigOptions) apply(cfg *config.Config) {
 	cfg.PoolSize = o.poolSize
 	cfg.Mounts = normalizeMounts(o.mounts)
 	cfg.Softnet = o.softnet
+	cfg.ActionCache = o.actionCache
 	cfg.ReclaimPolicy = o.reclaimPolicy
 	cfg.ReclaimGrace = config.Duration(o.reclaimGrace)
 	cfg.MinFreeDiskGB = o.minFreeDiskGB
@@ -48,6 +50,7 @@ var sharedConfigFlagNames = []string{
 	"pool-size",
 	"mounts",
 	"softnet",
+	"action-cache",
 	"reclaim-policy",
 	"reclaim-grace",
 	"min-free-disk-gb",
@@ -60,6 +63,7 @@ func addSharedConfigFlags(cmd *cobra.Command, opts *sharedConfigOptions) {
 	cmd.Flags().IntVar(&opts.poolSize, "pool-size", defaultPoolSize, "pool size")
 	cmd.Flags().StringArrayVar(&opts.mounts, "mounts", nil, "host directory share for Tart --dir (repeatable; --mounts= clears)")
 	cmd.Flags().BoolVar(&opts.softnet, "softnet", false, "use Softnet networking (disable with --softnet=false)")
+	cmd.Flags().BoolVar(&opts.actionCache, "action-cache", false, "serve Actions cache API locally in each VM (disable with --action-cache=false)")
 	cmd.Flags().StringVar(&opts.reclaimPolicy, "reclaim-policy", config.DefaultReclaimPolicy, "reclaim policy: soft, grace, or hard")
 	cmd.Flags().DurationVar(&opts.reclaimGrace, "reclaim-grace", config.DefaultReclaimGrace, "grace window when reclaim-policy is grace")
 	cmd.Flags().IntVar(&opts.minFreeDiskGB, "min-free-disk-gb", config.DefaultMinFreeDiskGB, "pause spawning when free disk is below this many GB")

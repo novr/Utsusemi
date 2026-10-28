@@ -60,6 +60,21 @@ func TestGuestEnvMergesConfigAndBootstrap(t *testing.T) {
 	if env["RUNNER_ARCH"] != "linux-arm64" {
 		t.Fatalf("RUNNER_ARCH = %q", env["RUNNER_ARCH"])
 	}
+	if _, ok := env["UTSUSEMI_ACTION_CACHE"]; ok {
+		t.Fatal("action cache env set when disabled")
+	}
+}
+
+func TestGuestEnvActionCache(t *testing.T) {
+	p := provider.NewStub(2)
+	cfg := &config.Config{RunnerVersion: "2.336.0", ActionCache: true}
+	env := GuestEnv(cfg, p)
+	if env["UTSUSEMI_ACTION_CACHE"] != "1" {
+		t.Fatalf("UTSUSEMI_ACTION_CACHE = %q", env["UTSUSEMI_ACTION_CACHE"])
+	}
+	if env["UTSUSEMI_ACTION_CACHE_ADDR"] == "" || env["UTSUSEMI_ACTION_CACHE_DATA_DIR"] == "" {
+		t.Fatalf("missing action cache paths: %#v", env)
+	}
 }
 
 func TestGuestEnvSystemProxyDoesNotSetProcessProxy(t *testing.T) {

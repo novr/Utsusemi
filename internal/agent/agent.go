@@ -10,6 +10,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/novr/utsusemi/internal/actioncache"
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/instancelock"
 	"github.com/novr/utsusemi/internal/logging"
@@ -119,6 +120,23 @@ func (a *Agent) Run(ctx context.Context) error {
 		if err := runnercache.Ensure(ctx, a.cfg.StateDir, a.cfg.RunnerVersion, arch, runnercache.Options{Logger: a.logger}); err != nil {
 			a.logger.Warn("ensure runner cache failed; bootstrap may download inside the VM", "error", err)
 		}
+	}
+	if a.cfg.ActionCache {
+		if err := actioncache.PrepareDir(a.cfg.StateDir); err != nil {
+			err = fmt.Errorf("prepare action cache dir: %w", err)
+			if shouldAlertFatal(ctx, err) {
+				a.pool.AlertFatal(ctx, err)
+			}
+			return err
+		}
+		if err := actioncache.StageBin(a.cfg.StateDir); err != nil {
+			err = fmt.Errorf("stage action cache binary: %w", err)
+			if shouldAlertFatal(ctx, err) {
+				a.pool.AlertFatal(ctx, err)
+			}
+			return err
+		}
+		a.logger.Info("action cache enabled", "data", actioncache.Dir(a.cfg.StateDir))
 	}
 
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)

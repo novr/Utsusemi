@@ -16,6 +16,7 @@ pool_size: 1
 # reclaim_policy: grace
 # reclaim_grace: 15m
 # softnet: true    # brew install cirruslabs/cli/softnet + root
+# action_cache: true  # local actions/cache + setup-* cache (host state_dir/action-cache)
 # mounts:
 #   - ~/utsusemi-cache/swiftpm
 # Literal guest env (host job steps inherit process env; not workflow env context; no $VAR expansion).

@@ -25,6 +25,7 @@ type Snapshot struct {
 	ReclaimPolicy     string    `json:"reclaim_policy,omitempty"`
 	MinFreeDiskGB     int       `json:"min_free_disk_gb"`
 	Softnet           bool      `json:"softnet"`
+	ActionCache       bool      `json:"action_cache,omitempty"`
 	Mounts            []string  `json:"mounts,omitempty"`
 	SystemProxyHTTP   string    `json:"system_proxy_http,omitempty"`
 	SystemProxyHTTPS  string    `json:"system_proxy_https,omitempty"`
@@ -74,6 +75,7 @@ func FromConfig(cfg *config.Config, agentID string) Snapshot {
 		ReclaimPolicy:     cfg.ReclaimPolicy,
 		MinFreeDiskGB:     cfg.MinFreeDiskGB,
 		Softnet:           cfg.Softnet,
+		ActionCache:       cfg.ActionCache,
 		Mounts:            mounts,
 		SystemProxyHTTP:   proxyHTTP,
 		SystemProxyHTTPS:  proxyHTTPS,

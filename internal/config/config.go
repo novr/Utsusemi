@@ -84,6 +84,7 @@ type Config struct {
 	StateDir               string            `yaml:"state_dir,omitempty"`
 	Softnet                bool              `yaml:"softnet,omitempty"`
 	Mounts                 []string          `yaml:"mounts,omitempty"`
+	ActionCache            bool              `yaml:"action_cache,omitempty"`
 	Env                    map[string]string `yaml:"env,omitempty"`
 	SystemProxy            *SystemProxy      `yaml:"system_proxy,omitempty"`
 	ReclaimPolicy          string            `yaml:"reclaim_policy,omitempty"`

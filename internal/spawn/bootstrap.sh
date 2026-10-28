@@ -161,7 +161,69 @@ else
   echo "bootstrap: runner download+install took $((SECONDS - t0))s" >&2
 fi
 
+start_action_cache() {
+  if [ "${UTSUSEMI_ACTION_CACHE:-}" != "1" ]; then
+    return 0
+  fi
+  local bin_mount="${UTSUSEMI_ACTION_CACHE_BIN_DIR:-/Volumes/My Shared Files/utsusemi-action-cache-bin}"
+  local data_dir="${UTSUSEMI_ACTION_CACHE_DATA_DIR:-/Volumes/My Shared Files/utsusemi-action-cache}"
+  local addr="${UTSUSEMI_ACTION_CACHE_ADDR:-127.0.0.1:19527}"
+  local guest_dir="${HOME}/utsusemi-action-cache"
+  local _
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    [ -d "$bin_mount" ] && [ -d "$data_dir" ] && break
+    sleep 0.5
+  done
+  if [ ! -f "${bin_mount}/utsusemi" ] || [ ! -f "${bin_mount}/hook.js" ]; then
+    echo "bootstrap: action cache bin mount missing utsusemi or hook.js" >&2
+    exit 1
+  fi
+  mkdir -p "$guest_dir"
+  cp "${bin_mount}/utsusemi" "${guest_dir}/utsusemi"
+  cp "${bin_mount}/hook.js" "${guest_dir}/hook.js"
+  chmod +x "${guest_dir}/utsusemi"
+  xattr -d com.apple.quarantine "${guest_dir}/utsusemi" 2>/dev/null || true
+  xattr -d com.apple.quarantine "${guest_dir}/hook.js" 2>/dev/null || true
+
+  "${guest_dir}/utsusemi" cache-serve --addr "$addr" --dir "$data_dir" &
+  local ready=0
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do
+    if curl -fsS --connect-timeout 1 --max-time 2 "http://${addr}/healthz" >/dev/null 2>&1; then
+      ready=1
+      break
+    fi
+    sleep 0.25
+  done
+  if [ "$ready" != "1" ]; then
+    echo "bootstrap: action cache server did not become ready on ${addr}" >&2
+    exit 1
+  fi
+
+  local hook="${guest_dir}/hook.js"
+  local node
+  local wrapped=0
+  for node in "${RUNNER_HOME}"/externals/node*/bin/node; do
+    [ -e "$node" ] || continue
+    if [ -f "${node}.real" ]; then
+      wrapped=$((wrapped + 1))
+      continue
+    fi
+    mv "$node" "${node}.real"
+    printf '%s\n' '#!/bin/bash' "exec \"${node}.real\" --require \"${hook}\" \"\$@\"" >"$node"
+    chmod +x "$node"
+    wrapped=$((wrapped + 1))
+  done
+  if [ "$wrapped" -eq 0 ]; then
+    echo "bootstrap: no runner node binaries to wrap for action cache" >&2
+    exit 1
+  fi
+  echo "bootstrap: action cache listening on ${addr} (wrapped ${wrapped} node)" >&2
+}
+start_action_cache
+
 unset UTSUSEMI_SYSTEM_PROXY_HTTP_HOST UTSUSEMI_SYSTEM_PROXY_HTTP_PORT \
   UTSUSEMI_SYSTEM_PROXY_HTTPS_HOST UTSUSEMI_SYSTEM_PROXY_HTTPS_PORT \
-  UTSUSEMI_SYSTEM_PROXY_BYPASS
+  UTSUSEMI_SYSTEM_PROXY_BYPASS \
+  UTSUSEMI_ACTION_CACHE UTSUSEMI_ACTION_CACHE_BIN_DIR UTSUSEMI_ACTION_CACHE_DATA_DIR \
+  UTSUSEMI_ACTION_CACHE_ADDR
 ./run.sh --jitconfig "${JIT_CONFIG}"
