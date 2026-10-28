@@ -67,9 +67,7 @@ func TestPoolDrainEmptyCompletes(t *testing.T) {
 	cfg.PoolSize = 0 // no spawns
 	p := newTestPool(t, cfg, provider.NewStub(2), noopRegistrar{})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() { _ = p.Run(ctx) }()
+	startTestPoolRun(t, p)
 
 	session := waitAgentSession(t, cfg.StateDir)
 
@@ -110,9 +108,7 @@ func TestPoolDrainAbandonsUnclaimedAndRefills(t *testing.T) {
 	cfg.SpawnTimeout = config.Duration(5 * time.Second)
 	p := newTestPool(t, cfg, gp, noopRegistrar{})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() { _ = p.Run(ctx) }()
+	startTestPoolRun(t, p)
 
 	select {
 	case <-gp.execStarted:
@@ -159,9 +155,7 @@ func TestPoolDrainRejectsBusy(t *testing.T) {
 	cfg.PoolSize = 0
 	p := newTestPool(t, cfg, provider.NewStub(2), noopRegistrar{})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() { _ = p.Run(ctx) }()
+	startTestPoolRun(t, p)
 	session := waitAgentSession(t, cfg.StateDir)
 
 	// Hold poolDrain open with a fake in-flight slot so a second request is busy.
@@ -234,9 +228,7 @@ func TestPoolDrainDiscardsStaleRequest(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() { _ = p.Run(ctx) }()
+	startTestPoolRun(t, p)
 
 	deadline := time.Now().Add(2 * time.Second)
 	for time.Now().Before(deadline) {
@@ -264,9 +256,7 @@ func TestPoolDrainForceGraceFinishesWhenStuck(t *testing.T) {
 	cfg.PoolSize = 0
 	p := newTestPool(t, cfg, provider.NewStub(2), noopRegistrar{})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() { _ = p.Run(ctx) }()
+	startTestPoolRun(t, p)
 	session := waitAgentSession(t, cfg.StateDir)
 
 	// Simulate a wedged in-flight slot that ignores Force.
@@ -313,9 +303,7 @@ func TestPoolDrainForceClaimed(t *testing.T) {
 	cfg.JobTimeout = config.Duration(10 * time.Second)
 	p := newTestPool(t, cfg, gp, noopRegistrar{})
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	go func() { _ = p.Run(ctx) }()
+	startTestPoolRun(t, p)
 
 	select {
 	case <-gp.execStarted:
