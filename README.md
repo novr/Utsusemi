@@ -47,7 +47,7 @@ utsusemi configure edit|path|show
 | Targets | organization | organization or repository |
 | Credential refresh | automatic | manual |
 
-Shared knobs (`--base-image`, `--pool-size`, `--labels`, `--runner-version`, `--mounts`, `--softnet`, `--reclaim-policy`, `--reclaim-grace`, `--min-free-disk-gb`, `--force`) are available on `configure app`, `configure token`, and `configure edit`. For knob-only updates prefer **`utsusemi configure edit --…`** (mode-agnostic; no Keychain). `--output` is app/token bootstrap only; `edit` / `show` / `path` always use `--config`.
+Shared knobs (`--base-image`, `--pool-size`, `--labels`, `--runner-version`, `--mounts`, `--softnet`, `--reclaim-policy`, `--reclaim-grace`, `--min-free-disk-gb`, `--force`) are available on `configure app`, `configure token`, and `configure edit`. For knob-only updates prefer **`utsusemi configure edit --…`** (mode-agnostic; no Keychain). `--output` is app/token bootstrap only; `edit` / `show` / `path` always use `--config`. `configure show` prints that file as stored.
 
 `--runner-group-id` (default `1`) for organization and repository targets.
 
