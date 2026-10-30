@@ -159,7 +159,7 @@ PAT mode supports `--repo`, so Utsusemi can run against personal repositories. O
 | `--config` / `UTSUSEMI_CONFIG` | Separate config file |
 | `state_dir` | Lock file and lease state live here; collision prevents startup |
 | `vm_name_prefix` | Prevents VM name collisions across instances |
-| `credential_keychain_service` | Prevents keychain entry collisions |
+| `credential_keychain_service` | Prevents keychain entry collisions. Changing the name does not move the Keychain item; run `utsusemi configure app`, or `utsusemi configure token` with the token |
 
 `brew services` manages one service definition; a second instance needs a hand-written launchd plist. With Tart capped at 2 concurrent VMs, at most two single-slot pools can run on one host. Credential refresh is manual (GitHub App mode is organization-only).
 

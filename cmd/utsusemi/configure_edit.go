@@ -14,6 +14,7 @@ import (
 
 	"github.com/novr/utsusemi/internal/app"
 	"github.com/novr/utsusemi/internal/config"
+	"github.com/novr/utsusemi/internal/credentialview"
 )
 
 //go:embed config.template.yaml
@@ -122,6 +123,7 @@ func runConfigEdit(cmd *cobra.Command, path string) error {
 	if err != nil {
 		return err
 	}
+	prevService, hadPrev := previousCredentialService(path)
 
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -169,6 +171,9 @@ func runConfigEdit(cmd *cobra.Command, path string) error {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "wrote config to %s\n", path)
+	if hadPrev && prevService != check.CredentialService() {
+		fmt.Fprintln(cmd.OutOrStdout(), credentialview.KeychainServiceChanged(check.Registration.Mode, prevService, check.CredentialService()))
+	}
 	fmt.Fprintln(cmd.OutOrStdout(), "next: run `utsusemi validate`")
 	return nil
 }
@@ -183,6 +188,14 @@ func runConfigShow(cmd *cobra.Command, path string) error {
 	}
 	_, err = cmd.OutOrStdout().Write(data)
 	return err
+}
+
+func previousCredentialService(path string) (string, bool) {
+	prev, err := config.Load(path)
+	if err != nil {
+		return "", false
+	}
+	return prev.CredentialService(), true
 }
 
 func runEditor(editor, path string, cmd *cobra.Command) error {

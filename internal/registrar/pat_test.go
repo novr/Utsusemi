@@ -3,8 +3,10 @@ package registrar
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/novr/utsusemi/internal/keychain"
@@ -157,5 +159,37 @@ func TestGitHubPATRegistrarDeleteRunnerNotFoundOK(t *testing.T) {
 	err := reg.DeleteRunner(context.Background(), target.Target{Type: target.TypeRepo, Owner: "alice", Repo: "app"}, 9)
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestGitHubPATValidateCredentialMissing(t *testing.T) {
+	reg := NewGitHubPATRegistrar(keychain.NewMemoryStore(), "repo-a", "utsusemi")
+	err := reg.ValidateCredential(context.Background(), "ignored", "ignored")
+	if !errors.Is(err, keychain.ErrNotFound) {
+		t.Fatalf("err=%v", err)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, `"repo-a"`) || !strings.Contains(msg, "utsusemi configure token") || strings.Contains(msg, "credential not found") {
+		t.Fatalf("msg=%q", msg)
+	}
+}
+
+type keychainErrStore struct {
+	err error
+}
+
+func (s keychainErrStore) Get(string, string) (string, error) { return "", s.err }
+func (s keychainErrStore) Set(string, string, string) error   { return nil }
+func (s keychainErrStore) Delete(string, string) error        { return nil }
+
+func TestGitHubPATValidateCredentialKeepsOtherKeychainErrors(t *testing.T) {
+	locked := errors.New("keychain get: locked")
+	reg := NewGitHubPATRegistrar(keychainErrStore{err: locked}, "repo-a", "utsusemi")
+	err := reg.ValidateCredential(context.Background(), "", "")
+	if err == nil || errors.Is(err, keychain.ErrNotFound) || strings.Contains(err.Error(), "configure token") {
+		t.Fatalf("err=%v", err)
+	}
+	if !errors.Is(err, locked) {
+		t.Fatalf("err=%v", err)
 	}
 }
