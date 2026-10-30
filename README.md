@@ -47,7 +47,7 @@ utsusemi configure edit|path|show
 | Targets | organization | organization or repository |
 | Credential refresh | automatic | manual |
 
-Shared knobs (`--base-image`, `--pool-size`, `--labels`, `--runner-version`, `--mounts`, `--softnet`, `--reclaim-policy`, `--reclaim-grace`, `--min-free-disk-gb`, `--force`) are available on `configure app`, `configure token`, and `configure edit`. For knob-only updates prefer **`utsusemi configure edit --…`** (mode-agnostic; no Keychain). `--output` is app/token bootstrap only; `edit` / `show` / `path` always use `--config`.
+Shared knobs (`--base-image`, `--pool-size`, `--labels`, `--runner-version`, `--mounts`, `--softnet`, `--reclaim-policy`, `--reclaim-grace`, `--min-free-disk-gb`, `--force`) are available on `configure app`, `configure token`, and `configure edit`. For knob-only updates prefer **`utsusemi configure edit --…`** (mode-agnostic; no Keychain). `--output` is app/token bootstrap only; `edit` / `show` / `path` always use `--config`. `configure show` prints that file as stored.
 
 `--runner-group-id` (default `1`) for organization and repository targets.
 
@@ -159,7 +159,7 @@ PAT mode supports `--repo`, so Utsusemi can run against personal repositories. O
 | `--config` / `UTSUSEMI_CONFIG` | Separate config file |
 | `state_dir` | Lock file and lease state live here; collision prevents startup |
 | `vm_name_prefix` | Prevents VM name collisions across instances |
-| `credential_keychain_service` | Prevents keychain entry collisions |
+| `credential_keychain_service` | Prevents keychain entry collisions. Changing the name does not move the Keychain item; run `utsusemi configure app`, or `utsusemi configure token` with the token |
 
 `brew services` manages one service definition; a second instance needs a hand-written launchd plist. With Tart capped at 2 concurrent VMs, at most two single-slot pools can run on one host. Credential refresh is manual (GitHub App mode is organization-only).
 

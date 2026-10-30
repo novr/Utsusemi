@@ -3,39 +3,44 @@ package registrar
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"log/slog"
 	"net/http"
 	"path/filepath"
 	"strings"
 
 	"github.com/novr/utsusemi/internal/config"
+	"github.com/novr/utsusemi/internal/credentialview"
 	"github.com/novr/utsusemi/internal/hostcredential"
 	"github.com/novr/utsusemi/internal/keychain"
 	"github.com/novr/utsusemi/internal/target"
 )
 
 type BrokerRegistrar struct {
-	client      *http.Client
-	api         *httpClient
-	credentials *hostcredential.Manager
-	cfg         *config.Config
-	baseURL     string
-	logger      *slog.Logger
+	client            *http.Client
+	api               *httpClient
+	credentials       *hostcredential.Manager
+	cfg               *config.Config
+	credentialService string
+	baseURL           string
+	logger            *slog.Logger
 }
 
 func NewBrokerRegistrar(store keychain.Store, cfg *config.Config, logger *slog.Logger) *BrokerRegistrar {
 	client := &http.Client{Timeout: defaultHTTPTimeout}
 	baseURL := strings.TrimRight(cfg.Registration.BrokerURL, "/")
+	service := cfg.CredentialService()
 	reg := &BrokerRegistrar{
-		client:  client,
-		api:     newBrokerHTTPClient(client, baseURL),
-		cfg:     cfg,
-		baseURL: baseURL,
-		logger:  logger,
+		client:            client,
+		api:               newBrokerHTTPClient(client, baseURL),
+		cfg:               cfg,
+		credentialService: service,
+		baseURL:           baseURL,
+		logger:            logger,
 	}
 	reg.credentials = hostcredential.NewManager(hostcredential.ManagerOptions{
 		Store:         store,
-		Service:       cfg.CredentialService(),
+		Service:       service,
 		Account:       cfg.CredentialAccount(),
 		BrokerURL:     baseURL,
 		OAuthClientID: cfg.Registration.OAuthClientID,
@@ -55,7 +60,7 @@ func (r *BrokerRegistrar) ValidateCredential(ctx context.Context, service, accou
 	if err != nil {
 		return err
 	}
-	return r.requestWithCredential(ctx, tgt, func(token string) error {
+	err = r.requestWithCredential(ctx, tgt, func(token string) error {
 		reqBody := map[string]any{
 			"target": targetBody,
 			"prefix": "",
@@ -64,6 +69,10 @@ func (r *BrokerRegistrar) ValidateCredential(ctx context.Context, service, accou
 			Runners []Runner `json:"runners"`
 		}{})
 	})
+	if errors.Is(err, keychain.ErrNotFound) {
+		return credentialview.MissingKeychainError(config.ModeHostedApp, r.credentialService)
+	}
+	return err
 }
 
 func (r *BrokerRegistrar) CreateJIT(ctx context.Context, tgt target.Target, labels []string, name string) (JITConfig, error) {
