@@ -3,11 +3,14 @@ package registrar
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"strings"
 	"time"
 
+	"github.com/novr/utsusemi/internal/config"
+	"github.com/novr/utsusemi/internal/credentialview"
 	"github.com/novr/utsusemi/internal/keychain"
 	"github.com/novr/utsusemi/internal/target"
 )
@@ -34,6 +37,9 @@ func NewGitHubPATRegistrar(store keychain.Store, service, account string) *GitHu
 func (r *GitHubPATRegistrar) ValidateCredential(ctx context.Context, service, account string) error {
 	_, err := r.token()
 	if err != nil {
+		if errors.Is(err, keychain.ErrNotFound) {
+			return credentialview.MissingKeychainError(config.ModeGitHubPAT, r.service)
+		}
 		return fmt.Errorf("credential missing from keychain: %w", err)
 	}
 	return nil

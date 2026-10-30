@@ -14,6 +14,7 @@ import (
 
 	"github.com/novr/utsusemi/internal/app"
 	"github.com/novr/utsusemi/internal/config"
+	"github.com/novr/utsusemi/internal/credentialview"
 )
 
 //go:embed config.template.yaml
@@ -37,16 +38,7 @@ func newConfigureShowCmd() *cobra.Command {
 		Short: "Print the current config as YAML",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			cfg, err := config.Load(configPath)
-			if err != nil {
-				return err
-			}
-			data, err := yaml.Marshal(cfg)
-			if err != nil {
-				return err
-			}
-			_, err = cmd.OutOrStdout().Write(data)
-			return err
+			return runConfigShow(cmd, configPath)
 		},
 	}
 }
@@ -100,11 +92,20 @@ func runConfigEditPatch(
 	if err := applySharedConfigOptions(cmd, opts, cfg, false); err != nil {
 		return err
 	}
-	config.ApplyDefaults(cfg)
-	if _, err := app.ValidateConfig(cfg); err != nil {
+	check := config.Clone(cfg)
+	config.ApplyDefaults(check)
+	if _, err := app.ValidateConfig(check); err != nil {
 		return err
 	}
-	if err := writeConfig(path, cfg); err != nil {
+	raw, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	patched, err := applyConfigYAMLUpdates(raw, sharedFlagYAMLUpdates(cmd, opts))
+	if err != nil {
+		return err
+	}
+	if err := writeConfigBytes(path, patched); err != nil {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "wrote config to %s\n", path)
@@ -122,6 +123,7 @@ func runConfigEdit(cmd *cobra.Command, path string) error {
 	if err != nil {
 		return err
 	}
+	prevService, hadPrev := previousCredentialService(path)
 
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o755); err != nil {
@@ -159,17 +161,41 @@ func runConfigEdit(cmd *cobra.Command, path string) error {
 		keepTemp = true
 		return fmt.Errorf("parse edited config: %w (temp file: %s)", err, tmpPath)
 	}
-	config.ApplyDefaults(cfg)
-	if _, err := app.ValidateConfig(cfg); err != nil {
+	check := config.Clone(cfg)
+	config.ApplyDefaults(check)
+	if _, err := app.ValidateConfig(check); err != nil {
 		keepTemp = true
 		return fmt.Errorf("validate edited config: %w (temp file: %s)", err, tmpPath)
 	}
-	if err := writeConfig(path, cfg); err != nil {
+	if err := writeConfigBytes(path, edited); err != nil {
 		return err
 	}
 	fmt.Fprintf(cmd.OutOrStdout(), "wrote config to %s\n", path)
+	if hadPrev && prevService != check.CredentialService() {
+		fmt.Fprintln(cmd.OutOrStdout(), credentialview.KeychainServiceChanged(check.Registration.Mode, prevService, check.CredentialService()))
+	}
 	fmt.Fprintln(cmd.OutOrStdout(), "next: run `utsusemi validate`")
 	return nil
+}
+
+func runConfigShow(cmd *cobra.Command, path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read config: %w", err)
+	}
+	if err := yaml.Unmarshal(data, &config.Config{}); err != nil {
+		return fmt.Errorf("parse config: %w", err)
+	}
+	_, err = cmd.OutOrStdout().Write(data)
+	return err
+}
+
+func previousCredentialService(path string) (string, bool) {
+	prev, err := config.Load(path)
+	if err != nil {
+		return "", false
+	}
+	return prev.CredentialService(), true
 }
 
 func runEditor(editor, path string, cmd *cobra.Command) error {

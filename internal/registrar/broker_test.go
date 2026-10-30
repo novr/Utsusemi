@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -453,6 +454,47 @@ func TestBrokerRegistrarExchangeNotFoundNoRetryLoop(t *testing.T) {
 	}
 	if oauthCalls != 1 {
 		t.Fatalf("oauth calls=%d", oauthCalls)
+	}
+}
+
+func TestBrokerValidateCredentialMissing(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected HTTP %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	cfg := testBrokerConfig(t, server.URL)
+	cfg.Registration.CredentialKeychainService = "repo-a"
+	reg := NewBrokerRegistrar(keychain.NewMemoryStore(), cfg, nil)
+	cfg.Registration.CredentialKeychainService = "later"
+	err := reg.ValidateCredential(context.Background(), "", "")
+	if !errors.Is(err, keychain.ErrNotFound) {
+		t.Fatalf("err=%v", err)
+	}
+	msg := err.Error()
+	if strings.Contains(msg, "credential missing from keychain:") || strings.Contains(msg, "credential not found") {
+		t.Fatalf("msg=%q", msg)
+	}
+	if !strings.Contains(msg, `"repo-a"`) || strings.Contains(msg, `"later"`) || !strings.Contains(msg, "utsusemi configure app") {
+		t.Fatalf("msg=%q", msg)
+	}
+}
+
+func TestBrokerValidateCredentialKeepsOtherKeychainErrors(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Errorf("unexpected HTTP %s %s", r.Method, r.URL.Path)
+	}))
+	defer server.Close()
+
+	locked := errors.New("keychain get: locked")
+	cfg := testBrokerConfig(t, server.URL)
+	reg := NewBrokerRegistrar(keychainErrStore{err: locked}, cfg, nil)
+	err := reg.ValidateCredential(context.Background(), "", "")
+	if err == nil || errors.Is(err, keychain.ErrNotFound) || strings.Contains(err.Error(), "configure app") {
+		t.Fatalf("err=%v", err)
+	}
+	if !errors.Is(err, locked) {
+		t.Fatalf("err=%v", err)
 	}
 }
 
