@@ -234,9 +234,11 @@ func (p *Pool) tick(ctx context.Context) {
 	}
 	p.active++
 	p.warming++
+	// Add under mu with the phase check so drainAndWait's Wait (after it sets
+	// phaseShutdown under mu) never races a new Add.
+	p.inFlight.Add(1)
 	p.mu.Unlock()
 
-	p.inFlight.Add(1)
 	go func() {
 		defer p.inFlight.Done()
 

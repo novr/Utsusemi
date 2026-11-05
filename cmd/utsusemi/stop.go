@@ -28,6 +28,9 @@ early. SIGTERM or brew services stop before completion still cancels claimed job
 
 Ctrl-C only stops this CLI wait; the agent continues holding the pool empty.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if timeout < 0 {
+				return fmt.Errorf("stop: --timeout must be >= 0")
+			}
 			return runPoolControl(cmd, poolControlOpts{
 				name:    "stop",
 				stop:    true,

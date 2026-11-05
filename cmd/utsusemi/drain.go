@@ -126,11 +126,29 @@ func timeoutLabel(d time.Duration, force bool) string {
 	return d.String()
 }
 
+// poolControlAckTimeout bounds how long an unlimited wait (stop without
+// --timeout) tolerates the agent not picking up the request.
+var poolControlAckTimeout = time.Minute
+
 func waitDrainStatus(cmd *cobra.Command, stateDir, requestID, agentID string, agentPID int, cliDeadline time.Time, opts poolControlOpts) error {
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 	lockPath := filepath.Join(stateDir, "utsusemi.lock")
 	limited := !cliDeadline.IsZero()
+	ackBy := time.Now().Add(poolControlAckTimeout)
+	ackTimedOut := func() error {
+		if limited {
+			if time.Now().After(cliDeadline) {
+				return fmt.Errorf("%s: timed out waiting for agent status", opts.name)
+			}
+			return nil
+		}
+		if time.Now().After(ackBy) {
+			return fmt.Errorf("%s: agent did not acknowledge request id=%s within %s; it may still apply it",
+				opts.name, requestID, poolControlAckTimeout)
+		}
+		return nil
+	}
 
 	for {
 		select {
@@ -148,8 +166,8 @@ func waitDrainStatus(cmd *cobra.Command, stateDir, requestID, agentID string, ag
 				return err
 			}
 			if !ok {
-				if limited && time.Now().After(cliDeadline) {
-					return fmt.Errorf("%s: timed out waiting for agent status", opts.name)
+				if err := ackTimedOut(); err != nil {
+					return err
 				}
 				continue
 			}
@@ -160,8 +178,8 @@ func waitDrainStatus(cmd *cobra.Command, stateDir, requestID, agentID string, ag
 				return drainctl.ErrBusy
 			}
 			if !drainctl.MatchesRequest(st, requestID) {
-				if limited && time.Now().After(cliDeadline) {
-					return fmt.Errorf("%s: timed out waiting for agent status", opts.name)
+				if err := ackTimedOut(); err != nil {
+					return err
 				}
 				continue
 			}

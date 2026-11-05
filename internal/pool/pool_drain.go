@@ -150,6 +150,10 @@ func (p *Pool) acceptDrainRequest() {
 
 	if ph == phaseHeld {
 		if req.Stop {
+			p.drainStatusMu.Lock()
+			p.mu.Lock()
+			active = p.active
+			p.mu.Unlock()
 			_ = drainctl.WriteStatus(p.cfg.StateDir, drainctl.Status{
 				RequestID: req.RequestID,
 				AgentID:   req.AgentID,
@@ -159,6 +163,7 @@ func (p *Pool) acceptDrainRequest() {
 				Deadline:  req.Deadline,
 			})
 			_ = drainctl.RemoveRequest(p.cfg.StateDir)
+			p.drainStatusMu.Unlock()
 			p.logger.Info("pool already held; acknowledging stop",
 				"request_id", req.RequestID,
 			)
