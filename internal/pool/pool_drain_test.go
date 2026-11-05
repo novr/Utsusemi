@@ -158,9 +158,9 @@ func TestPoolDrainRejectsBusy(t *testing.T) {
 	startTestPoolRun(t, p)
 	session := waitAgentSession(t, cfg.StateDir)
 
-	// Hold poolDrain open with a fake in-flight slot so a second request is busy.
+	// Hold phasePoolDrain open with a fake in-flight slot so a second request is busy.
 	p.mu.Lock()
-	p.poolDrain = true
+	p.phase = phasePoolDrain
 	p.poolDrainState = &poolDrainState{
 		requestID: "first",
 		agentID:   session.ID,
@@ -261,7 +261,7 @@ func TestPoolDrainForceGraceFinishesWhenStuck(t *testing.T) {
 
 	// Simulate a wedged in-flight slot that ignores Force.
 	p.mu.Lock()
-	p.poolDrain = true
+	p.phase = phasePoolDrain
 	p.poolDrainState = &poolDrainState{
 		requestID: "stuck",
 		agentID:   session.ID,
@@ -281,10 +281,10 @@ func TestPoolDrainForceGraceFinishesWhenStuck(t *testing.T) {
 		t.Fatal("expected timeout error message")
 	}
 	p.mu.Lock()
-	draining := p.poolDrain
+	ph := p.phase
 	p.mu.Unlock()
-	if draining {
-		t.Fatal("poolDrain should be cleared after force grace")
+	if ph != phaseRun {
+		t.Fatalf("phase=%v, want phaseRun after force grace", ph)
 	}
 }
 

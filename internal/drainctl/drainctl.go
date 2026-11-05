@@ -29,6 +29,9 @@ var (
 	ErrNoRequest    = errors.New("drain: no request")
 	ErrBusy         = errors.New("drain: already in progress")
 	ErrAgentStopped = errors.New("drain: agent is not running")
+	// ErrHeld is returned when drain is refused because the pool is held empty
+	// after utsusemi stop. Restart the agent to refill.
+	ErrHeld = errors.New("drain: pool is held empty; restart the agent to refill")
 )
 
 type Request struct {
@@ -37,6 +40,8 @@ type Request struct {
 	RequestedAt time.Time `json:"requested_at"`
 	Deadline    time.Time `json:"deadline"`
 	Force       bool      `json:"force"`
+	// Stop asks the agent to hold active=0 after the drain instead of refilling.
+	Stop bool `json:"stop,omitempty"`
 }
 
 type Status struct {
@@ -45,6 +50,7 @@ type Status struct {
 	State     string    `json:"state"`
 	Active    int       `json:"active"`
 	Forced    bool      `json:"forced,omitempty"`
+	Stop      bool      `json:"stop,omitempty"`
 	Error     string    `json:"error,omitempty"`
 	Deadline  time.Time `json:"deadline,omitempty"`
 	UpdatedAt time.Time `json:"updated_at"`

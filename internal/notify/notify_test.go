@@ -184,6 +184,36 @@ func TestMonitorPoolStuckDedupeAndClear(t *testing.T) {
 	}
 }
 
+func TestMonitorHeldSuppressesStuckAndReady(t *testing.T) {
+	rec := &recordingNotifier{}
+	var now atomic.Value
+	now.Store(time.Unix(0, 0))
+	m := NewMonitor(MonitorOptions{
+		Notifier:   rec,
+		StuckAfter: time.Minute,
+		Now:        func() time.Time { return now.Load().(time.Time) },
+	})
+
+	now.Store(time.Unix(0, 0).Add(time.Minute))
+	m.Evaluate(context.Background(), Snapshot{
+		Active:                0,
+		PoolSize:              1,
+		Held:                  true,
+		ConsecutiveReadyFails: DefaultReadyFailingAfter,
+		LastSpawnErr:          "boom",
+	})
+	if len(rec.codes()) != 0 {
+		t.Fatalf("held must suppress stuck/ready: %v", rec.codes())
+	}
+
+	m.Evaluate(context.Background(), Snapshot{Active: 0, PoolSize: 1, Held: true, LowDisk: true})
+	now.Store(time.Unix(0, 0).Add(2 * time.Minute))
+	m.Evaluate(context.Background(), Snapshot{Active: 0, PoolSize: 1, Held: true, LowDisk: true})
+	if got := rec.codes(); len(got) != 1 || got[0] != CodeDiskBlocked {
+		t.Fatalf("held must still allow disk_blocked: %v", got)
+	}
+}
+
 func TestMonitorDiskBlocksPoolStuck(t *testing.T) {
 	rec := &recordingNotifier{}
 	var now atomic.Value

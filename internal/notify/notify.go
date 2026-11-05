@@ -190,6 +190,7 @@ type Snapshot struct {
 	Active                int
 	PoolSize              int
 	LowDisk               bool
+	Held                  bool // operator stop: keep active=0; suppress stuck/ready alerts
 	LastSpawnErr          string
 	ConsecutiveReadyFails int
 }
@@ -257,7 +258,7 @@ func defaultRules() []Rule {
 			Clock:                  ClockWarm,
 			ClearFiredWhenInactive: false,
 			Active: func(s Snapshot) bool {
-				if s.LowDisk || s.PoolSize <= 0 {
+				if s.Held || s.LowDisk || s.PoolSize <= 0 {
 					return false
 				}
 				if s.Active == 0 {
@@ -280,6 +281,9 @@ func defaultRules() []Rule {
 			Clock:                  ClockExternal,
 			ClearFiredWhenInactive: true,
 			Active: func(s Snapshot) bool {
+				if s.Held {
+					return false
+				}
 				return s.ConsecutiveReadyFails >= DefaultReadyFailingAfter
 			},
 			Message: func(Snapshot) string {

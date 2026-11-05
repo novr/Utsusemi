@@ -91,6 +91,27 @@ func TestFormatTextPoolDrain(t *testing.T) {
 	}
 }
 
+func TestFormatTextPoolStop(t *testing.T) {
+	out := FormatText(Report{
+		Target: "org:my-org",
+		Agent:  AgentInfo{State: AgentRunning, PID: 1},
+		VMs:    VMsInfo{Running: 0, Total: 0, PoolSize: 1},
+		PoolStop: &PoolStopInfo{
+			State:  "held",
+			Active: 0,
+		},
+		Health: HealthInfo{FreeDiskGB: 42.1, Status: "ok"},
+		Credential: credentialview.Info{
+			Mode:    "github_pat",
+			Present: true,
+		},
+	})
+	want := "pool_stop: held active=0"
+	if !strings.Contains(out, want) {
+		t.Fatalf("missing %q:\n%s", want, out)
+	}
+}
+
 func TestFormatTextDrainingVMs(t *testing.T) {
 	out := FormatText(Report{
 		Target:   "org:my-org (group 1)",

@@ -297,6 +297,9 @@ utsusemi run --log=/path/to.log
 utsusemi drain                  # recycle pool; agent stays up
 utsusemi drain --timeout=30m
 utsusemi drain --force
+utsusemi stop                   # drain then hold active=0; agent stays up
+utsusemi stop --timeout=30m
+utsusemi stop --force
 utsusemi pull image <image>    # provider SyncImage; does not change config
 utsusemi pull runner <latest|version>
 brew services start utsusemi
@@ -337,23 +340,26 @@ Payload is JSON for generic receivers and Slack Incoming Webhooks (`text` is wha
 }
 ```
 
-Reclaim (automatic during `run`, per Runtime options) vs `drain` vs `clean`:
+Reclaim (automatic during `run`, per Runtime options) vs `drain` vs `stop` vs `clean`:
 
-| | `drain` | `clean` |
-|--|---------|---------|
-| Agent | must be **running** | must be **stopped** |
-| Effect | stop new jobs, wait/force in-flight, then refill `pool_size` | delete all managed VMs/runners |
-| Use when | stuck / desynced occupancy without restart | last-resort wipe |
+| | `drain` | `stop` | `clean` |
+|--|---------|--------|---------|
+| Agent | must be **running** | must be **running** | must be **stopped** |
+| Effect | stop new jobs, wait/force in-flight, then refill `pool_size` | same wait, then hold `active=0` (no refill) | delete all managed VMs/runners |
+| Use when | stuck / desynced occupancy without restart | idle the pool before a planned restart | last-resort wipe |
 
 ```bash
 utsusemi drain
 utsusemi drain --timeout=30m
 utsusemi drain --force          # reclaim in-flight immediately (may fail a claimed Actions job)
+utsusemi stop                   # wait for claimed jobs; hold empty (default: no force)
+utsusemi stop --timeout=30m
+utsusemi stop --force
 utsusemi clean
 utsusemi clean --dry-run
 ```
 
-`drain` tears down idle (unclaimed) runners immediately so they cannot pick up new jobs; claimed jobs finish unless `--timeout` elapses or `--force` is set. A short race remains between GitHub assignment and the runner log markers Utsusemi uses to detect a claim. Status field `pool_drain` shows an in-progress recycle; `draining` still means lease-less running VMs (not counted toward `pool_size`).
+`drain` and `stop` tear down idle (unclaimed) runners immediately so they cannot pick up new jobs. `drain` waits for claimed jobs until `--timeout` or `--force`, then refills. `stop` waits without a deadline by default (jobs still end at `job_timeout`); `--timeout` / `--force` reclaim early. After `stop`, the agent process stays up and does not refill; restart it to accept jobs again. A force-grace timeout still leaves the pool held (`pool_stop: held` plus `error`) and the command exits non-zero. SIGTERM / `brew services stop` before `held` cancels claimed jobs. After `held`, those signals stop the process; runners still winding down from force-grace are cancelled too. Held mode keeps reclaim and `disk_blocked` alerts; `pool_stuck` / `ready_failing` stay quiet. A short race remains between GitHub assignment and the runner log markers Utsusemi uses to detect a claim. Status `pool_drain` is a recycle; `pool_stop` is a hold (`running`, then `held` while that agent is still up); `draining` still means lease-less running VMs (not counted toward `pool_size`).
 
 ### Service logs
 

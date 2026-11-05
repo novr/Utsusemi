@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/novr/utsusemi/internal/config"
+	"github.com/novr/utsusemi/internal/drainctl"
 	"github.com/novr/utsusemi/internal/instancelock"
 	"github.com/novr/utsusemi/internal/keychain"
 	"github.com/novr/utsusemi/internal/lease"
@@ -468,5 +469,34 @@ func TestCollectRuntimeYAMLDriftWithMatchingLastSpawn(t *testing.T) {
 	}
 	if report.RunnerVersion.Status != "config.yaml differs from running agent; restart agent to apply" {
 		t.Fatalf("status=%q", report.RunnerVersion.Status)
+	}
+}
+
+func TestLoadPoolStopHeldWhileAgentRuns(t *testing.T) {
+	dir := t.TempDir()
+	session := &lease.AgentSession{ID: "agent-1", PID: 1, StartedAt: time.Now().UTC()}
+	old := time.Now().UTC().Add(-time.Hour)
+	if err := drainctl.WriteStatus(dir, drainctl.Status{
+		RequestID: "stop-1",
+		AgentID:   session.ID,
+		State:     drainctl.StateError,
+		Active:    0,
+		Stop:      true,
+		Error:     "force reclaim timed out with runners still active",
+		UpdatedAt: old,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	live := AgentInfo{State: AgentRunning, PID: 1}
+	got := loadPoolStop(dir, live, session)
+	if got == nil || got.State != "held" || got.Error == "" {
+		t.Fatalf("live stop error should stay held: %+v", got)
+	}
+	if drain := loadPoolDrain(dir); drain != nil {
+		t.Fatalf("stop status leaked into pool_drain: %+v", drain)
+	}
+	stopped := loadPoolStop(dir, AgentInfo{State: AgentStopped}, session)
+	if stopped != nil {
+		t.Fatalf("stopped agent must not report held: %+v", stopped)
 	}
 }

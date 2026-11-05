@@ -53,6 +53,7 @@ type Report struct {
 	VMs                  VMsInfo             `json:"vms"`
 	Draining             []string            `json:"draining"`
 	PoolDrain            *PoolDrainInfo      `json:"pool_drain,omitempty"`
+	PoolStop             *PoolStopInfo       `json:"pool_stop,omitempty"`
 	Health               HealthInfo          `json:"health"`
 	Credential           credentialview.Info `json:"credential"`
 }
@@ -60,6 +61,17 @@ type Report struct {
 // PoolDrainInfo is the operator recycle requested by `utsusemi drain`.
 // Distinct from Draining (lease-less running VM names).
 type PoolDrainInfo struct {
+	State     string `json:"state"`
+	RequestID string `json:"request_id,omitempty"`
+	Active    int    `json:"active"`
+	Forced    bool   `json:"forced,omitempty"`
+	Deadline  string `json:"deadline,omitempty"`
+	Error     string `json:"error,omitempty"`
+}
+
+// PoolStopInfo is the operator hold requested by `utsusemi stop`.
+// State is "running" while draining, "held" after active=0 with the agent still up.
+type PoolStopInfo struct {
 	State     string `json:"state"`
 	RequestID string `json:"request_id,omitempty"`
 	Active    int    `json:"active"`
@@ -303,6 +315,7 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 		VMs:                  vmInfo,
 		Draining:             emptyDraining(draining),
 		PoolDrain:            loadPoolDrain(stateDir),
+		PoolStop:             loadPoolStop(stateDir, agent, session),
 		Health:               health,
 		Credential:           cred,
 	}, nil
@@ -310,7 +323,7 @@ func Collect(ctx context.Context, in Input) (Report, error) {
 
 func loadPoolDrain(stateDir string) *PoolDrainInfo {
 	st, ok, err := drainctl.LoadStatus(stateDir)
-	if err != nil || !ok {
+	if err != nil || !ok || st.Stop {
 		return nil
 	}
 	switch {
@@ -323,6 +336,40 @@ func loadPoolDrain(stateDir string) *PoolDrainInfo {
 	}
 	info := &PoolDrainInfo{
 		State:     st.State,
+		RequestID: st.RequestID,
+		Active:    st.Active,
+		Forced:    st.Forced,
+		Error:     st.Error,
+	}
+	if !st.Deadline.IsZero() {
+		info.Deadline = st.Deadline.UTC().Format(time.RFC3339)
+	}
+	return info
+}
+
+func loadPoolStop(stateDir string, agent AgentInfo, session *lease.AgentSession) *PoolStopInfo {
+	st, ok, err := drainctl.LoadStatus(stateDir)
+	if err != nil || !ok || !st.Stop {
+		return nil
+	}
+	live := session != nil && st.AgentID == session.ID && agent.State == AgentRunning
+	switch {
+	case st.State == drainctl.StateRunning:
+		// stop drain in progress
+	case live && drainctl.IsTerminal(st):
+		// Held stays visible for this process, including force-grace errors.
+		// A dead agent must not keep reporting held; restart refills.
+	case drainctl.IsTerminal(st) && !st.UpdatedAt.IsZero() && time.Since(st.UpdatedAt) < 2*time.Minute:
+		// recent result after the process is gone
+	default:
+		return nil
+	}
+	state := st.State
+	if live && drainctl.IsTerminal(st) {
+		state = "held"
+	}
+	info := &PoolStopInfo{
+		State:     state,
 		RequestID: st.RequestID,
 		Active:    st.Active,
 		Forced:    st.Forced,

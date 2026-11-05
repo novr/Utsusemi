@@ -18,8 +18,8 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 |------|----------------|------|
 | CLI | `cmd/utsusemi` | Cobra commands, prompts, `loadConfigRuntime` / `loadValidatedRuntime` / `buildAgentFromRuntime`, configure flows |
 | Agent | `internal/agent` | `utsusemi.lock` for `run`, signal drain, delegates to pool |
-| Pool | `internal/pool` | Spawn loop, backoff, in-flight tracking, fill staggered until idle-ready, **reclaim**, **purge** (`clean`), **poolDrain** (`drain`) |
-| Spawn | `internal/spawn` | One job lifecycle: clone → register → bootstrap → wait → teardown; `SlotControl` for poolDrain |
+| Pool | `internal/pool` | Spawn loop, backoff, in-flight tracking, fill staggered until idle-ready, **reclaim**, **purge** (`clean`), **poolDrain** (`drain`), **held** (`stop`); lifecycle `phase` |
+| Spawn | `internal/spawn` | One job lifecycle: clone → register → bootstrap → wait → teardown; `SlotControl` for poolDrain / stop |
 | Drain IPC | `internal/drainctl` | `{StateDir}/drain.request` / `drain.status` (CLI ↔ running agent) |
 | Host ID | `internal/hostid` | `{StateDir}/host_id`; LocalHostName → hostname → random |
 | VMs | `internal/provider` | Tart / executor abstraction |
@@ -64,7 +64,7 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 | Credential refresh | `{StateDir}/credential.refresh.lock` | Blocking flock inside `Manager.EnsureFresh` |
 
 - `clean` must acquire `utsusemi.lock` (agent stopped) before `PurgeAll`.
-- `drain` must **not** take `utsusemi.lock`; agent must be running. CLI writes `drain.request`; pool’s 1s control tick owns execution. Shutdown `p.drain` / `drainAndWait` (process exit + purge) is separate from operator `poolDrain`.
+- `drain` / `stop` must **not** take `utsusemi.lock`; agent must be running. CLI writes `drain.request` (`Stop` for `stop`); pool’s 1s control tick owns execution. Process exit uses `phaseShutdown` + `drainAndWait` (purge); that is separate from operator `poolDrain` / `held`.
 - `validate` and `run` can call `EnsureFresh` concurrently; credential refresh serializes on `credential.refresh.lock`, not `utsusemi.lock`.
 - **Config freeze** — `agent.New` deep-copies `config.Config` for pool/spawn; respawns use that clone only (no mid-run YAML reload). On session start the freeze is written to `{StateDir}/runtime_config.json` for `utsusemi status`.
 - **disk vs runtime** — `validate` / `configure` / `list` / `doctor` read `config.yaml` (next start). `status` shows `runtime` from the snapshot when the agent session matches. Apply YAML changes by restarting the agent.
@@ -79,8 +79,9 @@ Maintainer and agent reference. User-facing docs live in [README.md](README.md) 
 - Cross-mode `configure app|token` rejected — Keychain shape and registrar differ; mode flip via `configure edit` (editor) only.
 - **`broker`** — local GitHub App broker on `127.0.0.1`; does **not** take `utsusemi.lock` (run it beside `utsusemi run`).
 - **`validate`** — disk `config.yaml` + credential API check (`loadValidatedRuntime`); does not inspect a running agent's freeze. Loopback `broker_url` must be reachable first.
-- **`status`** — local ops summary via `internal/status.Collect` (`loadConfigRuntime`, no network), including `runtime` from `{StateDir}/runtime_config.json` when present. Display stays the effective `Load` values; it does not list which keys were filled by `applyDefaults`. `pool_drain` reflects `drain.status`; `draining` remains lease-less running VMs.
+- **`status`** — local ops summary via `internal/status.Collect` (`loadConfigRuntime`, no network), including `runtime` from `{StateDir}/runtime_config.json` when present. Display stays the effective `Load` values; it does not list which keys were filled by `applyDefaults`. `pool_drain` / `pool_stop` reflect `drain.status` (`Stop` selects stop); `draining` remains lease-less running VMs.
 - **`drain`** — `loadConfigRuntime` only; writes `drain.request` with `request_id` + `agent_id`, polls `drain.status`. Does not take `utsusemi.lock`.
+- **`stop`** — same IPC as `drain` with `Stop=true`. Default waits without force deadline; after complete the pool stays `phaseHeld` (`active=0`, no refill). Process does not exit. Does not take `utsusemi.lock`.
 - **`pull image <image>`** — `loadConfigRuntime` (no credential check). Does not write config. Does not hold `utsusemi.lock` across `Provider.SyncImage`. A per-ref image lock serializes that sync with startup `SyncImage` and `Clone` of the same name. When the agent is running, pulls only if the live `base_image` is a different non-empty string; the same name, or an unconfirmed snapshot, is an error. Startup `SyncImage` remains.
 - **`pull runner <latest|version>`** — `loadConfigRuntime`. `latest` resolves through GitHub and is printed; it does not pin `runner_version`. Adds a missing tarball and does not replace or prune existing ones. Does not take `utsusemi.lock`. Startup `Ensure` still prunes after it downloads a missing frozen version.
 - **`list [vms|runners]`** — VM and/or runner rows via `internal/listing.Collect` (`loadValidatedRuntime`, network).
@@ -115,17 +116,21 @@ Hosted app rules:
 - `github_pat` supports organization or repository targets.
 - New backends: implement `RunnerRegistrar`; do not branch on `registration.mode` in `pool` or `spawn`.
 
-### Pool: reclaim vs purge vs poolDrain
+### Pool lifecycle (`phase`)
 
-| | reclaim | purge (`utsusemi clean`) | poolDrain (`utsusemi drain`) |
-|--|---------|--------------------------|------------------------------|
-| When | Startup + periodic during `run` | Manual; agent must be stopped | Manual; agent must be running |
-| Scope | Stale/orphan per `reclaim_policy` | All prefix-matched VMs and runners | Current in-flight; then refill `pool_size` |
-| In-flight VMs | Skipped | Not skipped | Abandon unclaimed; wait/force claimed |
-| Leases | `RemoveLease` per VM | `ClearLeases` | Per-spawn teardown (no full purge) |
-| Agent process | Continues | Must be stopped | Continues |
+`Pool` uses one sticky lifecycle `phase` (`run` / `poolDrain` / `held` / `shutdown`). `lowDisk` stays a separate bool (pauses spawn in `run` only). `phaseShutdown` does not return to `run` or `held`. Spawn only in `phaseRun && !lowDisk`. Reclaim skips only `phaseShutdown`. Alerts skip `phaseShutdown` and `phasePoolDrain`; `phaseHeld` still evaluates with `Snapshot.Held` so `pool_stuck` / `ready_failing` stay inactive while `disk_blocked` can fire.
 
-Shared teardown: `stopAndDeleteManagedVM` (`managed_vm.go`). Shutdown path still uses `drainAndWait` → `purgeAllManaged`; that is not `poolDrain`.
+### Pool: reclaim vs purge vs poolDrain vs held
+
+| | reclaim | purge (`utsusemi clean`) | poolDrain (`utsusemi drain`) | held (`utsusemi stop`) |
+|--|---------|--------------------------|------------------------------|------------------------|
+| When | Startup + periodic during `run` | Manual; agent must be stopped | Manual; agent must be running | Manual; agent must be running |
+| Scope | Stale/orphan per `reclaim_policy` | All prefix-matched VMs and runners | Current in-flight; then refill `pool_size` | Current in-flight; then keep empty |
+| In-flight VMs | Skipped | Not skipped | Abandon unclaimed; wait/force claimed | Same wait/force; default stop has no force deadline |
+| Leases | `RemoveLease` per VM | `ClearLeases` | Per-spawn teardown (no full purge) | Per-spawn teardown |
+| Agent process | Continues | Must be stopped | Continues | Continues (`phaseHeld`) |
+
+Shared teardown: `stopAndDeleteManagedVM` (`managed_vm.go`). Shutdown path still uses `drainAndWait` → `purgeAllManaged`; that is not `poolDrain` or `held`.
 
 ### Multi-host safety
 

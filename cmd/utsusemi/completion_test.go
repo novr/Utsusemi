@@ -56,7 +56,7 @@ func assertCompletionContains(t *testing.T, output string, want ...string) {
 func TestShellCompletionTopLevel(t *testing.T) {
 	out := shellCompletions(t, "")
 	assertCompletionContains(t, out,
-		"run", "broker", "validate", "status", "doctor", "list", "configure", "clean", "drain", "pull", "version",
+		"run", "broker", "validate", "status", "doctor", "list", "configure", "clean", "drain", "stop", "pull", "version",
 	)
 	names := completionNames(t, out)
 	if slices.Contains(names, "cache-serve") {
