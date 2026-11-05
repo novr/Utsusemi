@@ -200,7 +200,7 @@ func (p *Pool) acceptDrainRequest() {
 	if !req.Deadline.IsZero() {
 		deadlineLog = req.Deadline.UTC().Format(time.RFC3339)
 	}
-	p.logger.Info("pool drain started",
+	p.logger.Info(poolControlLogName(req.Stop)+" started",
 		"request_id", req.RequestID,
 		"force", req.Force,
 		"stop", req.Stop,
@@ -223,7 +223,16 @@ func (p *Pool) acceptDrainRequest() {
 	}
 }
 
+func poolControlLogName(stop bool) string {
+	if stop {
+		return "pool stop"
+	}
+	return "pool drain"
+}
+
 func (p *Pool) rejectHeldDrainRequest(req drainctl.Request) {
+	p.drainStatusMu.Lock()
+	defer p.drainStatusMu.Unlock()
 	existing, ok, err := drainctl.LoadStatus(p.cfg.StateDir)
 	if err != nil || !ok || !existing.Stop || existing.State != drainctl.StateComplete {
 		p.mu.Lock()
@@ -372,6 +381,11 @@ func (p *Pool) finishPoolDrain(errMsg string) {
 	if st.errMsg != "" {
 		state = drainctl.StateError
 	}
+	p.drainStatusMu.Lock()
+	// Re-read: a spawn may have exited since the phase transition.
+	p.mu.Lock()
+	active = p.active
+	p.mu.Unlock()
 	_ = drainctl.WriteStatus(p.cfg.StateDir, drainctl.Status{
 		RequestID: st.requestID,
 		AgentID:   st.agentID,
@@ -383,7 +397,8 @@ func (p *Pool) finishPoolDrain(errMsg string) {
 		Error:     st.errMsg,
 	})
 	_ = drainctl.RemoveRequest(p.cfg.StateDir)
-	p.logger.Info("pool drain finished",
+	p.drainStatusMu.Unlock()
+	p.logger.Info(poolControlLogName(st.stop)+" finished",
 		"request_id", st.requestID,
 		"state", state,
 		"forced", forced,
@@ -403,6 +418,9 @@ func (p *Pool) finishPoolDrain(errMsg string) {
 // Force-grace can latch phaseHeld while runners are still winding down; the
 // status Active captured at that moment would otherwise stay stale.
 func (p *Pool) syncHeldStatusActive() {
+	p.drainStatusMu.Lock()
+	defer p.drainStatusMu.Unlock()
+
 	p.mu.Lock()
 	if p.phase != phaseHeld {
 		p.mu.Unlock()
@@ -415,12 +433,7 @@ func (p *Pool) syncHeldStatusActive() {
 	if err != nil || !ok || !st.Stop || st.State == drainctl.StateRunning || st.Active == active {
 		return
 	}
-	// A newer stop/drain status may have replaced this one.
-	cur, ok, err := drainctl.LoadStatus(p.cfg.StateDir)
-	if err != nil || !ok || cur.RequestID != st.RequestID || !cur.Stop || cur.State == drainctl.StateRunning {
-		return
-	}
-	cur.Active = active
-	cur.UpdatedAt = time.Time{}
-	_ = drainctl.WriteStatus(p.cfg.StateDir, cur)
+	st.Active = active
+	st.UpdatedAt = time.Time{}
+	_ = drainctl.WriteStatus(p.cfg.StateDir, st)
 }

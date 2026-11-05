@@ -190,7 +190,7 @@ type Snapshot struct {
 	Active                int
 	PoolSize              int
 	LowDisk               bool
-	Held                  bool // operator stop: keep active=0; suppress stuck/ready alerts
+	Held                  bool // pool intentionally not filling (drain wait or stop hold); suppress stuck/ready alerts
 	LastSpawnErr          string
 	ConsecutiveReadyFails int
 }

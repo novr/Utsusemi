@@ -118,7 +118,7 @@ Hosted app rules:
 
 ### Pool lifecycle (`phase`)
 
-`Pool` uses one sticky lifecycle `phase` (`run` / `poolDrain` / `held` / `shutdown`). `lowDisk` stays a separate bool (pauses spawn in `run` only). `phaseShutdown` does not return to `run` or `held`. Spawn only in `phaseRun && !lowDisk`. Reclaim skips only `phaseShutdown`. Alerts skip `phaseShutdown` and `phasePoolDrain`; `phaseHeld` still evaluates with `Snapshot.Held` so `pool_stuck` / `ready_failing` stay inactive while `disk_blocked` can fire.
+`Pool` uses one sticky lifecycle `phase` (`run` / `poolDrain` / `held` / `shutdown`). `lowDisk` stays a separate bool (pauses spawn in `run` only). `phaseShutdown` does not return to `run` or `held`. Spawn only in `phaseRun && !lowDisk`. Reclaim skips only `phaseShutdown`. Alerts skip only `phaseShutdown`; `phasePoolDrain` and `phaseHeld` evaluate with `Snapshot.Held` so `pool_stuck` / `ready_failing` stay inactive while `disk_blocked` can fire.
 
 ### Pool: reclaim vs purge vs poolDrain vs held
 

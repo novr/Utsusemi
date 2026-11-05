@@ -34,10 +34,10 @@ clean is the last-resort wipe after stopping the agent.`,
 				force = true
 			}
 			return runPoolControl(cmd, poolControlOpts{
-				name:     "drain",
-				stop:     false,
-				force:    force,
-				timeout:  timeout,
+				name:    "drain",
+				stop:    false,
+				force:   force,
+				timeout: timeout,
 				complete: func(cmd *cobra.Command, st drainctl.Status) {
 					fmt.Fprintf(cmd.OutOrStdout(), "drain complete forced=%v\n", st.Forced)
 				},
@@ -175,10 +175,14 @@ func waitDrainStatus(cmd *cobra.Command, stateDir, requestID, agentID string, ag
 				continue
 			}
 			if st.State == drainctl.StateError {
-				if st.Error != "" {
-					return fmt.Errorf("%s: %s", opts.name, st.Error)
+				msg := st.Error
+				if msg == "" {
+					msg = "failed"
 				}
-				return fmt.Errorf("%s: failed", opts.name)
+				if st.Stop {
+					msg += fmt.Sprintf(" (pool held empty; active=%d; restart agent to refill)", st.Active)
+				}
+				return fmt.Errorf("%s: %s", opts.name, msg)
 			}
 			if opts.complete != nil {
 				opts.complete(cmd, st)

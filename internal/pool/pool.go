@@ -42,8 +42,12 @@ type Pool struct {
 	session         *lease.AgentSession
 	logger          *slog.Logger
 	monitor         *notify.Monitor
-	effectivePrefix string // VMNamePrefix + hostID + "-"; scopes reclaim to this host
+	effectivePrefix string          // VMNamePrefix + hostID + "-"; scopes reclaim to this host
 	runCtx          context.Context // set for the duration of Run; used by async tick
+
+	// drainStatusMu serializes read-modify-write of drain.status after a drain
+	// finishes. Lock order: drainStatusMu before mu; never take it under mu.
+	drainStatusMu sync.Mutex
 
 	mu                    sync.Mutex
 	active                int
@@ -392,7 +396,7 @@ func (p *Pool) noteReadyOK() {
 
 func (p *Pool) evaluateAlerts(ctx context.Context) {
 	p.mu.Lock()
-	if p.phase == phaseShutdown || p.phase == phasePoolDrain {
+	if p.phase == phaseShutdown {
 		p.mu.Unlock()
 		return
 	}
@@ -400,7 +404,7 @@ func (p *Pool) evaluateAlerts(ctx context.Context) {
 		Active:                p.active,
 		PoolSize:              p.cfg.PoolSize,
 		LowDisk:               p.lowDisk,
-		Held:                  p.phase == phaseHeld,
+		Held:                  p.phase == phaseHeld || p.phase == phasePoolDrain,
 		LastSpawnErr:          p.lastSpawnErr,
 		ConsecutiveReadyFails: p.consecutiveReadyFails,
 	}
