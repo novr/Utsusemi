@@ -30,56 +30,18 @@ runners are torn down immediately; claimed jobs are waited on until --timeout
 
 clean is the last-resort wipe after stopping the agent.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			rt, err := loadConfigRuntime(cmd.Context())
-			if err != nil {
-				return err
-			}
-			stateDir := rt.Config.StateDir
-
-			session, err := lease.NewRegistry(stateDir).LoadAgentSession()
-			if err != nil {
-				return err
-			}
-			if session == nil || !lease.PidAlive(session.PID) || !instancelock.Held(filepath.Join(stateDir, "utsusemi.lock")) {
-				return drainctl.ErrAgentStopped
-			}
-
-			if st, ok, err := drainctl.LoadStatus(stateDir); err != nil {
-				return err
-			} else if ok && st.State == drainctl.StateRunning && st.AgentID == session.ID {
-				return drainctl.ErrBusy
-			}
-
 			if force || timeout <= 0 {
 				force = true
 			}
-
-			requestID, err := drainctl.NewRequestID()
-			if err != nil {
-				return err
-			}
-			now := time.Now().UTC()
-			deadline := now
-			if !force {
-				deadline = now.Add(timeout)
-			}
-			req := drainctl.Request{
-				RequestID:   requestID,
-				AgentID:     session.ID,
-				RequestedAt: now,
-				Deadline:    deadline,
-				Force:       force,
-			}
-			if err := drainctl.WriteRequest(stateDir, req); err != nil {
-				return err
-			}
-
-			fmt.Fprintf(cmd.OutOrStdout(), "drain requested id=%s force=%v timeout=%s\n",
-				requestID, force, timeoutLabel(timeout, force))
-
-			// Cover agent force-grace after the drain deadline, plus a small skew buffer.
-			cliDeadline := deadline.Add(drainctl.ForceGrace + 30*time.Second)
-			return waitDrainStatus(cmd, stateDir, requestID, session.ID, session.PID, cliDeadline)
+			return runPoolControl(cmd, poolControlOpts{
+				name:    "drain",
+				stop:    false,
+				force:   force,
+				timeout: timeout,
+				complete: func(cmd *cobra.Command, st drainctl.Status) {
+					fmt.Fprintf(cmd.OutOrStdout(), "drain complete forced=%v\n", st.Forced)
+				},
+			})
 		},
 	}
 
@@ -88,33 +50,124 @@ clean is the last-resort wipe after stopping the agent.`,
 	return cmd
 }
 
+type poolControlOpts struct {
+	name     string
+	stop     bool
+	force    bool
+	timeout  time.Duration
+	complete func(*cobra.Command, drainctl.Status)
+}
+
+func runPoolControl(cmd *cobra.Command, opts poolControlOpts) error {
+	rt, err := loadConfigRuntime(cmd.Context())
+	if err != nil {
+		return err
+	}
+	stateDir := rt.Config.StateDir
+
+	session, err := lease.NewRegistry(stateDir).LoadAgentSession()
+	if err != nil {
+		return err
+	}
+	if session == nil || !lease.PidAlive(session.PID) || !instancelock.Held(filepath.Join(stateDir, "utsusemi.lock")) {
+		return drainctl.ErrAgentStopped
+	}
+
+	if st, ok, err := drainctl.LoadStatus(stateDir); err != nil {
+		return err
+	} else if ok && st.State == drainctl.StateRunning && st.AgentID == session.ID {
+		return drainctl.ErrBusy
+	}
+
+	requestID, err := drainctl.NewRequestID()
+	if err != nil {
+		return err
+	}
+	now := time.Now().UTC()
+	var deadline time.Time
+	switch {
+	case opts.force:
+		deadline = now
+	case opts.timeout > 0:
+		deadline = now.Add(opts.timeout)
+	default:
+		// Zero deadline: agent waits without Force (stop default).
+	}
+	req := drainctl.Request{
+		RequestID:   requestID,
+		AgentID:     session.ID,
+		RequestedAt: now,
+		Deadline:    deadline,
+		Force:       opts.force,
+		Stop:        opts.stop,
+	}
+	if err := drainctl.WriteRequest(stateDir, req); err != nil {
+		return err
+	}
+
+	fmt.Fprintf(cmd.OutOrStdout(), "%s requested id=%s force=%v timeout=%s\n",
+		opts.name, requestID, opts.force, timeoutLabel(opts.timeout, opts.force))
+
+	var cliDeadline time.Time
+	if opts.force || opts.timeout > 0 {
+		// Cover agent force-grace after the drain deadline, plus a small skew buffer.
+		cliDeadline = deadline.Add(drainctl.ForceGrace + 30*time.Second)
+	}
+	return waitDrainStatus(cmd, stateDir, requestID, session.ID, session.PID, cliDeadline, opts)
+}
+
 func timeoutLabel(d time.Duration, force bool) string {
 	if force {
 		return "force"
 	}
+	if d <= 0 {
+		return "none"
+	}
 	return d.String()
 }
 
-func waitDrainStatus(cmd *cobra.Command, stateDir, requestID, agentID string, agentPID int, cliDeadline time.Time) error {
+// poolControlAckTimeout bounds how long an unlimited wait (stop without
+// --timeout) tolerates the agent not picking up the request.
+var poolControlAckTimeout = time.Minute
+
+func waitDrainStatus(cmd *cobra.Command, stateDir, requestID, agentID string, agentPID int, cliDeadline time.Time, opts poolControlOpts) error {
 	ticker := time.NewTicker(200 * time.Millisecond)
 	defer ticker.Stop()
 	lockPath := filepath.Join(stateDir, "utsusemi.lock")
+	limited := !cliDeadline.IsZero()
+	ackBy := time.Now().Add(poolControlAckTimeout)
+	ackTimedOut := func() error {
+		if limited {
+			if time.Now().After(cliDeadline) {
+				return fmt.Errorf("%s: timed out waiting for agent status", opts.name)
+			}
+			return nil
+		}
+		if time.Now().After(ackBy) {
+			return fmt.Errorf("%s: agent did not acknowledge request id=%s within %s; it may still apply it",
+				opts.name, requestID, poolControlAckTimeout)
+		}
+		return nil
+	}
 
 	for {
 		select {
 		case <-cmd.Context().Done():
+			if opts.stop {
+				fmt.Fprintf(cmd.ErrOrStderr(), "%s: interrupted; the agent keeps stopping and will hold the pool empty\n", opts.name)
+			}
 			return cmd.Context().Err()
 		case <-ticker.C:
 			if !lease.PidAlive(agentPID) || !instancelock.Held(lockPath) {
-				return fmt.Errorf("%w: agent stopped during drain", drainctl.ErrAgentStopped)
+				return fmt.Errorf("%w: agent stopped during %s", drainctl.ErrAgentStopped, opts.name)
 			}
 			st, ok, err := drainctl.LoadStatus(stateDir)
 			if err != nil {
 				return err
 			}
 			if !ok {
-				if time.Now().After(cliDeadline) {
-					return fmt.Errorf("drain: timed out waiting for agent status")
+				if err := ackTimedOut(); err != nil {
+					return err
 				}
 				continue
 			}
@@ -125,27 +178,33 @@ func waitDrainStatus(cmd *cobra.Command, stateDir, requestID, agentID string, ag
 				return drainctl.ErrBusy
 			}
 			if !drainctl.MatchesRequest(st, requestID) {
-				if time.Now().After(cliDeadline) {
-					return fmt.Errorf("drain: timed out waiting for agent status")
+				if err := ackTimedOut(); err != nil {
+					return err
 				}
 				continue
 			}
 			if st.AgentID != "" && st.AgentID != agentID {
-				return fmt.Errorf("drain: status agent mismatch")
+				return fmt.Errorf("%s: status agent mismatch", opts.name)
 			}
 			if !drainctl.IsTerminal(st) {
-				if time.Now().After(cliDeadline) {
-					return fmt.Errorf("drain: timed out (still active=%d)", st.Active)
+				if limited && time.Now().After(cliDeadline) {
+					return fmt.Errorf("%s: timed out (still active=%d)", opts.name, st.Active)
 				}
 				continue
 			}
 			if st.State == drainctl.StateError {
-				if st.Error != "" {
-					return fmt.Errorf("drain: %s", st.Error)
+				msg := st.Error
+				if msg == "" {
+					msg = "failed"
 				}
-				return fmt.Errorf("drain: failed")
+				if st.Stop {
+					msg += fmt.Sprintf(" (pool held empty; active=%d; restart agent to refill)", st.Active)
+				}
+				return fmt.Errorf("%s: %s", opts.name, msg)
 			}
-			fmt.Fprintf(cmd.OutOrStdout(), "drain complete forced=%v\n", st.Forced)
+			if opts.complete != nil {
+				opts.complete(cmd, st)
+			}
 			return nil
 		}
 	}

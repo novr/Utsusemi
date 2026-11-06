@@ -42,8 +42,12 @@ type Pool struct {
 	session         *lease.AgentSession
 	logger          *slog.Logger
 	monitor         *notify.Monitor
-	effectivePrefix string // VMNamePrefix + hostID + "-"; scopes reclaim to this host
+	effectivePrefix string          // VMNamePrefix + hostID + "-"; scopes reclaim to this host
 	runCtx          context.Context // set for the duration of Run; used by async tick
+
+	// drainStatusMu serializes read-modify-write of drain.status after a drain
+	// finishes. Lock order: drainStatusMu before mu; never take it under mu.
+	drainStatusMu sync.Mutex
 
 	mu                    sync.Mutex
 	active                int
@@ -52,10 +56,8 @@ type Pool struct {
 	shortExits            int
 	consecutiveReadyFails int
 	backoffUntil          time.Time
-	shutdown              bool
-	drain                 bool // shutdown-only; ends Pool.Run after purge
-	poolDrain             bool // operator recycle; agent stays up
-	poolDrainState        *poolDrainState
+	phase                 phase
+	poolDrainState        *poolDrainState // set only while phasePoolDrain
 	lowDisk               bool
 	lastSpawnErr          string
 	fatalErr              error
@@ -185,7 +187,7 @@ func (p *Pool) Run(ctx context.Context) error {
 
 func (p *Pool) BeginShutdown() {
 	p.mu.Lock()
-	p.shutdown = true
+	p.setPhase(phaseShutdown)
 	p.mu.Unlock()
 }
 
@@ -193,7 +195,7 @@ const shutdownPurgeTimeout = 2 * time.Minute
 
 func (p *Pool) drainAndWait(ctx context.Context) error {
 	p.mu.Lock()
-	p.drain = true
+	p.setPhase(phaseShutdown)
 	p.mu.Unlock()
 	p.inFlight.Wait()
 	// Clean up any VMs that outlived the drain (e.g. grace-window VMs from a
@@ -214,7 +216,7 @@ func (p *Pool) tick(ctx context.Context) {
 	p.evaluateAlerts(ctx)
 
 	p.mu.Lock()
-	if p.shutdown || p.drain || p.poolDrain || p.lowDisk {
+	if p.phase != phaseRun || p.lowDisk {
 		p.mu.Unlock()
 		return
 	}
@@ -232,9 +234,11 @@ func (p *Pool) tick(ctx context.Context) {
 	}
 	p.active++
 	p.warming++
+	// Add under mu with the phase check so drainAndWait's Wait (after it sets
+	// phaseShutdown under mu) never races a new Add.
+	p.inFlight.Add(1)
 	p.mu.Unlock()
 
-	p.inFlight.Add(1)
 	go func() {
 		defer p.inFlight.Done()
 
@@ -254,8 +258,9 @@ func (p *Pool) tick(ctx context.Context) {
 			p.active--
 			p.mu.Unlock()
 			releaseWarming()
-			// Clear poolDrain before refill tick so drain completion can spawn.
+			// Finish poolDrain before refill tick so drain completion can spawn.
 			p.maybeFinishPoolDrain()
+			p.syncHeldStatusActive()
 			go p.tick(ctx)
 		}()
 
@@ -271,7 +276,7 @@ func (p *Pool) tick(ctx context.Context) {
 		p.mu.Lock()
 		p.inFlightVMs[vmName] = struct{}{}
 		p.slotControls[vmName] = ctrl
-		draining := p.poolDrain
+		draining := p.phase == phasePoolDrain
 		forced := p.poolDrainState != nil && p.poolDrainState.forced
 		p.mu.Unlock()
 		if draining {
@@ -297,7 +302,7 @@ func (p *Pool) tick(ctx context.Context) {
 				return
 			}
 			// Cancel is always intentional (shutdown, poolDrain, or SlotControl).
-			// Do not backoff: force-grace may clear poolDrain before we observe it.
+			// Do not backoff: force-grace may leave phasePoolDrain before we observe it.
 			if errors.Is(err, context.Canceled) {
 				return
 			}
@@ -314,7 +319,7 @@ func (p *Pool) reportFatal(err error) {
 	already := p.fatalErr != nil
 	if !already {
 		p.fatalErr = err
-		p.shutdown = true
+		p.setPhase(phaseShutdown)
 	}
 	p.mu.Unlock()
 	if already {
@@ -393,7 +398,7 @@ func (p *Pool) noteReadyOK() {
 
 func (p *Pool) evaluateAlerts(ctx context.Context) {
 	p.mu.Lock()
-	if p.shutdown || p.drain || p.poolDrain {
+	if p.phase == phaseShutdown {
 		p.mu.Unlock()
 		return
 	}
@@ -401,6 +406,7 @@ func (p *Pool) evaluateAlerts(ctx context.Context) {
 		Active:                p.active,
 		PoolSize:              p.cfg.PoolSize,
 		LowDisk:               p.lowDisk,
+		Held:                  p.phase == phaseHeld || p.phase == phasePoolDrain,
 		LastSpawnErr:          p.lastSpawnErr,
 		ConsecutiveReadyFails: p.consecutiveReadyFails,
 	}

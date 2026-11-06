@@ -14,6 +14,7 @@ func TestWriteLoadRemoveRequest(t *testing.T) {
 		RequestedAt: time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC),
 		Deadline:    time.Date(2026, 1, 2, 3, 34, 5, 0, time.UTC),
 		Force:       true,
+		Stop:        true,
 	}
 	if err := WriteRequest(dir, req); err != nil {
 		t.Fatal(err)
@@ -22,7 +23,7 @@ func TestWriteLoadRemoveRequest(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got.RequestID != req.RequestID || got.AgentID != req.AgentID || !got.Force {
+	if got.RequestID != req.RequestID || got.AgentID != req.AgentID || !got.Force || !got.Stop {
 		t.Fatalf("got %+v", got)
 	}
 	if err := RemoveRequest(dir); err != nil {

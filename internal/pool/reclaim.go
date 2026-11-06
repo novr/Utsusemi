@@ -39,7 +39,7 @@ func (p *Pool) reclaim(ctx context.Context, startupHard bool) error {
 		}
 		p.lowDisk = false
 	}
-	shutdown := p.shutdown || p.drain
+	shutdown := p.phase == phaseShutdown
 	inFlight := make(map[string]struct{}, len(p.inFlightVMs))
 	for name := range p.inFlightVMs {
 		inFlight[name] = struct{}{}

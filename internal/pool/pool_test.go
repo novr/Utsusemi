@@ -225,8 +225,8 @@ func TestHandleSpawnSuccessStopsAgentAfterMaxShortExits(t *testing.T) {
 
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if !p.shutdown {
-		t.Fatal("expected shutdown flag")
+	if p.phase != phaseShutdown {
+		t.Fatal("expected phaseShutdown")
 	}
 	if p.fatalErr == nil {
 		t.Fatal("expected fatal error")
@@ -271,7 +271,7 @@ func TestHandleSpawnSuccessClaimedShortJobResetsBackoff(t *testing.T) {
 	if !p.backoffUntil.IsZero() {
 		t.Fatalf("backoffUntil = %v, want zero", p.backoffUntil)
 	}
-	if p.shutdown {
+	if p.phase != phaseRun {
 		t.Fatal("claimed short job must not stop the agent")
 	}
 }

@@ -182,9 +182,6 @@ func TestEvaluateAlertsSkipsDuringDrain(t *testing.T) {
 		return now
 	})
 	p.BeginShutdown()
-	p.mu.Lock()
-	p.drain = true
-	p.mu.Unlock()
 	nowMu.Lock()
 	now = now.Add(time.Hour)
 	nowMu.Unlock()
@@ -204,7 +201,7 @@ func TestEvaluateAlertsSkipsDuringPoolDrain(t *testing.T) {
 		return now
 	})
 	p.mu.Lock()
-	p.poolDrain = true
+	p.phase = phasePoolDrain
 	p.mu.Unlock()
 	nowMu.Lock()
 	now = now.Add(time.Hour)
