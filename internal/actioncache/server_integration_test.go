@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -150,6 +151,121 @@ func TestRoundTripSinglePut(t *testing.T) {
 	body, _ := io.ReadAll(got.Body)
 	if !bytes.Equal(body, payload) {
 		t.Fatalf("body %q want %q", body, payload)
+	}
+}
+
+func TestLargeArchiveGetAndHead(t *testing.T) {
+	_, base, stop := startTestServer(t)
+	defer stop()
+	auth := fakeBearer(t, map[string]any{"repository": "acme/app"})
+	// Above Go 1.23.0 Darwin sendfile's 4MiB chunk; regression is visible on that toolchain.
+	const size = (4 << 20) + (64 << 10)
+	payload := make([]byte, size)
+	payload[0] = 0x11
+	payload[size-1] = 0x22
+
+	create := twirpPost(t, base, "CreateCacheEntry", auth, map[string]any{
+		"key": "large", "version": "v",
+	})
+	if create["ok"] != true {
+		t.Fatalf("create: %#v", create)
+	}
+	uploadURL := uploadURLFrom(create)
+	put, err := http.NewRequest(http.MethodPut, uploadURL, bytes.NewReader(payload))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := http.DefaultClient.Do(put)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusCreated {
+		t.Fatalf("put status %d", resp.StatusCode)
+	}
+	fin := twirpPost(t, base, "FinalizeCacheEntryUpload", auth, map[string]any{
+		"key": "large", "version": "v", "size_bytes": fmt.Sprintf("%d", size),
+	})
+	if fin["ok"] != true {
+		t.Fatalf("finalize: %#v", fin)
+	}
+	get := twirpPost(t, base, "GetCacheEntryDownloadURL", auth, map[string]any{
+		"key": "large", "version": "v", "restore_keys": []string{},
+	})
+	dl := downloadURLFrom(get)
+
+	headReq, err := http.NewRequest(http.MethodHead, dl, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	headResp, err := http.DefaultClient.Do(headReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	headResp.Body.Close()
+	if headResp.StatusCode != http.StatusOK {
+		t.Fatalf("HEAD status %d", headResp.StatusCode)
+	}
+	if headResp.ContentLength != int64(size) {
+		t.Fatalf("HEAD Content-Length %d want %d", headResp.ContentLength, size)
+	}
+
+	got, err := http.Get(dl)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer got.Body.Close()
+	if got.StatusCode != http.StatusOK {
+		t.Fatalf("GET status %d", got.StatusCode)
+	}
+	if got.ContentLength != int64(size) {
+		t.Fatalf("GET Content-Length %d want %d", got.ContentLength, size)
+	}
+	body, err := io.ReadAll(got.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(body) != size {
+		t.Fatalf("body length %d want %d", len(body), size)
+	}
+	if body[0] != 0x11 || body[size-1] != 0x22 {
+		t.Fatalf("body edges %x %x", body[0], body[size-1])
+	}
+
+	// Range is not implemented. A 206 or a short 200 would truncate the archive.
+	rangeReq, err := http.NewRequest(http.MethodGet, dl, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rangeReq.Header.Set("Range", "bytes=0-15")
+	rangeResp, err := http.DefaultClient.Do(rangeReq)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer rangeResp.Body.Close()
+	if rangeResp.StatusCode != http.StatusOK {
+		t.Fatalf("Range status %d", rangeResp.StatusCode)
+	}
+	rangeBody, err := io.ReadAll(rangeResp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rangeBody) != size {
+		t.Fatalf("Range body length %d want full %d", len(rangeBody), size)
+	}
+}
+
+func TestArchiveCopySkipsSendfile(t *testing.T) {
+	src := plainReader{r: bytes.NewReader(nil)}
+	if _, ok := any(src).(syscall.Conn); ok {
+		t.Fatal("body reader implements syscall.Conn")
+	}
+	if _, ok := any(src).(io.WriterTo); ok {
+		t.Fatal("body reader implements WriterTo")
+	}
+	dst := plainWriter{w: io.Discard}
+	if _, ok := any(dst).(io.ReaderFrom); ok {
+		t.Fatal("body writer implements ReaderFrom")
 	}
 }
 
