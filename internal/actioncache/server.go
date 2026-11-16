@@ -9,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 )
@@ -215,11 +216,53 @@ func (s *Server) handleBlob(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusCreated)
 		}
 	case http.MethodGet, http.MethodHead:
-		path := s.Store.ArchivePath(id)
-		http.ServeFile(w, r, path)
+		serveArchive(w, r, s.Store.ArchivePath(id))
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// plainReader hides *os.File's WriteTo and syscall.Conn. plainWriter hides
+// ResponseWriter's ReadFrom. Either one lets net/http use Darwin sendfile,
+// which in Go 1.23.0 can stop after a short write and leave Content-Length
+// at the full size (golang/go#70000).
+type plainReader struct{ r io.Reader }
+
+func (p plainReader) Read(b []byte) (int, error) { return p.r.Read(b) }
+
+type plainWriter struct{ w io.Writer }
+
+func (p plainWriter) Write(b []byte) (int, error) { return p.w.Write(b) }
+
+func serveArchive(w http.ResponseWriter, r *http.Request, path string) {
+	f, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			http.NotFound(w, r)
+			return
+		}
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	defer f.Close()
+	st, err := f.Stat()
+	if err != nil {
+		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if !st.Mode().IsRegular() {
+		http.NotFound(w, r)
+		return
+	}
+	size := st.Size()
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
+	w.WriteHeader(http.StatusOK)
+	if r.Method == http.MethodHead {
+		return
+	}
+	// A short body with this Content-Length makes net/http close the connection.
+	_, _ = io.Copy(plainWriter{w}, plainReader{f})
 }
 
 func blobIDFromPath(path string) (string, bool) {
