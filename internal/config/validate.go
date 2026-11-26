@@ -98,6 +98,9 @@ func Validate(cfg *Config, p provider.VMProvider) (target.Target, error) {
 	if err := validateResolveProxyOnHost(cfg); err != nil {
 		return target.Target{}, err
 	}
+	if err := validateProxyForward(cfg); err != nil {
+		return target.Target{}, err
+	}
 	return tgt, nil
 }
 

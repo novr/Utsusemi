@@ -17,6 +17,7 @@ import (
 	"github.com/novr/utsusemi/internal/notify"
 	"github.com/novr/utsusemi/internal/pool"
 	"github.com/novr/utsusemi/internal/provider"
+	"github.com/novr/utsusemi/internal/proxyfwd"
 	"github.com/novr/utsusemi/internal/registrar"
 	"github.com/novr/utsusemi/internal/runnercache"
 	"github.com/novr/utsusemi/internal/target"
@@ -38,6 +39,7 @@ type Agent struct {
 	tgt         target.Target
 	provider    provider.VMProvider
 	pool        *pool.Pool
+	forwarder   *proxyfwd.Server
 	logger      *slog.Logger
 	logFilePath string
 }
@@ -60,6 +62,10 @@ func New(opts Options) (*Agent, error) {
 	// Freeze Load-time config for this process; respawns must not follow later
 	// mutations of the caller's *Config (or a future reload).
 	cfg := config.Clone(opts.Config)
+	var fwd *proxyfwd.Server
+	if cfg.ProxyForward != nil {
+		fwd = proxyfwd.New(cfg.ProxyForward.Listen, cfg.ProxyForward.Upstream, nil, logger)
+	}
 	return &Agent{
 		cfg:      cfg,
 		tgt:      opts.Target,
@@ -72,7 +78,9 @@ func New(opts Options) (*Agent, error) {
 			Logger:     logger,
 			Notifier:   opts.Notifier,
 			StuckAfter: opts.StuckAfter,
+			Forwarder:  fwd,
 		}),
+		forwarder:   fwd,
 		logger:      logger,
 		logFilePath: opts.LogFilePath,
 	}, nil
@@ -160,8 +168,19 @@ func (a *Agent) Run(ctx context.Context) error {
 	if a.logFilePath != "" {
 		startAttrs = append(startAttrs, "log_file", a.logFilePath)
 	}
+	if a.forwarder != nil {
+		startAttrs = append(startAttrs,
+			"proxy_forward_listen", a.cfg.ProxyForward.Listen,
+			"proxy_forward_upstream", a.cfg.ProxyForward.Upstream,
+		)
+	}
 	a.logger.Info("agent started", startAttrs...)
 	err = a.pool.Run(ctx)
+	if a.forwarder != nil {
+		if closeErr := a.forwarder.Close(); closeErr != nil {
+			a.logger.Warn("proxy forward close failed", "error", closeErr)
+		}
+	}
 	if cause := runAlertCause(ctx, err, a.pool.FatalErr()); cause != nil {
 		a.pool.AlertFatal(ctx, cause)
 	}

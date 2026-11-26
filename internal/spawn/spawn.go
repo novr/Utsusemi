@@ -60,6 +60,11 @@ func SetListeningGraceForTest(d time.Duration) time.Duration {
 	return prev
 }
 
+// ProxyForwarder is the host-side TCP relay started after the Tart NAT bridge exists.
+type ProxyForwarder interface {
+	EnsureListening(ctx context.Context) error
+}
+
 type Options struct {
 	Config    *config.Config
 	Target    target.Target
@@ -70,6 +75,9 @@ type Options struct {
 	// Resolver resolves proxy hostnames when config.ResolveProxyOnHost is set.
 	// Nil uses hostdns.Default().
 	Resolver hostdns.Resolver
+	// Forwarder is an optional host TCP relay (proxy_forward). EnsureListening
+	// runs after waitUntilReady and before CreateJIT.
+	Forwarder ProxyForwarder
 }
 
 type Spawner struct {
@@ -203,6 +211,12 @@ func (s *Spawner) Run(ctx context.Context, vmName string, ctrl *SlotControl, onI
 	if len(proxyHosts) > 0 {
 		if err := applyProxyHosts(preJobCtx, log, s.opts.Provider, vmName, proxyHosts); err != nil {
 			return Result{ReachedReady: reachedReady}, err
+		}
+	}
+
+	if s.opts.Forwarder != nil {
+		if err := s.opts.Forwarder.EnsureListening(preJobCtx); err != nil {
+			return Result{ReachedReady: reachedReady}, fmt.Errorf("proxy forward listen: %w", err)
 		}
 	}
 

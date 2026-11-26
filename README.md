@@ -283,6 +283,24 @@ Keep `runner_version` at GitHub’s current [Actions runner](https://github.com/
 >   https_proxy: http://proxy.example:8080
 > ```
 >
+> When the guest can resolve the proxy but **cannot open TCP** to it (corporate ACL that allows the Mac host but rejects Tart NAT source addresses), use `proxy_forward` instead of (or together with) `resolve_proxy_on_host`. The agent binds a TCP relay on a Tart NAT gateway address after each VM is ready, and dials a fixed upstream from the host. Point `env` / `system_proxy` at the **listen** address (not the corporate hostname). `upstream` may be a corporate `host:port` or `127.0.0.1:port` (local tinyproxy/squid that stays bound while the NAT bridge appears and disappears). `localhost` is rejected — use `127.0.0.1`. Incompatible with `softnet: true`. Keep `127.0.0.1` / `localhost` in `no_proxy` / `bypass` so local Action cache and similar loopback services are not proxied. Restart the agent after changing this. Not a generic open HTTP proxy: no PAC, no CONNECT termination without upstream, no proxy auth management.
+>
+> ```yaml
+> proxy_forward:
+>   listen: 192.168.64.1:8888
+>   upstream: proxy.example:8080
+> env:
+>   http_proxy: http://192.168.64.1:8888
+>   https_proxy: http://192.168.64.1:8888
+>   no_proxy: localhost,127.0.0.1
+> system_proxy:
+>   http: 192.168.64.1:8888
+>   https: 192.168.64.1:8888
+>   bypass:
+>     - localhost
+>     - 127.0.0.1
+> ```
+>
 > Independently of that flag: if the runner logs `Runner connect error` and never reaches `Listening for Jobs` (or a claimed job) within about two minutes, the spawn fails, the JIT registration is deleted, and the pool can replace the slot. Transient errors that clear with `Runner reconnected.` or a later Listening/claim marker do not trigger this path.
 
 ## Multi-host setup

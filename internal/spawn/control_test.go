@@ -570,3 +570,46 @@ func TestHostsSetupFailureSkipsJIT(t *testing.T) {
 		t.Fatalf("JIT should not run; deletes=%d", reg.deleteCount())
 	}
 }
+
+type failForwarder struct {
+	calls int
+	err   error
+}
+
+func (f *failForwarder) EnsureListening(context.Context) error {
+	f.calls++
+	return f.err
+}
+
+func TestProxyForwardEnsureListeningFailureSkipsJIT(t *testing.T) {
+	readyTimeout = 50 * time.Millisecond
+	readyPollInterval = 5 * time.Millisecond
+	t.Cleanup(func() {
+		readyTimeout = 3 * time.Minute
+		readyPollInterval = 2 * time.Second
+	})
+
+	gp := &gateProvider{Stub: *provider.NewStub(2)}
+	reg := &trackingDeleteRegistrar{fakeRegistrar: fakeRegistrar{jit: registrar.JITConfig{
+		Encoded: "jit",
+		Runner:  registrar.Runner{ID: 9, Name: "vm"},
+	}}}
+	fwd := &failForwarder{err: errors.New("bind failed")}
+	spawner := testSpawner(t, gp)
+	spawner.opts.Registrar = reg
+	spawner.opts.Forwarder = fwd
+
+	_, err := spawner.Run(context.Background(), "utsusemi-fwd-fail", nil, nil)
+	if err == nil {
+		t.Fatal("expected proxy forward error")
+	}
+	if !strings.Contains(err.Error(), "proxy forward listen") {
+		t.Fatalf("error=%v", err)
+	}
+	if fwd.calls != 1 {
+		t.Fatalf("EnsureListening calls=%d, want 1", fwd.calls)
+	}
+	if reg.deleteCount() != 0 {
+		t.Fatalf("JIT should not run; deletes=%d", reg.deleteCount())
+	}
+}

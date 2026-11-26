@@ -56,6 +56,9 @@ func FormatText(r Report) string {
 			if r.Runtime.State == "active" && r.Runtime.ResolveProxyOnHost {
 				fmt.Fprintf(&b, "  resolve_proxy_on_host: true\n")
 			}
+			if r.Runtime.State == "active" && (r.Runtime.ProxyForwardListen != "" || r.Runtime.ProxyForwardUpstream != "") {
+				fmt.Fprintf(&b, "  proxy_forward: listen=%s upstream=%s\n", r.Runtime.ProxyForwardListen, r.Runtime.ProxyForwardUpstream)
+			}
 			if r.Runtime.State == "active" && r.Runtime.ActionCache {
 				fmt.Fprintf(&b, "  action_cache: on\n")
 			}

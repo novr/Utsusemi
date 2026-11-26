@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
@@ -258,6 +259,71 @@ func TestCheckProxyDNS(t *testing.T) {
 	})
 	if len(checks) != 1 || checks[0].Status != StatusWarn || checks[0].Name != "proxy_dns" {
 		t.Fatalf("empty hostnames: %+v", checks)
+	}
+}
+
+func TestCheckProxyForward(t *testing.T) {
+	checks := recordChecks(func(add checkFn) {
+		checkProxyForward(context.Background(), Input{Cfg: &config.Config{}}, add)
+	})
+	if len(checks) != 0 {
+		t.Fatalf("opt-out must skip check: %+v", checks)
+	}
+
+	upLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer upLn.Close()
+	go func() {
+		for {
+			c, err := upLn.Accept()
+			if err != nil {
+				return
+			}
+			_ = c.Close()
+		}
+	}()
+	upAddr := upLn.Addr().String()
+
+	okCfg := &config.Config{
+		ProxyForward: &config.ProxyForward{
+			Listen:   "192.168.64.1:8888",
+			Upstream: upAddr,
+		},
+		Env: map[string]string{"https_proxy": "http://192.168.64.1:8888"},
+	}
+	checks = recordChecks(func(add checkFn) {
+		checkProxyForward(context.Background(), Input{Cfg: okCfg}, add)
+	})
+	if len(checks) == 0 || checks[0].Name != "proxy_forward" || checks[0].Status != StatusOK {
+		t.Fatalf("want proxy_forward ok: %+v", checks)
+	}
+
+	warnCfg := &config.Config{
+		ProxyForward: &config.ProxyForward{
+			Listen:   "192.168.64.1:8888",
+			Upstream: upAddr,
+		},
+	}
+	checks = recordChecks(func(add checkFn) {
+		checkProxyForward(context.Background(), Input{Cfg: warnCfg}, add)
+	})
+	if len(checks) == 0 || checks[0].Status != StatusWarn || !strings.Contains(checks[0].Message, "env/system_proxy") {
+		t.Fatalf("want env warn: %+v", checks)
+	}
+
+	failCfg := &config.Config{
+		ProxyForward: &config.ProxyForward{
+			Listen:   "192.168.64.1:8888",
+			Upstream: "proxy.missing:9",
+		},
+	}
+	checks = recordChecks(func(add checkFn) {
+		checkProxyForward(context.Background(), Input{Cfg: failCfg, Resolver: mapResolver{}}, add)
+	})
+	if len(checks) != 1 || checks[0].Status != StatusFail {
+		t.Fatalf("want resolve fail: %+v", checks)
 	}
 }
 

@@ -30,4 +30,7 @@ pool_size: 1
 #     - "*.local"
 # Host resolves proxy hostnames into guest /etc/hosts (split DNS). Passwordless sudo required.
 # resolve_proxy_on_host: true
+# proxy_forward:
+#   listen: 192.168.64.1:8888
+#   upstream: proxy.example:8080
 
