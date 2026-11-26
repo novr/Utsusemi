@@ -3,8 +3,10 @@ package doctor
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -205,6 +207,57 @@ func TestCheckAlerts(t *testing.T) {
 	})
 	if len(checks) != 1 || checks[0].Message != "configured" {
 		t.Fatalf("checks=%+v", checks)
+	}
+}
+
+type mapResolver map[string][]netip.Addr
+
+func (m mapResolver) LookupHost(_ context.Context, host string) ([]netip.Addr, error) {
+	addrs, ok := m[host]
+	if !ok {
+		return nil, fmt.Errorf("not found")
+	}
+	return addrs, nil
+}
+
+func TestCheckProxyDNS(t *testing.T) {
+	checks := recordChecks(func(add checkFn) {
+		checkProxyDNS(context.Background(), Input{Cfg: &config.Config{}}, add)
+	})
+	if len(checks) != 0 {
+		t.Fatalf("opt-out must skip check: %+v", checks)
+	}
+
+	cfg := &config.Config{
+		ResolveProxyOnHost: true,
+		Env:                map[string]string{"http_proxy": "http://proxy.example:8080"},
+	}
+	checks = recordChecks(func(add checkFn) {
+		checkProxyDNS(context.Background(), Input{
+			Cfg:      cfg,
+			Resolver: mapResolver{"proxy.example": {netip.MustParseAddr("10.0.0.5")}},
+		}, add)
+	})
+	if len(checks) != 1 || checks[0].Status != StatusOK || checks[0].Name != "proxy_dns" {
+		t.Fatalf("checks=%+v", checks)
+	}
+
+	checks = recordChecks(func(add checkFn) {
+		checkProxyDNS(context.Background(), Input{Cfg: cfg, Resolver: mapResolver{}}, add)
+	})
+	if len(checks) != 1 || checks[0].Status != StatusFail {
+		t.Fatalf("checks=%+v", checks)
+	}
+
+	empty := &config.Config{
+		ResolveProxyOnHost: true,
+		Env:                map[string]string{"http_proxy": "http://10.0.0.5:8080"},
+	}
+	checks = recordChecks(func(add checkFn) {
+		checkProxyDNS(context.Background(), Input{Cfg: empty}, add)
+	})
+	if len(checks) != 1 || checks[0].Status != StatusWarn || checks[0].Name != "proxy_dns" {
+		t.Fatalf("empty hostnames: %+v", checks)
 	}
 }
 

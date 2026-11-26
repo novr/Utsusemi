@@ -87,8 +87,11 @@ type Config struct {
 	ActionCache            bool              `yaml:"action_cache,omitempty"`
 	Env                    map[string]string `yaml:"env,omitempty"`
 	SystemProxy            *SystemProxy      `yaml:"system_proxy,omitempty"`
-	ReclaimPolicy          string            `yaml:"reclaim_policy,omitempty"`
-	ReclaimGrace           Duration          `yaml:"reclaim_grace,omitempty"`
+	// ResolveProxyOnHost injects host-resolved proxy hostnames into the guest
+	// /etc/hosts (opt-in). Proxy URL hostnames are left unchanged.
+	ResolveProxyOnHost bool     `yaml:"resolve_proxy_on_host,omitempty"`
+	ReclaimPolicy      string   `yaml:"reclaim_policy,omitempty"`
+	ReclaimGrace       Duration `yaml:"reclaim_grace,omitempty"`
 }
 
 func Load(path string) (*Config, error) {

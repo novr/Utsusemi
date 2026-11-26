@@ -27,16 +27,17 @@ type Snapshot struct {
 	Softnet           bool      `json:"softnet"`
 	ActionCache       bool      `json:"action_cache,omitempty"`
 	Mounts            []string  `json:"mounts,omitempty"`
-	SystemProxyHTTP   string    `json:"system_proxy_http,omitempty"`
-	SystemProxyHTTPS  string    `json:"system_proxy_https,omitempty"`
-	SystemProxyBypass []string  `json:"system_proxy_bypass,omitempty"`
-	SpawnTimeout      string    `json:"spawn_timeout"`
-	JobTimeout        string    `json:"job_timeout"`
-	VMNamePrefix      string    `json:"vm_name_prefix"`
-	StateDir          string    `json:"state_dir"`
-	PoolCheck         string    `json:"pool_check_interval,omitempty"`
-	Reconciliation    string    `json:"reconciliation_interval,omitempty"`
-	ReclaimGrace      string    `json:"reclaim_grace,omitempty"`
+	SystemProxyHTTP     string   `json:"system_proxy_http,omitempty"`
+	SystemProxyHTTPS    string   `json:"system_proxy_https,omitempty"`
+	SystemProxyBypass   []string `json:"system_proxy_bypass,omitempty"`
+	ResolveProxyOnHost  bool     `json:"resolve_proxy_on_host,omitempty"`
+	SpawnTimeout        string   `json:"spawn_timeout"`
+	JobTimeout          string   `json:"job_timeout"`
+	VMNamePrefix        string   `json:"vm_name_prefix"`
+	StateDir            string   `json:"state_dir"`
+	PoolCheck           string   `json:"pool_check_interval,omitempty"`
+	Reconciliation      string   `json:"reconciliation_interval,omitempty"`
+	ReclaimGrace        string   `json:"reclaim_grace,omitempty"`
 }
 
 func FromConfig(cfg *config.Config, agentID string) Snapshot {
@@ -77,16 +78,17 @@ func FromConfig(cfg *config.Config, agentID string) Snapshot {
 		Softnet:           cfg.Softnet,
 		ActionCache:       cfg.ActionCache,
 		Mounts:            mounts,
-		SystemProxyHTTP:   proxyHTTP,
-		SystemProxyHTTPS:  proxyHTTPS,
-		SystemProxyBypass: proxyBypass,
-		SpawnTimeout:      cfg.SpawnTimeout.Duration().String(),
-		JobTimeout:        cfg.JobTimeout.Duration().String(),
-		VMNamePrefix:      cfg.VMNamePrefix,
-		StateDir:          cfg.StateDir,
-		PoolCheck:         cfg.PoolCheckInterval.Duration().String(),
-		Reconciliation:    cfg.ReconciliationInterval.Duration().String(),
-		ReclaimGrace:      cfg.ReclaimGrace.Duration().String(),
+		SystemProxyHTTP:    proxyHTTP,
+		SystemProxyHTTPS:   proxyHTTPS,
+		SystemProxyBypass:  proxyBypass,
+		ResolveProxyOnHost: cfg.ResolveProxyOnHost,
+		SpawnTimeout:       cfg.SpawnTimeout.Duration().String(),
+		JobTimeout:         cfg.JobTimeout.Duration().String(),
+		VMNamePrefix:       cfg.VMNamePrefix,
+		StateDir:           cfg.StateDir,
+		PoolCheck:          cfg.PoolCheckInterval.Duration().String(),
+		Reconciliation:     cfg.ReconciliationInterval.Duration().String(),
+		ReclaimGrace:       cfg.ReclaimGrace.Duration().String(),
 	}
 }
 

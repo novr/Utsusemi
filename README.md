@@ -274,6 +274,16 @@ Keep `runner_version` at GitHub’s current [Actions runner](https://github.com/
 >     - "<local>"
 >     - "*.local"
 > ```
+>
+> When the **host** can resolve the proxy hostname but the Tart **guest** cannot (common with split DNS / VPN), set `resolve_proxy_on_host: true`. Each spawn resolves `http_proxy` / `https_proxy` / `HTTP_PROXY` / `HTTPS_PROXY` and `system_proxy` hostnames on the host (`dscacheutil` on macOS), then injects `<ip> <host>` into the guest `/etc/hosts` before JIT registration. Proxy URL hostnames, schemes, ports, and userinfo stay unchanged (TLS SNI / certificate names keep working). `no_proxy` is not rewritten. One address is injected (first IPv4 when any A exists, otherwise first AAAA). Failure to resolve or inject fails the spawn (no hostname fallback). The guest user needs passwordless `sudo` for this path even if you only use `config.env` (not only `system_proxy`). Corporate CA trust for an `https://` proxy remains a separate guest-image concern. Host-side DNS forwarding, TCP/TLS egress preflight, and guest CA install are out of scope. Restart the agent after changing this. Older binaries ignore the key. Edit via `utsusemi configure edit` (YAML); there is no dedicated CLI flag.
+>
+> ```yaml
+> resolve_proxy_on_host: true
+> env:
+>   https_proxy: http://proxy.example:8080
+> ```
+>
+> Independently of that flag: if the runner logs `Runner connect error` and never reaches `Listening for Jobs` (or a claimed job) within about two minutes, the spawn fails, the JIT registration is deleted, and the pool can replace the slot. Transient errors that clear with `Runner reconnected.` or a later Listening/claim marker do not trigger this path.
 
 ## Multi-host setup
 

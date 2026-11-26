@@ -13,6 +13,7 @@ import (
 	"github.com/novr/utsusemi/internal/brokerhttp"
 	"github.com/novr/utsusemi/internal/config"
 	"github.com/novr/utsusemi/internal/credentialview"
+	"github.com/novr/utsusemi/internal/hostdns"
 	"github.com/novr/utsusemi/internal/hostid"
 	"github.com/novr/utsusemi/internal/instancelock"
 	"github.com/novr/utsusemi/internal/keychain"
@@ -49,6 +50,8 @@ type Input struct {
 	Provider  provider.VMProvider
 	Registrar registrar.RunnerRegistrar
 	Store     keychain.Store
+	// Resolver is optional; used by the proxy_dns check when resolve_proxy_on_host is set.
+	Resolver hostdns.Resolver
 }
 
 func Collect(ctx context.Context, in Input) Report {
@@ -125,10 +128,41 @@ func Collect(ctx context.Context, in Input) Report {
 	checkRunnerCache(in.Cfg, in.Provider, add)
 	checkActionCache(in.Cfg, add)
 	checkMounts(in.Cfg, add)
+	checkProxyDNS(ctx, in, add)
 	checkMultiHost(ctx, in, host, add)
 	checkAlerts(store, add)
 
 	return Report{Checks: checks}
+}
+
+func checkProxyDNS(ctx context.Context, in Input, add func(string, Status, string)) {
+	if in.Cfg == nil || !in.Cfg.ResolveProxyOnHost {
+		return
+	}
+	hosts, err := config.ProxyHosts(in.Cfg)
+	if err != nil {
+		add("proxy_dns", StatusFail, err.Error())
+		return
+	}
+	if len(hosts) == 0 {
+		add("proxy_dns", StatusWarn, "resolve_proxy_on_host set but no proxy hostnames in env/system_proxy (IP-only proxies need no injection)")
+		return
+	}
+	resolver := in.Resolver
+	if resolver == nil {
+		resolver = hostdns.Default()
+	}
+	var failed []string
+	for _, host := range hosts {
+		if _, err := resolver.LookupHost(ctx, host); err != nil {
+			failed = append(failed, host)
+		}
+	}
+	if len(failed) > 0 {
+		add("proxy_dns", StatusFail, fmt.Sprintf("unresolvable on host: %s (guest /etc/hosts injection would fail)", strings.Join(failed, ", ")))
+		return
+	}
+	add("proxy_dns", StatusOK, fmt.Sprintf("resolved %s", strings.Join(hosts, ", ")))
 }
 
 func checkAlerts(store keychain.Store, add func(string, Status, string)) {

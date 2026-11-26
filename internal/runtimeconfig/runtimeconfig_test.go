@@ -26,6 +26,7 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 			HTTPS:  "proxy.example:8080",
 			Bypass: []string{"localhost"},
 		},
+		ResolveProxyOnHost: true,
 	}
 	config.ApplyDefaults(cfg)
 
@@ -45,6 +46,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if got.SystemProxyHTTP != "proxy.example:8080" || got.SystemProxyHTTPS != "proxy.example:8080" || len(got.SystemProxyBypass) != 1 || got.SystemProxyBypass[0] != "localhost" {
 		t.Fatalf("system_proxy=%q %q %v", got.SystemProxyHTTP, got.SystemProxyHTTPS, got.SystemProxyBypass)
+	}
+	if !got.ResolveProxyOnHost {
+		t.Fatal("resolve_proxy_on_host missing")
 	}
 	if _, err := filepath.Rel(dir, filepath.Join(dir, fileName)); err != nil {
 		t.Fatal(err)
