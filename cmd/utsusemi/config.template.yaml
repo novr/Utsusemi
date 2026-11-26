@@ -36,3 +36,7 @@ pool_size: 1
 #     - 127.0.0.1
 #     - "<local>"
 #     - "*.local"
+# When the host can resolve proxy hostnames but the Tart guest cannot (split DNS/VPN),
+# resolve on the host and inject into guest /etc/hosts (proxy URL hostnames stay unchanged).
+# Requires passwordless sudo in the guest. Older binaries ignore this key.
+# resolve_proxy_on_host: true

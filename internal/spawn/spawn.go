@@ -11,6 +11,7 @@ import (
 
 	"github.com/novr/utsusemi/internal/actioncache"
 	"github.com/novr/utsusemi/internal/config"
+	"github.com/novr/utsusemi/internal/hostdns"
 	"github.com/novr/utsusemi/internal/instancelock"
 	"github.com/novr/utsusemi/internal/lease"
 	"github.com/novr/utsusemi/internal/provider"
@@ -27,6 +28,10 @@ var ErrBootNotRunningBudget = errors.New("boot_not_running_budget")
 // ErrWaitReady marks any waitUntilReady failure for errors.Is from the pool.
 var ErrWaitReady = errors.New("wait for vm ready")
 
+// ErrListenerNotConnected is returned when runner output shows connect errors
+// without ever reaching Listening/claim within connectErrorGrace.
+var ErrListenerNotConnected = errors.New("runner listener not connected")
+
 // Tunables (package vars so tests can shrink timeouts).
 var (
 	readyTimeout       = 3 * time.Minute
@@ -41,6 +46,11 @@ var (
 	// listeningGrace is how long after job ExecStdin starts before idle-ready
 	// is forced without seeing "Listening for Jobs" (marker drift fallback).
 	listeningGrace = 5 * time.Minute
+	// connectErrorGrace is how long a pre-Listening connect error may persist
+	// before the spawn fails and tears down the JIT registration.
+	connectErrorGrace = 2 * time.Minute
+	// connectErrorPoll is how often to re-check ConnectErrorSince while waiting.
+	connectErrorPoll = 250 * time.Millisecond
 )
 
 // SetListeningGraceForTest sets listeningGrace and returns the previous value.
@@ -57,6 +67,9 @@ type Options struct {
 	Registrar registrar.RunnerRegistrar
 	Leases    *lease.Registry
 	Logger    *slog.Logger
+	// Resolver resolves proxy hostnames when config.ResolveProxyOnHost is set.
+	// Nil uses hostdns.Default().
+	Resolver hostdns.Resolver
 }
 
 type Spawner struct {
@@ -134,6 +147,15 @@ func (s *Spawner) Run(ctx context.Context, vmName string, ctrl *SlotControl, onI
 		}
 	}()
 
+	var proxyHosts []config.HostsMapEntry
+	if cfg.ResolveProxyOnHost {
+		entries, err := config.ResolveProxyHosts(preJobCtx, cfg, s.opts.Resolver)
+		if err != nil {
+			return Result{}, err
+		}
+		proxyHosts = entries
+	}
+
 	phase := time.Now()
 	log.Info("cloning base image", "image", cfg.BaseImage)
 	if err := cloneBaseImage(preJobCtx, s.opts.Provider, cfg.StateDir, cfg.BaseImage, vmName); err != nil {
@@ -177,6 +199,12 @@ func (s *Spawner) Run(ctx context.Context, vmName string, ctrl *SlotControl, onI
 	metrics.BootMs = time.Since(phase).Milliseconds()
 	log.Info("spawn phase complete", "phase", "boot", "duration_ms", metrics.BootMs)
 	reachedReady := true
+
+	if len(proxyHosts) > 0 {
+		if err := applyProxyHosts(preJobCtx, log, s.opts.Provider, vmName, proxyHosts); err != nil {
+			return Result{ReachedReady: reachedReady}, err
+		}
+	}
 
 	phase = time.Now()
 	log.Info("registering runner with GitHub")
@@ -225,6 +253,8 @@ func (s *Spawner) Run(ctx context.Context, vmName string, ctrl *SlotControl, onI
 
 	ticker := time.NewTicker(5 * time.Second)
 	defer ticker.Stop()
+	connectWatch := time.NewTicker(connectErrorPoll)
+	defer connectWatch.Stop()
 
 	// Marker-drift fallback: if bootstrap is still running without Listening /
 	// claim markers after listeningGrace, release the pool fill gate. Slow
@@ -245,6 +275,10 @@ func (s *Spawner) Run(ctx context.Context, vmName string, ctrl *SlotControl, onI
 	for {
 		select {
 		case <-jobCtx.Done():
+			if cancelReason == "listener_connect" {
+				log.Warn("runner listener connect error persisted; tearing down")
+				return Result{ReachedReady: reachedReady}, ErrListenerNotConnected
+			}
 			if errors.Is(jobCtx.Err(), context.Canceled) {
 				switch cancelReason {
 				case "force":
@@ -280,12 +314,26 @@ func (s *Spawner) Run(ctx context.Context, vmName string, ctrl *SlotControl, onI
 			metrics.JobMs = time.Since(jobPhase).Milliseconds()
 			log.Info("spawn phase complete", "phase", "job", "duration_ms", metrics.JobMs,
 				"total_ms", time.Since(spawnStart).Milliseconds())
+			// jobCancel for listener_connect races with this case; prefer the
+			// typed error over a wrapped context.Canceled from ExecStdin.
+			if cancelReason == "listener_connect" {
+				log.Warn("runner listener connect error persisted; tearing down")
+				return Result{ReachedReady: reachedReady}, ErrListenerNotConnected
+			}
 			if err != nil {
 				return Result{ReachedReady: reachedReady}, fmt.Errorf("runner exec: %w", err)
 			}
 			runnerRegistered = false
 			metrics.Success = true
 			return finishJob(), nil
+		case <-connectWatch.C:
+			if cancelReason != "" {
+				continue
+			}
+			if since := claim.ConnectErrorSince(); !since.IsZero() && time.Since(since) >= connectErrorGrace {
+				cancelReason = "listener_connect"
+				jobCancel()
+			}
 		case <-ticker.C:
 			running, err := s.opts.Provider.IsRunning(jobCtx, vmName)
 			if err != nil {
@@ -296,6 +344,9 @@ func (s *Spawner) Run(ctx context.Context, vmName string, ctrl *SlotControl, onI
 				select {
 				case err := <-execDone:
 					metrics.JobMs = time.Since(jobPhase).Milliseconds()
+					if cancelReason == "listener_connect" {
+						return Result{ReachedReady: reachedReady}, ErrListenerNotConnected
+					}
 					if err != nil && !errors.Is(err, context.Canceled) {
 						return Result{ReachedReady: reachedReady}, fmt.Errorf("runner exec: %w", err)
 					}
@@ -305,6 +356,9 @@ func (s *Spawner) Run(ctx context.Context, vmName string, ctrl *SlotControl, onI
 				case <-time.After(30 * time.Second):
 					return Result{ReachedReady: reachedReady}, fmt.Errorf("vm stopped before runner exec finished")
 				case <-jobCtx.Done():
+					if cancelReason == "listener_connect" {
+						return Result{ReachedReady: reachedReady}, ErrListenerNotConnected
+					}
 					return Result{ReachedReady: reachedReady}, jobCtx.Err()
 				}
 			}

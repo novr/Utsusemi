@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"strings"
 	"sync"
+	"time"
 )
 
 // Markers emitted by github/actions/runner when a job is assigned or finishes.
@@ -12,17 +13,29 @@ const (
 	claimMarkerRunning   = "Running job:"
 	claimMarkerCompleted = "completed with result:"
 	idleMarkerListening  = "Listening for Jobs"
+	connectErrorMarker   = "Runner connect error"
+	reconnectedMarker    = "Runner reconnected."
 )
 
 // claimScanner is a line-buffered io.Writer that records whether runner output
 // shows a claimed job or idle Listening. Safe for concurrent Write from
 // stdout/stderr tees.
 type claimScanner struct {
-	mu          sync.Mutex
-	buf         []byte
-	claimed     bool
-	listening   bool
-	onIdleReady func()
+	mu             sync.Mutex
+	buf            []byte
+	claimed        bool
+	listening      bool
+	connectErr     bool
+	connectSince   time.Time
+	onIdleReady    func()
+	now            func() time.Time
+}
+
+func (c *claimScanner) clock() time.Time {
+	if c.now != nil {
+		return c.now()
+	}
+	return time.Now()
 }
 
 func (c *claimScanner) Write(p []byte) (int, error) {
@@ -74,13 +87,27 @@ func (c *claimScanner) observe(line string) func() {
 			c.onIdleReady = nil
 		}
 	}
+	if strings.Contains(line, connectErrorMarker) {
+		if !c.connectErr {
+			c.connectErr = true
+			c.connectSince = c.clock()
+		}
+	}
+	if strings.Contains(line, reconnectedMarker) {
+		c.connectErr = false
+		c.connectSince = time.Time{}
+	}
 	if !c.listening && strings.Contains(line, idleMarkerListening) {
 		c.listening = true
+		c.connectErr = false
+		c.connectSince = time.Time{}
 		take()
 	}
 	if !c.claimed {
 		if strings.Contains(line, claimMarkerRunning) || strings.Contains(line, claimMarkerCompleted) {
 			c.claimed = true
+			c.connectErr = false
+			c.connectSince = time.Time{}
 			take()
 		}
 	}
@@ -97,4 +124,15 @@ func (c *claimScanner) Listening() bool {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.listening
+}
+
+// ConnectErrorSince returns when the first unresolved connect error was seen.
+// Zero if Listening/claim/reconnected cleared the error, or none was seen.
+func (c *claimScanner) ConnectErrorSince() time.Time {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if !c.connectErr || c.listening || c.claimed {
+		return time.Time{}
+	}
+	return c.connectSince
 }
