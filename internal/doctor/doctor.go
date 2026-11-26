@@ -145,7 +145,7 @@ func checkProxyDNS(ctx context.Context, in Input, add func(string, Status, strin
 		return
 	}
 	if len(hosts) == 0 {
-		add("proxy_dns", StatusOK, "no proxy hostnames to resolve")
+		add("proxy_dns", StatusWarn, "resolve_proxy_on_host set but no proxy hostnames in env/system_proxy (IP-only proxies need no injection)")
 		return
 	}
 	resolver := in.Resolver

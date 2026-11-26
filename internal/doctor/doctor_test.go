@@ -248,6 +248,17 @@ func TestCheckProxyDNS(t *testing.T) {
 	if len(checks) != 1 || checks[0].Status != StatusFail {
 		t.Fatalf("checks=%+v", checks)
 	}
+
+	empty := &config.Config{
+		ResolveProxyOnHost: true,
+		Env:                map[string]string{"http_proxy": "http://10.0.0.5:8080"},
+	}
+	checks = recordChecks(func(add checkFn) {
+		checkProxyDNS(context.Background(), Input{Cfg: empty}, add)
+	})
+	if len(checks) != 1 || checks[0].Status != StatusWarn || checks[0].Name != "proxy_dns" {
+		t.Fatalf("empty hostnames: %+v", checks)
+	}
 }
 
 type checkFn func(string, Status, string)
