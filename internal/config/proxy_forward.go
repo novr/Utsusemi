@@ -18,16 +18,26 @@ type ProxyForward struct {
 }
 
 // ApplyProxyForwardDefaults fills only unset proxy settings on the effective
-// runtime config. It does not override values supplied by the operator.
+// runtime config; operator-supplied values are never overwritten and nothing is
+// written back to YAML.
+//
+// system_proxy changes the guest-wide network service, so it stays opt-in: it
+// is filled only when the block is present without any endpoint. A block that
+// sets http or https is left exactly as written.
 func ApplyProxyForwardDefaults(cfg *Config) {
 	if cfg == nil || cfg.ProxyForward == nil {
 		return
 	}
+	host, port, err := splitForwardEndpoint("proxy_forward.listen", cfg.ProxyForward.Listen, true)
+	if err != nil {
+		return
+	}
+	listen := net.JoinHostPort(host, port)
 
-	proxyURL := "http://" + cfg.ProxyForward.Listen
 	if cfg.Env == nil {
 		cfg.Env = make(map[string]string)
 	}
+	proxyURL := "http://" + listen
 	if !hasEnvKey(cfg.Env, "http_proxy", "HTTP_PROXY") {
 		cfg.Env["http_proxy"] = proxyURL
 	}
@@ -38,19 +48,14 @@ func ApplyProxyForwardDefaults(cfg *Config) {
 		cfg.Env["no_proxy"] = "localhost,127.0.0.1"
 	}
 
-	// system_proxy remains opt-in because it changes the guest-wide macOS
-	// network service. When present, only its missing fields are filled.
-	if cfg.SystemProxy == nil {
+	sp := cfg.SystemProxy
+	if sp == nil || strings.TrimSpace(sp.HTTP) != "" || strings.TrimSpace(sp.HTTPS) != "" {
 		return
 	}
-	if strings.TrimSpace(cfg.SystemProxy.HTTP) == "" {
-		cfg.SystemProxy.HTTP = cfg.ProxyForward.Listen
-	}
-	if strings.TrimSpace(cfg.SystemProxy.HTTPS) == "" {
-		cfg.SystemProxy.HTTPS = cfg.ProxyForward.Listen
-	}
-	if cfg.SystemProxy.Bypass == nil {
-		cfg.SystemProxy.Bypass = []string{"localhost", "127.0.0.1"}
+	sp.HTTP = listen
+	sp.HTTPS = listen
+	if sp.Bypass == nil {
+		sp.Bypass = []string{"localhost", "127.0.0.1"}
 	}
 }
 

@@ -40,60 +40,105 @@ func TestValidateProxyForwardOK(t *testing.T) {
 	}
 }
 
-func TestApplyProxyForwardDefaultsOnlyFillsMissingValues(t *testing.T) {
+func TestApplyProxyForwardDefaultsFillsEnvOnly(t *testing.T) {
 	cfg := validProxyForwardCfg(t)
 	ApplyProxyForwardDefaults(cfg)
 
-	if got := cfg.Env["http_proxy"]; got != "http://127.0.0.1:8888" {
-		t.Fatalf("http_proxy=%q", got)
-	}
-	if got := cfg.Env["https_proxy"]; got != "http://127.0.0.1:8888" {
-		t.Fatalf("https_proxy=%q", got)
-	}
-	if got := cfg.Env["no_proxy"]; got != "localhost,127.0.0.1" {
-		t.Fatalf("no_proxy=%q", got)
-	}
-	if cfg.SystemProxy != nil {
-		t.Fatalf("system_proxy should remain opt-in: %+v", cfg.SystemProxy)
-	}
-
-	cfg = validProxyForwardCfg(t)
-	cfg.Env = map[string]string{
-		"HTTP_PROXY": "http://explicit-http:8080",
-		"no_proxy":   "example.test",
-	}
-	cfg.SystemProxy = &SystemProxy{
-		HTTP:   "explicit-http:8080",
-		Bypass: []string{"example.test"},
-	}
-	ApplyProxyForwardDefaults(cfg)
-
-	wantEnv := map[string]string{
-		"HTTP_PROXY":  "http://explicit-http:8080",
+	want := map[string]string{
+		"http_proxy":  "http://127.0.0.1:8888",
 		"https_proxy": "http://127.0.0.1:8888",
-		"no_proxy":    "example.test",
+		"no_proxy":    "localhost,127.0.0.1",
 	}
-	for key, want := range wantEnv {
-		if got := cfg.Env[key]; got != want {
-			t.Fatalf("env[%q]=%q, want %q", key, got, want)
+	if len(cfg.Env) != len(want) {
+		t.Fatalf("env=%v", cfg.Env)
+	}
+	for k, v := range want {
+		if cfg.Env[k] != v {
+			t.Fatalf("env[%q]=%q, want %q", k, cfg.Env[k], v)
 		}
 	}
-	if got := cfg.SystemProxy.HTTP; got != "explicit-http:8080" {
-		t.Fatalf("system_proxy.http=%q", got)
-	}
-	if got := cfg.SystemProxy.HTTPS; got != "127.0.0.1:8888" {
-		t.Fatalf("system_proxy.https=%q", got)
-	}
-	if len(cfg.SystemProxy.Bypass) != 1 || cfg.SystemProxy.Bypass[0] != "example.test" {
-		t.Fatalf("system_proxy.bypass=%v", cfg.SystemProxy.Bypass)
+	if cfg.SystemProxy != nil {
+		t.Fatalf("system_proxy must stay opt-in: %+v", cfg.SystemProxy)
 	}
 }
 
-func TestApplyProxyForwardDefaultsDisabledWithoutForwarder(t *testing.T) {
+func TestApplyProxyForwardDefaultsKeepsExplicitEnv(t *testing.T) {
+	cfg := validProxyForwardCfg(t)
+	cfg.Env = map[string]string{
+		"HTTP_PROXY": "http://explicit:8080",
+		"no_proxy":   "example.test",
+	}
+	ApplyProxyForwardDefaults(cfg)
+
+	want := map[string]string{
+		"HTTP_PROXY":  "http://explicit:8080",
+		"https_proxy": "http://127.0.0.1:8888",
+		"no_proxy":    "example.test",
+	}
+	if len(cfg.Env) != len(want) {
+		t.Fatalf("env=%v", cfg.Env)
+	}
+	for k, v := range want {
+		if cfg.Env[k] != v {
+			t.Fatalf("env[%q]=%q, want %q", k, cfg.Env[k], v)
+		}
+	}
+}
+
+func TestApplyProxyForwardDefaultsSystemProxy(t *testing.T) {
+	t.Run("empty block opts in", func(t *testing.T) {
+		cfg := validProxyForwardCfg(t)
+		cfg.SystemProxy = &SystemProxy{}
+		ApplyProxyForwardDefaults(cfg)
+		sp := cfg.SystemProxy
+		if sp.HTTP != "127.0.0.1:8888" || sp.HTTPS != "127.0.0.1:8888" {
+			t.Fatalf("endpoints=%q %q", sp.HTTP, sp.HTTPS)
+		}
+		if len(sp.Bypass) != 2 || sp.Bypass[0] != "localhost" || sp.Bypass[1] != "127.0.0.1" {
+			t.Fatalf("bypass=%v", sp.Bypass)
+		}
+	})
+	t.Run("bypass-only block keeps bypass", func(t *testing.T) {
+		cfg := validProxyForwardCfg(t)
+		cfg.SystemProxy = &SystemProxy{Bypass: []string{"example.test"}}
+		ApplyProxyForwardDefaults(cfg)
+		sp := cfg.SystemProxy
+		if sp.HTTP != "127.0.0.1:8888" || len(sp.Bypass) != 1 || sp.Bypass[0] != "example.test" {
+			t.Fatalf("system_proxy=%+v", sp)
+		}
+	})
+	t.Run("explicit endpoint is untouched", func(t *testing.T) {
+		cfg := validProxyForwardCfg(t)
+		cfg.SystemProxy = &SystemProxy{HTTPS: "explicit:8080"}
+		ApplyProxyForwardDefaults(cfg)
+		sp := cfg.SystemProxy
+		if sp.HTTP != "" || sp.HTTPS != "explicit:8080" || sp.Bypass != nil {
+			t.Fatalf("explicit system_proxy was modified: %+v", sp)
+		}
+	})
+}
+
+func TestApplyProxyForwardDefaultsNormalizesListen(t *testing.T) {
+	cfg := validProxyForwardCfg(t)
+	cfg.ProxyForward.Listen = " 127.0.0.1:8888 "
+	ApplyProxyForwardDefaults(cfg)
+	if got := cfg.Env["http_proxy"]; got != "http://127.0.0.1:8888" {
+		t.Fatalf("http_proxy=%q", got)
+	}
+}
+
+func TestApplyProxyForwardDefaultsNoopCases(t *testing.T) {
 	cfg := &Config{Env: map[string]string{"http_proxy": "http://explicit:8080"}}
 	ApplyProxyForwardDefaults(cfg)
-	if len(cfg.Env) != 1 || cfg.Env["http_proxy"] != "http://explicit:8080" {
+	if len(cfg.Env) != 1 {
 		t.Fatalf("env changed without proxy_forward: %v", cfg.Env)
+	}
+
+	bad := validProxyForwardCfg(t)
+	bad.ProxyForward.Listen = "192.168.64.1:8888"
+	ApplyProxyForwardDefaults(bad)
+	if len(bad.Env) != 0 {
+		t.Fatalf("invalid listen must not be propagated: %v", bad.Env)
 	}
 }
 
