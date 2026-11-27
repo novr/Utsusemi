@@ -40,6 +40,19 @@ func TestValidateProxyForwardOK(t *testing.T) {
 	}
 }
 
+func TestValidateProxyForwardDefaultsListen(t *testing.T) {
+	cfg := validProxyForwardCfg(t)
+	cfg.ProxyForward.Listen = ""
+	if _, err := Validate(cfg, provider.NewStub(2)); err != nil {
+		t.Fatalf("omitted listen should use the default: %v", err)
+	}
+
+	cfg.ProxyForward.Upstream = ""
+	if _, err := Validate(cfg, provider.NewStub(2)); err == nil || !strings.Contains(err.Error(), "upstream") {
+		t.Fatalf("missing upstream error=%v", err)
+	}
+}
+
 func TestApplyProxyForwardDefaultsFillsEnvOnly(t *testing.T) {
 	cfg := validProxyForwardCfg(t)
 	ApplyProxyForwardDefaults(cfg)
@@ -86,6 +99,18 @@ func TestApplyProxyForwardDefaultsKeepsExplicitEnv(t *testing.T) {
 }
 
 func TestApplyProxyForwardDefaultsSystemProxy(t *testing.T) {
+	t.Run("nested opt in", func(t *testing.T) {
+		cfg := validProxyForwardCfg(t)
+		cfg.ProxyForward.Listen = ""
+		cfg.ProxyForward.SystemProxy = true
+		ApplyProxyForwardDefaults(cfg)
+		if cfg.ProxyForward.Listen != DefaultProxyForwardListen {
+			t.Fatalf("listen=%q", cfg.ProxyForward.Listen)
+		}
+		if cfg.SystemProxy == nil || cfg.SystemProxy.HTTP != DefaultProxyForwardListen || cfg.SystemProxy.HTTPS != DefaultProxyForwardListen {
+			t.Fatalf("system_proxy=%+v", cfg.SystemProxy)
+		}
+	})
 	t.Run("empty block opts in", func(t *testing.T) {
 		cfg := validProxyForwardCfg(t)
 		cfg.SystemProxy = &SystemProxy{}
@@ -159,7 +184,7 @@ func TestValidateProxyForwardRejects(t *testing.T) {
 			c.ProxyForward.Listen = "127.0.0.1:19527"
 		}, "action_cache"},
 		{"scheme", func(c *Config) { c.ProxyForward.Upstream = "http://proxy.example:8080" }, "host:port"},
-		{"empty listen", func(c *Config) { c.ProxyForward.Listen = "" }, "required"},
+		{"empty upstream", func(c *Config) { c.ProxyForward.Upstream = "" }, "required"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

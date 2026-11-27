@@ -41,9 +41,9 @@ pool_size: 1
 # Requires passwordless sudo in the guest. Older binaries ignore this key.
 # resolve_proxy_on_host: true
 # Guest loopback TCP tunnel when the guest cannot reach the proxy directly (e.g. NAT ACL or host firewall).
-# listen is a guest loopback IP:port (e.g. 127.0.0.1:8888). Missing env proxy keys are filled automatically.
-# system_proxy is not created automatically; add `system_proxy: {}` to opt in (an explicit http/https is kept).
-# upstream may be a corporate proxy host:port or 127.0.0.1:port (local tinyproxy/squid). Works with softnet.
+# upstream is required; omitted listen defaults to 127.0.0.1:8888.
+# Missing env proxy keys are filled automatically. Set system_proxy: true to opt in to the guest system proxy.
+# The legacy top-level system_proxy: {} form remains supported.
 # proxy_forward:
-#   listen: 127.0.0.1:8888
 #   upstream: proxy.example:8080
+#   system_proxy: true
