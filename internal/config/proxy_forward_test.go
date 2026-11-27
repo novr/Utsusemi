@@ -4,6 +4,8 @@ import (
 	"strings"
 	"testing"
 
+	"gopkg.in/yaml.v3"
+
 	"github.com/novr/utsusemi/internal/provider"
 )
 
@@ -37,6 +39,19 @@ func TestValidateProxyForwardOK(t *testing.T) {
 	cfg.Softnet = true
 	if _, err := Validate(cfg, p); err != nil {
 		t.Fatalf("softnet with proxy_forward should be allowed: %v", err)
+	}
+}
+
+func TestValidateProxyForwardDefaultsListen(t *testing.T) {
+	cfg := validProxyForwardCfg(t)
+	cfg.ProxyForward.Listen = ""
+	if _, err := Validate(cfg, provider.NewStub(2)); err != nil {
+		t.Fatalf("omitted listen should use the default: %v", err)
+	}
+
+	cfg.ProxyForward.Upstream = ""
+	if _, err := Validate(cfg, provider.NewStub(2)); err == nil || !strings.Contains(err.Error(), "upstream") {
+		t.Fatalf("missing upstream error=%v", err)
 	}
 }
 
@@ -86,6 +101,15 @@ func TestApplyProxyForwardDefaultsKeepsExplicitEnv(t *testing.T) {
 }
 
 func TestApplyProxyForwardDefaultsSystemProxy(t *testing.T) {
+	t.Run("nested opt in", func(t *testing.T) {
+		cfg := validProxyForwardCfg(t)
+		cfg.ProxyForward.Listen = ""
+		cfg.ProxyForward.SystemProxy = true
+		ApplyProxyForwardDefaults(cfg)
+		if cfg.SystemProxy == nil || cfg.SystemProxy.HTTP != DefaultProxyForwardListen || cfg.SystemProxy.HTTPS != DefaultProxyForwardListen {
+			t.Fatalf("system_proxy=%+v", cfg.SystemProxy)
+		}
+	})
 	t.Run("empty block opts in", func(t *testing.T) {
 		cfg := validProxyForwardCfg(t)
 		cfg.SystemProxy = &SystemProxy{}
@@ -116,6 +140,64 @@ func TestApplyProxyForwardDefaultsSystemProxy(t *testing.T) {
 			t.Fatalf("explicit system_proxy was modified: %+v", sp)
 		}
 	})
+}
+
+func TestApplyProxyForwardDefaultsNestedSystemProxyYieldsToExplicitBlock(t *testing.T) {
+	cfg := validProxyForwardCfg(t)
+	cfg.ProxyForward.SystemProxy = true
+	cfg.SystemProxy = &SystemProxy{HTTPS: "explicit:8080"}
+	ApplyProxyForwardDefaults(cfg)
+	sp := cfg.SystemProxy
+	if sp.HTTP != "" || sp.HTTPS != "explicit:8080" || sp.Bypass != nil {
+		t.Fatalf("explicit top-level system_proxy must win: %+v", sp)
+	}
+}
+
+func TestProxyForwardEffectiveListen(t *testing.T) {
+	cases := []struct{ raw, want string }{
+		{"", DefaultProxyForwardListen},
+		{"  ", DefaultProxyForwardListen},
+		{" 127.0.0.1:9999 ", "127.0.0.1:9999"},
+		{"[::1]:8888", "[::1]:8888"},
+	}
+	for _, tc := range cases {
+		if got := (&ProxyForward{Listen: tc.raw}).EffectiveListen(); got != tc.want {
+			t.Fatalf("EffectiveListen(%q)=%q, want %q", tc.raw, got, tc.want)
+		}
+	}
+	if got := (*ProxyForward)(nil).EffectiveListen(); got != "" {
+		t.Fatalf("nil=%q", got)
+	}
+}
+
+func TestApplyProxyForwardDefaultsKeepsConfiguredListenAsWritten(t *testing.T) {
+	cfg := validProxyForwardCfg(t)
+	cfg.ProxyForward.Listen = ""
+	ApplyProxyForwardDefaults(cfg)
+	if cfg.ProxyForward.Listen != "" {
+		t.Fatalf("defaults must not mutate proxy_forward.listen: %q", cfg.ProxyForward.Listen)
+	}
+	if got := cfg.Env["http_proxy"]; got != "http://"+DefaultProxyForwardListen {
+		t.Fatalf("http_proxy=%q", got)
+	}
+}
+
+func TestProxyForwardYAMLRoundTrip(t *testing.T) {
+	var cfg Config
+	src := "proxy_forward:\n  upstream: proxy.example:8080\n  system_proxy: true\n"
+	if err := yaml.Unmarshal([]byte(src), &cfg); err != nil {
+		t.Fatal(err)
+	}
+	if cfg.ProxyForward == nil || cfg.ProxyForward.Listen != "" || !cfg.ProxyForward.SystemProxy || cfg.ProxyForward.Upstream != "proxy.example:8080" {
+		t.Fatalf("parsed=%+v", cfg.ProxyForward)
+	}
+	out, err := yaml.Marshal(&ProxyForward{Upstream: "proxy.example:8080"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(string(out), "listen") || strings.Contains(string(out), "system_proxy") {
+		t.Fatalf("unset optional keys must be omitted: %s", out)
+	}
 }
 
 func TestApplyProxyForwardDefaultsNormalizesListen(t *testing.T) {
@@ -159,7 +241,7 @@ func TestValidateProxyForwardRejects(t *testing.T) {
 			c.ProxyForward.Listen = "127.0.0.1:19527"
 		}, "action_cache"},
 		{"scheme", func(c *Config) { c.ProxyForward.Upstream = "http://proxy.example:8080" }, "host:port"},
-		{"empty listen", func(c *Config) { c.ProxyForward.Listen = "" }, "required"},
+		{"empty upstream", func(c *Config) { c.ProxyForward.Upstream = "" }, "required"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

@@ -207,7 +207,7 @@ func checkProxyForward(ctx context.Context, in Input, add func(string, Status, s
 	}
 	_ = conn.Close()
 
-	add("proxy_forward", StatusOK, fmt.Sprintf("upstream reachable (%s → %s)", pf.Listen, pf.Upstream))
+	add("proxy_forward", StatusOK, fmt.Sprintf("upstream reachable (%s → %s)", pf.EffectiveListen(), pf.Upstream))
 
 	var lim syscall.Rlimit
 	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &lim); err == nil && lim.Cur < proxyForwardFDWarn {

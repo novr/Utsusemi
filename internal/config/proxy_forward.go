@@ -9,30 +9,45 @@ import (
 )
 
 const reservedActionCacheAddr = "127.0.0.1:19527"
+const DefaultProxyForwardListen = "127.0.0.1:8888"
 
 // ProxyForward tunnels guest loopback TCP connections over `tart exec -i` to
 // one fixed upstream proxy dialed from the host.
 type ProxyForward struct {
-	Listen   string `yaml:"listen"`
-	Upstream string `yaml:"upstream"`
+	Listen      string `yaml:"listen,omitempty"`
+	Upstream    string `yaml:"upstream"`
+	SystemProxy bool   `yaml:"system_proxy,omitempty"`
+}
+
+// EffectiveListen returns the normalized guest listen address, applying the
+// default when unset. An invalid value is returned trimmed so Validate reports it.
+func (pf *ProxyForward) EffectiveListen() string {
+	if pf == nil {
+		return ""
+	}
+	host, port, err := normalizedProxyForwardListen(pf.Listen)
+	if err != nil {
+		return strings.TrimSpace(pf.Listen)
+	}
+	return net.JoinHostPort(host, port)
 }
 
 // ApplyProxyForwardDefaults fills only unset proxy settings on the effective
 // runtime config; operator-supplied values are never overwritten and nothing is
 // written back to YAML.
 //
-// system_proxy changes the guest-wide network service, so it stays opt-in: it
-// is filled only when the block is present without any endpoint. A block that
-// sets http or https is left exactly as written.
+// system_proxy changes the guest-wide network service, so it stays opt-in. The
+// nested flag is the preferred opt-in; the legacy top-level system_proxy
+// block remains supported.
 func ApplyProxyForwardDefaults(cfg *Config) {
 	if cfg == nil || cfg.ProxyForward == nil {
 		return
 	}
-	host, port, err := splitForwardEndpoint("proxy_forward.listen", cfg.ProxyForward.Listen, true)
-	if err != nil {
+	pf := cfg.ProxyForward
+	if _, _, err := normalizedProxyForwardListen(pf.Listen); err != nil {
 		return
 	}
-	listen := net.JoinHostPort(host, port)
+	listen := pf.EffectiveListen()
 
 	if cfg.Env == nil {
 		cfg.Env = make(map[string]string)
@@ -48,6 +63,9 @@ func ApplyProxyForwardDefaults(cfg *Config) {
 		cfg.Env["no_proxy"] = "localhost,127.0.0.1"
 	}
 
+	if pf.SystemProxy && cfg.SystemProxy == nil {
+		cfg.SystemProxy = &SystemProxy{}
+	}
 	sp := cfg.SystemProxy
 	if sp == nil || strings.TrimSpace(sp.HTTP) != "" || strings.TrimSpace(sp.HTTPS) != "" {
 		return
@@ -68,12 +86,19 @@ func hasEnvKey(env map[string]string, keys ...string) bool {
 	return false
 }
 
+func normalizedProxyForwardListen(raw string) (string, string, error) {
+	if strings.TrimSpace(raw) == "" {
+		raw = DefaultProxyForwardListen
+	}
+	return splitForwardEndpoint("proxy_forward.listen", raw, true)
+}
+
 func validateProxyForward(cfg *Config) error {
 	if cfg == nil || cfg.ProxyForward == nil {
 		return nil
 	}
 	pf := cfg.ProxyForward
-	listenHost, listenPort, err := splitForwardEndpoint("proxy_forward.listen", pf.Listen, true)
+	listenHost, listenPort, err := normalizedProxyForwardListen(pf.Listen)
 	if err != nil {
 		return err
 	}
@@ -81,7 +106,7 @@ func validateProxyForward(cfg *Config) error {
 		return err
 	}
 	if cfg.ActionCache && net.JoinHostPort(listenHost, listenPort) == reservedActionCacheAddr {
-		return fmt.Errorf("proxy_forward.listen %s conflicts with action_cache (%s)", pf.Listen, reservedActionCacheAddr)
+		return fmt.Errorf("proxy_forward.listen %s conflicts with action_cache (%s)", pf.EffectiveListen(), reservedActionCacheAddr)
 	}
 	return nil
 }
