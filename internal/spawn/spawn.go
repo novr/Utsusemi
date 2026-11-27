@@ -5,6 +5,7 @@ import (
 	_ "embed"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"sync"
 	"time"
@@ -60,6 +61,11 @@ func SetListeningGraceForTest(d time.Duration) time.Duration {
 	return prev
 }
 
+// ProxyForwarder starts a per-VM guest loopback → host upstream TCP tunnel.
+type ProxyForwarder interface {
+	Start(readyCtx context.Context, p provider.VMProvider, vmName string) (io.Closer, error)
+}
+
 type Options struct {
 	Config    *config.Config
 	Target    target.Target
@@ -70,6 +76,10 @@ type Options struct {
 	// Resolver resolves proxy hostnames when config.ResolveProxyOnHost is set.
 	// Nil uses hostdns.Default().
 	Resolver hostdns.Resolver
+	// Forwarder is an optional guest-to-host TCP tunnel (proxy_forward). Start
+	// runs after waitUntilReady and before CreateJIT; the returned closer stops
+	// the tunnel before VM teardown.
+	Forwarder ProxyForwarder
 }
 
 type Spawner struct {
@@ -204,6 +214,18 @@ func (s *Spawner) Run(ctx context.Context, vmName string, ctrl *SlotControl, onI
 		if err := applyProxyHosts(preJobCtx, log, s.opts.Provider, vmName, proxyHosts); err != nil {
 			return Result{ReachedReady: reachedReady}, err
 		}
+	}
+
+	if s.opts.Forwarder != nil {
+		tunnel, err := s.opts.Forwarder.Start(preJobCtx, s.opts.Provider, vmName)
+		if err != nil {
+			return Result{ReachedReady: reachedReady}, fmt.Errorf("proxy forward start: %w", err)
+		}
+		defer func() {
+			if closeErr := tunnel.Close(); closeErr != nil {
+				log.Warn("proxy forward tunnel close failed", "error", closeErr)
+			}
+		}()
 	}
 
 	phase = time.Now()

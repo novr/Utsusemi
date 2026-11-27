@@ -17,8 +17,10 @@ import (
 	"github.com/novr/utsusemi/internal/notify"
 	"github.com/novr/utsusemi/internal/pool"
 	"github.com/novr/utsusemi/internal/provider"
+	"github.com/novr/utsusemi/internal/proxyfwd"
 	"github.com/novr/utsusemi/internal/registrar"
 	"github.com/novr/utsusemi/internal/runnercache"
+	"github.com/novr/utsusemi/internal/spawn"
 	"github.com/novr/utsusemi/internal/target"
 )
 
@@ -38,6 +40,7 @@ type Agent struct {
 	tgt         target.Target
 	provider    provider.VMProvider
 	pool        *pool.Pool
+	forwarder   *proxyfwd.Forwarder
 	logger      *slog.Logger
 	logFilePath string
 }
@@ -60,6 +63,7 @@ func New(opts Options) (*Agent, error) {
 	// Freeze Load-time config for this process; respawns must not follow later
 	// mutations of the caller's *Config (or a future reload).
 	cfg := config.Clone(opts.Config)
+	fwd, forwarder := proxyForwarder(cfg, logger)
 	return &Agent{
 		cfg:      cfg,
 		tgt:      opts.Target,
@@ -72,10 +76,23 @@ func New(opts Options) (*Agent, error) {
 			Logger:     logger,
 			Notifier:   opts.Notifier,
 			StuckAfter: opts.StuckAfter,
+			Forwarder:  forwarder,
 		}),
+		forwarder:   fwd,
 		logger:      logger,
 		logFilePath: opts.LogFilePath,
 	}, nil
+}
+
+// proxyForwarder returns a nil interface when proxy_forward is unset.
+// A typed nil *proxyfwd.Forwarder must not be stored in spawn.ProxyForwarder:
+// the interface would be non-nil and Start would panic.
+func proxyForwarder(cfg *config.Config, logger *slog.Logger) (*proxyfwd.Forwarder, spawn.ProxyForwarder) {
+	if cfg == nil || cfg.ProxyForward == nil {
+		return nil, nil
+	}
+	fwd := proxyfwd.New(cfg.ProxyForward.Listen, cfg.ProxyForward.Upstream, nil, logger)
+	return fwd, fwd
 }
 
 // Config returns the agent-owned frozen config (read-only by convention).
@@ -138,6 +155,15 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 		a.logger.Info("action cache enabled", "data", actioncache.Dir(a.cfg.StateDir))
 	}
+	if a.forwarder != nil {
+		if err := proxyfwd.StageBin(a.cfg.StateDir); err != nil {
+			err = fmt.Errorf("stage proxy forward binary: %w", err)
+			if shouldAlertFatal(ctx, err) {
+				a.pool.AlertFatal(ctx, err)
+			}
+			return err
+		}
+	}
 
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -159,6 +185,12 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 	if a.logFilePath != "" {
 		startAttrs = append(startAttrs, "log_file", a.logFilePath)
+	}
+	if a.forwarder != nil {
+		startAttrs = append(startAttrs,
+			"proxy_forward_listen", a.cfg.ProxyForward.Listen,
+			"proxy_forward_upstream", a.cfg.ProxyForward.Upstream,
+		)
 	}
 	a.logger.Info("agent started", startAttrs...)
 	err = a.pool.Run(ctx)

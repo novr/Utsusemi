@@ -30,6 +30,7 @@ type Options struct {
 	Notifier   notify.Notifier
 	StuckAfter time.Duration
 	Now        func() time.Time
+	Forwarder  spawn.ProxyForwarder
 }
 
 type Pool struct {
@@ -99,6 +100,7 @@ func NewWithOptions(opts Options) *Pool {
 			Registrar: opts.Registrar,
 			Leases:    leases,
 			Logger:    logger,
+			Forwarder: opts.Forwarder,
 		}),
 		logger: logger,
 		monitor: notify.NewMonitor(notify.MonitorOptions{

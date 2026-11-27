@@ -95,13 +95,15 @@ type RuntimeInfo struct {
 	Softnet           bool     `json:"softnet"`
 	ActionCache       bool     `json:"action_cache,omitempty"`
 	Mounts            []string `json:"mounts,omitempty"`
-	SystemProxyHTTP    string   `json:"system_proxy_http,omitempty"`
-	SystemProxyHTTPS   string   `json:"system_proxy_https,omitempty"`
-	SystemProxyBypass  []string `json:"system_proxy_bypass,omitempty"`
-	ResolveProxyOnHost bool     `json:"resolve_proxy_on_host,omitempty"`
-	SpawnTimeout       string   `json:"spawn_timeout,omitempty"`
-	JobTimeout         string   `json:"job_timeout,omitempty"`
-	VMNamePrefix       string   `json:"vm_name_prefix,omitempty"`
+	SystemProxyHTTP      string   `json:"system_proxy_http,omitempty"`
+	SystemProxyHTTPS     string   `json:"system_proxy_https,omitempty"`
+	SystemProxyBypass    []string `json:"system_proxy_bypass,omitempty"`
+	ResolveProxyOnHost   bool     `json:"resolve_proxy_on_host,omitempty"`
+	ProxyForwardListen   string   `json:"proxy_forward_listen,omitempty"`
+	ProxyForwardUpstream string   `json:"proxy_forward_upstream,omitempty"`
+	SpawnTimeout         string   `json:"spawn_timeout,omitempty"`
+	JobTimeout           string   `json:"job_timeout,omitempty"`
+	VMNamePrefix         string   `json:"vm_name_prefix,omitempty"`
 }
 
 type BootNotRunningInfo struct {
@@ -401,13 +403,15 @@ func loadRuntimeInfo(stateDir string, agent AgentInfo, session *lease.AgentSessi
 		Softnet:           snap.Softnet,
 		ActionCache:       snap.ActionCache,
 		Mounts:            snap.Mounts,
-		SystemProxyHTTP:    snap.SystemProxyHTTP,
-		SystemProxyHTTPS:   snap.SystemProxyHTTPS,
-		SystemProxyBypass:  snap.SystemProxyBypass,
-		ResolveProxyOnHost: snap.ResolveProxyOnHost,
-		SpawnTimeout:       snap.SpawnTimeout,
-		JobTimeout:         snap.JobTimeout,
-		VMNamePrefix:       snap.VMNamePrefix,
+		SystemProxyHTTP:      snap.SystemProxyHTTP,
+		SystemProxyHTTPS:     snap.SystemProxyHTTPS,
+		SystemProxyBypass:    snap.SystemProxyBypass,
+		ResolveProxyOnHost:   snap.ResolveProxyOnHost,
+		ProxyForwardListen:   snap.ProxyForwardListen,
+		ProxyForwardUpstream: snap.ProxyForwardUpstream,
+		SpawnTimeout:         snap.SpawnTimeout,
+		JobTimeout:           snap.JobTimeout,
+		VMNamePrefix:         snap.VMNamePrefix,
 	}
 	if agent.State != AgentRunning || session == nil || snap.AgentID == "" {
 		return info

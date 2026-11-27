@@ -89,9 +89,11 @@ type Config struct {
 	SystemProxy            *SystemProxy      `yaml:"system_proxy,omitempty"`
 	// ResolveProxyOnHost injects host-resolved proxy hostnames into the guest
 	// /etc/hosts (opt-in). Proxy URL hostnames are left unchanged.
-	ResolveProxyOnHost bool     `yaml:"resolve_proxy_on_host,omitempty"`
-	ReclaimPolicy      string   `yaml:"reclaim_policy,omitempty"`
-	ReclaimGrace       Duration `yaml:"reclaim_grace,omitempty"`
+	ResolveProxyOnHost bool `yaml:"resolve_proxy_on_host,omitempty"`
+	// ProxyForward is an opt-in guest-loopback → host-upstream TCP tunnel over tart exec.
+	ProxyForward  *ProxyForward `yaml:"proxy_forward,omitempty"`
+	ReclaimPolicy string        `yaml:"reclaim_policy,omitempty"`
+	ReclaimGrace  Duration      `yaml:"reclaim_grace,omitempty"`
 }
 
 func Load(path string) (*Config, error) {
@@ -155,9 +157,9 @@ func ApplyDefaults(cfg *Config) {
 	applyDefaults(cfg)
 }
 
-// Clone returns a deep copy of cfg. Labels, Mounts, Env, and SystemProxy are independent.
-// The result is intended as an agent-owned freeze; callers must not write it back
-// into shared Load-time config.
+// Clone returns a deep copy of cfg. Labels, Mounts, Env, SystemProxy, and
+// ProxyForward are independent. The result is intended as an agent-owned freeze;
+// callers must not write it back into shared Load-time config.
 func Clone(cfg *Config) *Config {
 	if cfg == nil {
 		return nil
@@ -181,6 +183,10 @@ func Clone(cfg *Config) *Config {
 			sp.Bypass = append([]string(nil), cfg.SystemProxy.Bypass...)
 		}
 		out.SystemProxy = &sp
+	}
+	if cfg.ProxyForward != nil {
+		pf := *cfg.ProxyForward
+		out.ProxyForward = &pf
 	}
 	return &out
 }

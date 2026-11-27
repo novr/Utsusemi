@@ -121,6 +121,17 @@ func (p *TartProvider) ExecStdin(ctx context.Context, name, cmd string, args []s
 	return p.exec.RunStreaming(ctx, "tart", execArgs, stdin, nil)
 }
 
+func (p *TartProvider) OpenExecPipe(ctx context.Context, name, cmd string, args []string) (ExecPipe, error) {
+	opener, ok := p.exec.(execPipeExecutor)
+	if !ok {
+		return nil, fmt.Errorf("executor does not support OpenPipe")
+	}
+	execArgs := make([]string, 0, 4+len(args))
+	execArgs = append(execArgs, "exec", "-i", name, cmd)
+	execArgs = append(execArgs, args...)
+	return opener.OpenPipe(ctx, "tart", execArgs)
+}
+
 func sortedKeys(env map[string]string) []string {
 	keys := make([]string, 0, len(env))
 	for key := range env {

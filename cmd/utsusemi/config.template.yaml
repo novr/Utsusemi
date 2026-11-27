@@ -40,3 +40,16 @@ pool_size: 1
 # resolve on the host and inject into guest /etc/hosts (proxy URL hostnames stay unchanged).
 # Requires passwordless sudo in the guest. Older binaries ignore this key.
 # resolve_proxy_on_host: true
+# Guest loopback TCP tunnel when the guest cannot reach the proxy directly (e.g. NAT ACL or host firewall).
+# listen is a guest loopback IP:port (e.g. 127.0.0.1:8888). Point env/system_proxy at the same listen.
+# upstream may be a corporate proxy host:port or 127.0.0.1:port (local tinyproxy/squid). Works with softnet.
+# proxy_forward:
+#   listen: 127.0.0.1:8888
+#   upstream: proxy.example:8080
+# env:
+#   http_proxy: http://127.0.0.1:8888
+#   https_proxy: http://127.0.0.1:8888
+#   no_proxy: localhost,127.0.0.1
+# system_proxy:
+#   http: 127.0.0.1:8888
+#   https: 127.0.0.1:8888

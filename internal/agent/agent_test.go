@@ -59,6 +59,19 @@ func (noopRegistrar) ValidateCredential(ctx context.Context, service, account st
 	return nil
 }
 
+func TestProxyForwarderUnsetIsNilInterface(t *testing.T) {
+	srv, fwd := proxyForwarder(&config.Config{}, nil)
+	if srv != nil || fwd != nil {
+		t.Fatalf("unset proxy_forward: srv=%v fwd=%v", srv, fwd)
+	}
+	srv, fwd = proxyForwarder(&config.Config{
+		ProxyForward: &config.ProxyForward{Listen: "127.0.0.1:8888", Upstream: "127.0.0.1:3128"},
+	}, nil)
+	if srv == nil || fwd == nil {
+		t.Fatal("configured proxy_forward must yield a forwarder")
+	}
+}
+
 func TestShouldAlertFatal(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()

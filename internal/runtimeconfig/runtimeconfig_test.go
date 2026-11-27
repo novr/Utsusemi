@@ -27,6 +27,10 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 			Bypass: []string{"localhost"},
 		},
 		ResolveProxyOnHost: true,
+		ProxyForward: &config.ProxyForward{
+			Listen:   "127.0.0.1:8888",
+			Upstream: "proxy.example:8080",
+		},
 	}
 	config.ApplyDefaults(cfg)
 
@@ -49,6 +53,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if !got.ResolveProxyOnHost {
 		t.Fatal("resolve_proxy_on_host missing")
+	}
+	if got.ProxyForwardListen != "127.0.0.1:8888" || got.ProxyForwardUpstream != "proxy.example:8080" {
+		t.Fatalf("proxy_forward=%q %q", got.ProxyForwardListen, got.ProxyForwardUpstream)
 	}
 	if _, err := filepath.Rel(dir, filepath.Join(dir, fileName)); err != nil {
 		t.Fatal(err)

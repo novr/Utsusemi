@@ -27,17 +27,19 @@ type Snapshot struct {
 	Softnet           bool      `json:"softnet"`
 	ActionCache       bool      `json:"action_cache,omitempty"`
 	Mounts            []string  `json:"mounts,omitempty"`
-	SystemProxyHTTP     string   `json:"system_proxy_http,omitempty"`
-	SystemProxyHTTPS    string   `json:"system_proxy_https,omitempty"`
-	SystemProxyBypass   []string `json:"system_proxy_bypass,omitempty"`
-	ResolveProxyOnHost  bool     `json:"resolve_proxy_on_host,omitempty"`
-	SpawnTimeout        string   `json:"spawn_timeout"`
-	JobTimeout          string   `json:"job_timeout"`
-	VMNamePrefix        string   `json:"vm_name_prefix"`
-	StateDir            string   `json:"state_dir"`
-	PoolCheck           string   `json:"pool_check_interval,omitempty"`
-	Reconciliation      string   `json:"reconciliation_interval,omitempty"`
-	ReclaimGrace        string   `json:"reclaim_grace,omitempty"`
+	SystemProxyHTTP      string   `json:"system_proxy_http,omitempty"`
+	SystemProxyHTTPS     string   `json:"system_proxy_https,omitempty"`
+	SystemProxyBypass    []string `json:"system_proxy_bypass,omitempty"`
+	ResolveProxyOnHost   bool     `json:"resolve_proxy_on_host,omitempty"`
+	ProxyForwardListen   string   `json:"proxy_forward_listen,omitempty"`
+	ProxyForwardUpstream string   `json:"proxy_forward_upstream,omitempty"`
+	SpawnTimeout         string   `json:"spawn_timeout"`
+	JobTimeout           string   `json:"job_timeout"`
+	VMNamePrefix         string   `json:"vm_name_prefix"`
+	StateDir             string   `json:"state_dir"`
+	PoolCheck            string   `json:"pool_check_interval,omitempty"`
+	Reconciliation       string   `json:"reconciliation_interval,omitempty"`
+	ReclaimGrace         string   `json:"reclaim_grace,omitempty"`
 }
 
 func FromConfig(cfg *config.Config, agentID string) Snapshot {
@@ -65,30 +67,37 @@ func FromConfig(cfg *config.Config, agentID string) Snapshot {
 			proxyBypass = append([]string(nil), cfg.SystemProxy.Bypass...)
 		}
 	}
+	var fwdListen, fwdUpstream string
+	if cfg.ProxyForward != nil {
+		fwdListen = cfg.ProxyForward.Listen
+		fwdUpstream = cfg.ProxyForward.Upstream
+	}
 	return Snapshot{
-		SavedAt:           time.Now().UTC(),
-		AgentID:           agentID,
-		Target:            tgt,
-		BaseImage:         cfg.BaseImage,
-		RunnerVersion:     cfg.RunnerVersion,
-		PoolSize:          cfg.PoolSize,
-		Labels:            labels,
-		ReclaimPolicy:     cfg.ReclaimPolicy,
-		MinFreeDiskGB:     cfg.MinFreeDiskGB,
-		Softnet:           cfg.Softnet,
-		ActionCache:       cfg.ActionCache,
-		Mounts:            mounts,
-		SystemProxyHTTP:    proxyHTTP,
-		SystemProxyHTTPS:   proxyHTTPS,
-		SystemProxyBypass:  proxyBypass,
-		ResolveProxyOnHost: cfg.ResolveProxyOnHost,
-		SpawnTimeout:       cfg.SpawnTimeout.Duration().String(),
-		JobTimeout:         cfg.JobTimeout.Duration().String(),
-		VMNamePrefix:       cfg.VMNamePrefix,
-		StateDir:           cfg.StateDir,
-		PoolCheck:          cfg.PoolCheckInterval.Duration().String(),
-		Reconciliation:     cfg.ReconciliationInterval.Duration().String(),
-		ReclaimGrace:       cfg.ReclaimGrace.Duration().String(),
+		SavedAt:              time.Now().UTC(),
+		AgentID:              agentID,
+		Target:               tgt,
+		BaseImage:            cfg.BaseImage,
+		RunnerVersion:        cfg.RunnerVersion,
+		PoolSize:             cfg.PoolSize,
+		Labels:               labels,
+		ReclaimPolicy:        cfg.ReclaimPolicy,
+		MinFreeDiskGB:        cfg.MinFreeDiskGB,
+		Softnet:              cfg.Softnet,
+		ActionCache:          cfg.ActionCache,
+		Mounts:               mounts,
+		SystemProxyHTTP:      proxyHTTP,
+		SystemProxyHTTPS:     proxyHTTPS,
+		SystemProxyBypass:    proxyBypass,
+		ResolveProxyOnHost:   cfg.ResolveProxyOnHost,
+		ProxyForwardListen:   fwdListen,
+		ProxyForwardUpstream: fwdUpstream,
+		SpawnTimeout:         cfg.SpawnTimeout.Duration().String(),
+		JobTimeout:           cfg.JobTimeout.Duration().String(),
+		VMNamePrefix:         cfg.VMNamePrefix,
+		StateDir:             cfg.StateDir,
+		PoolCheck:            cfg.PoolCheckInterval.Duration().String(),
+		Reconciliation:       cfg.ReconciliationInterval.Duration().String(),
+		ReclaimGrace:         cfg.ReclaimGrace.Duration().String(),
 	}
 }
 

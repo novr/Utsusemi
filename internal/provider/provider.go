@@ -2,7 +2,24 @@ package provider
 
 import (
 	"context"
+	"io"
 )
+
+// ExecPipe is a bidirectional binary stdio stream to a guest command.
+type ExecPipe interface {
+	io.ReadWriteCloser
+	Stderr() string
+}
+
+// ExecPipeProvider is implemented by providers that can open a binary stdio
+// stream to a guest VM (e.g. `tart exec -i`).
+type ExecPipeProvider interface {
+	OpenExecPipe(ctx context.Context, name, cmd string, args []string) (ExecPipe, error)
+}
+
+type execPipeExecutor interface {
+	OpenPipe(ctx context.Context, name string, args []string) (ExecPipe, error)
+}
 
 type Capabilities struct {
 	MaxConcurrent int
@@ -52,4 +69,8 @@ func (RealExecutor) StartDetached(ctx context.Context, name string, args []strin
 
 func (RealExecutor) Output(ctx context.Context, name string, args []string) ([]byte, error) {
 	return outputCommand(ctx, name, args)
+}
+
+func (RealExecutor) OpenPipe(ctx context.Context, name string, args []string) (ExecPipe, error) {
+	return openExecPipe(ctx, name, args)
 }

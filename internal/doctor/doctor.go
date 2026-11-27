@@ -3,10 +3,13 @@ package doctor
 import (
 	"context"
 	"fmt"
+	"net"
 	"net/http"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/novr/utsusemi/internal/actioncache"
@@ -129,6 +132,7 @@ func Collect(ctx context.Context, in Input) Report {
 	checkActionCache(in.Cfg, add)
 	checkMounts(in.Cfg, add)
 	checkProxyDNS(ctx, in, add)
+	checkProxyForward(ctx, in, add)
 	checkMultiHost(ctx, in, host, add)
 	checkAlerts(store, add)
 
@@ -163,6 +167,74 @@ func checkProxyDNS(ctx context.Context, in Input, add func(string, Status, strin
 		return
 	}
 	add("proxy_dns", StatusOK, fmt.Sprintf("resolved %s", strings.Join(hosts, ", ")))
+}
+
+const proxyForwardFDWarn = 2048
+
+func checkProxyForward(ctx context.Context, in Input, add func(string, Status, string)) {
+	if in.Cfg == nil || in.Cfg.ProxyForward == nil {
+		return
+	}
+	pf := in.Cfg.ProxyForward
+	host, port, err := net.SplitHostPort(pf.Upstream)
+	if err != nil {
+		add("proxy_forward", StatusFail, err.Error())
+		return
+	}
+	dialHost := host
+	if _, parseErr := netip.ParseAddr(host); parseErr != nil {
+		resolver := in.Resolver
+		if resolver == nil {
+			resolver = hostdns.Default()
+		}
+		addrs, err := resolver.LookupHost(ctx, host)
+		if err != nil {
+			add("proxy_forward", StatusFail, fmt.Sprintf("resolve upstream %q: %v", host, err))
+			return
+		}
+		preferred := hostdns.PreferForHosts(addrs)
+		if len(preferred) == 0 {
+			add("proxy_forward", StatusFail, fmt.Sprintf("no usable address for upstream %q", host))
+			return
+		}
+		dialHost = preferred[0].String()
+	}
+	d := net.Dialer{Timeout: 5 * time.Second}
+	conn, err := d.DialContext(ctx, "tcp", net.JoinHostPort(dialHost, port))
+	if err != nil {
+		add("proxy_forward", StatusFail, fmt.Sprintf("dial upstream %s: %v", pf.Upstream, err))
+		return
+	}
+	_ = conn.Close()
+
+	msg := fmt.Sprintf("upstream reachable (%s → %s)", pf.Listen, pf.Upstream)
+	if !proxyForwardEnvMentionsListen(in.Cfg, pf.Listen) {
+		add("proxy_forward", StatusWarn, msg+"; env/system_proxy do not mention listen address — set guest proxy to http://"+pf.Listen)
+	} else {
+		add("proxy_forward", StatusOK, msg)
+	}
+
+	var lim syscall.Rlimit
+	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &lim); err == nil && lim.Cur < proxyForwardFDWarn {
+		add("proxy_forward_fds", StatusWarn, fmt.Sprintf("RLIMIT_NOFILE soft=%d (recommend >= %d for high CONNECT concurrency)", lim.Cur, proxyForwardFDWarn))
+	}
+}
+
+func proxyForwardEnvMentionsListen(cfg *config.Config, listen string) bool {
+	if cfg == nil || listen == "" {
+		return false
+	}
+	for _, key := range []string{"http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY"} {
+		if v, ok := cfg.Env[key]; ok && strings.Contains(v, listen) {
+			return true
+		}
+	}
+	if cfg.SystemProxy != nil {
+		if cfg.SystemProxy.HTTP == listen || cfg.SystemProxy.HTTPS == listen {
+			return true
+		}
+	}
+	return false
 }
 
 func checkAlerts(store keychain.Store, add func(string, Status, string)) {
