@@ -11,11 +11,61 @@ import (
 const reservedActionCacheAddr = "127.0.0.1:19527"
 
 // ProxyForward tunnels guest loopback TCP connections over `tart exec -i` to
-// one fixed upstream proxy dialed from the host. It does not rewrite env or
-// system_proxy.
+// one fixed upstream proxy dialed from the host.
 type ProxyForward struct {
 	Listen   string `yaml:"listen"`
 	Upstream string `yaml:"upstream"`
+}
+
+// ApplyProxyForwardDefaults fills only unset proxy settings on the effective
+// runtime config; operator-supplied values are never overwritten and nothing is
+// written back to YAML.
+//
+// system_proxy changes the guest-wide network service, so it stays opt-in: it
+// is filled only when the block is present without any endpoint. A block that
+// sets http or https is left exactly as written.
+func ApplyProxyForwardDefaults(cfg *Config) {
+	if cfg == nil || cfg.ProxyForward == nil {
+		return
+	}
+	host, port, err := splitForwardEndpoint("proxy_forward.listen", cfg.ProxyForward.Listen, true)
+	if err != nil {
+		return
+	}
+	listen := net.JoinHostPort(host, port)
+
+	if cfg.Env == nil {
+		cfg.Env = make(map[string]string)
+	}
+	proxyURL := "http://" + listen
+	if !hasEnvKey(cfg.Env, "http_proxy", "HTTP_PROXY") {
+		cfg.Env["http_proxy"] = proxyURL
+	}
+	if !hasEnvKey(cfg.Env, "https_proxy", "HTTPS_PROXY") {
+		cfg.Env["https_proxy"] = proxyURL
+	}
+	if !hasEnvKey(cfg.Env, "no_proxy", "NO_PROXY") {
+		cfg.Env["no_proxy"] = "localhost,127.0.0.1"
+	}
+
+	sp := cfg.SystemProxy
+	if sp == nil || strings.TrimSpace(sp.HTTP) != "" || strings.TrimSpace(sp.HTTPS) != "" {
+		return
+	}
+	sp.HTTP = listen
+	sp.HTTPS = listen
+	if sp.Bypass == nil {
+		sp.Bypass = []string{"localhost", "127.0.0.1"}
+	}
+}
+
+func hasEnvKey(env map[string]string, keys ...string) bool {
+	for _, key := range keys {
+		if _, ok := env[key]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func validateProxyForward(cfg *Config) error {

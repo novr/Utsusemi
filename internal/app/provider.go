@@ -14,12 +14,17 @@ import (
 
 // ValidateConfig validates config shape and pool limits using provider capabilities.
 // It does not require the provider runtime (e.g. tart in PATH) to be present.
+//
+// It validates the effective config (proxy_forward defaults applied on a copy),
+// matching what Load runs, so `configure` accepts exactly what `run` accepts.
 func ValidateConfig(cfg *config.Config) (target.Target, error) {
 	p, err := buildProvider(cfg, provider.RealExecutor{}, false)
 	if err != nil {
 		return target.Target{}, err
 	}
-	return config.Validate(cfg, p)
+	effective := config.Clone(cfg)
+	config.ApplyProxyForwardDefaults(effective)
+	return config.Validate(effective, p)
 }
 
 func newProvider(cfg *config.Config, exec provider.CommandExecutor) (provider.VMProvider, error) {

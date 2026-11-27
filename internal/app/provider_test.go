@@ -132,3 +132,20 @@ func TestValidateConfigSkipsProviderAvailability(t *testing.T) {
 		t.Fatalf("validate config: %v", err)
 	}
 }
+
+func TestValidateConfigAppliesProxyForwardDefaults(t *testing.T) {
+	cfg := validConfig()
+	cfg.ProxyForward = &config.ProxyForward{Listen: "127.0.0.1:8888", Upstream: "proxy.example:8080"}
+	cfg.SystemProxy = &config.SystemProxy{}
+	if _, err := ValidateConfig(cfg); err != nil {
+		t.Fatalf("empty system_proxy with proxy_forward must validate: %v", err)
+	}
+	if cfg.Env != nil || cfg.SystemProxy.HTTP != "" || cfg.SystemProxy.Bypass != nil {
+		t.Fatalf("ValidateConfig mutated the caller's config: env=%v system_proxy=%+v", cfg.Env, cfg.SystemProxy)
+	}
+
+	cfg.ProxyForward = nil
+	if _, err := ValidateConfig(cfg); err == nil {
+		t.Fatal("empty system_proxy without proxy_forward must stay invalid")
+	}
+}

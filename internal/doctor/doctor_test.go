@@ -291,26 +291,12 @@ func TestCheckProxyForward(t *testing.T) {
 			Listen:   "127.0.0.1:8888",
 			Upstream: upAddr,
 		},
-		Env: map[string]string{"https_proxy": "http://127.0.0.1:8888"},
 	}
 	checks = recordChecks(func(add checkFn) {
 		checkProxyForward(context.Background(), Input{Cfg: okCfg}, add)
 	})
 	if len(checks) == 0 || checks[0].Name != "proxy_forward" || checks[0].Status != StatusOK {
 		t.Fatalf("want proxy_forward ok: %+v", checks)
-	}
-
-	warnCfg := &config.Config{
-		ProxyForward: &config.ProxyForward{
-			Listen:   "127.0.0.1:8888",
-			Upstream: upAddr,
-		},
-	}
-	checks = recordChecks(func(add checkFn) {
-		checkProxyForward(context.Background(), Input{Cfg: warnCfg}, add)
-	})
-	if len(checks) == 0 || checks[0].Status != StatusWarn || !strings.Contains(checks[0].Message, "env/system_proxy") {
-		t.Fatalf("want env warn: %+v", checks)
 	}
 
 	failCfg := &config.Config{

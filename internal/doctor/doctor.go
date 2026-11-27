@@ -207,34 +207,12 @@ func checkProxyForward(ctx context.Context, in Input, add func(string, Status, s
 	}
 	_ = conn.Close()
 
-	msg := fmt.Sprintf("upstream reachable (%s → %s)", pf.Listen, pf.Upstream)
-	if !proxyForwardEnvMentionsListen(in.Cfg, pf.Listen) {
-		add("proxy_forward", StatusWarn, msg+"; env/system_proxy do not mention listen address — set guest proxy to http://"+pf.Listen)
-	} else {
-		add("proxy_forward", StatusOK, msg)
-	}
+	add("proxy_forward", StatusOK, fmt.Sprintf("upstream reachable (%s → %s)", pf.Listen, pf.Upstream))
 
 	var lim syscall.Rlimit
 	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &lim); err == nil && lim.Cur < proxyForwardFDWarn {
 		add("proxy_forward_fds", StatusWarn, fmt.Sprintf("RLIMIT_NOFILE soft=%d (recommend >= %d for high CONNECT concurrency)", lim.Cur, proxyForwardFDWarn))
 	}
-}
-
-func proxyForwardEnvMentionsListen(cfg *config.Config, listen string) bool {
-	if cfg == nil || listen == "" {
-		return false
-	}
-	for _, key := range []string{"http_proxy", "HTTP_PROXY", "https_proxy", "HTTPS_PROXY"} {
-		if v, ok := cfg.Env[key]; ok && strings.Contains(v, listen) {
-			return true
-		}
-	}
-	if cfg.SystemProxy != nil {
-		if cfg.SystemProxy.HTTP == listen || cfg.SystemProxy.HTTPS == listen {
-			return true
-		}
-	}
-	return false
 }
 
 func checkAlerts(store keychain.Store, add func(string, Status, string)) {

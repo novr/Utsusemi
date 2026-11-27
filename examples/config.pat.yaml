@@ -30,6 +30,7 @@ pool_size: 1
 #     - "*.local"
 # Host resolves proxy hostnames into guest /etc/hosts (split DNS). Passwordless sudo required.
 # resolve_proxy_on_host: true
+# Missing env proxy keys are filled automatically; `system_proxy: {}` opts in to the guest system proxy.
 # proxy_forward:
 #   listen: 127.0.0.1:8888
 #   upstream: proxy.example:8080
