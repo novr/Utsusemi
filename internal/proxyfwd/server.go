@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -37,14 +38,18 @@ type Server struct {
 	BindRetry    time.Duration
 	ResolveTTL   time.Duration
 
-	mu       sync.Mutex
-	ln       net.Listener
-	listenIP netip.Addr
-	allowed  *net.IPNet
-	closed   bool
-	active   int32
-	cancel   context.CancelFunc
-	wg       sync.WaitGroup
+	bindMu       sync.Mutex
+	mu           sync.Mutex
+	ln           net.Listener
+	listenIP     netip.Addr
+	ifaceIndex   int
+	ifaceName    string
+	allowed      *net.IPNet
+	closed       bool
+	active       int32
+	cancel       context.CancelFunc
+	wg           sync.WaitGroup
+	lastLimitLog atomic.Int64
 
 	resolveMu sync.Mutex
 	cachedIP  netip.Addr
@@ -81,26 +86,33 @@ func New(listen, upstream string, resolver hostdns.Resolver, logger *slog.Logger
 }
 
 // EnsureListening waits until Listen can bind, then accepts connections.
-// Safe to call repeatedly; rebinds when the listen IP disappeared from the host.
+// Concurrent callers share one bind. A live listener is kept when the same
+// interface still owns the listen IP; a new interface index (vmnet bridge
+// recreated) rebinds. Non-loopback listen IPs must be on a bridge* interface.
 func (s *Server) EnsureListening(ctx context.Context) error {
+	s.bindMu.Lock()
+	defer s.bindMu.Unlock()
+
 	s.mu.Lock()
 	if s.closed {
 		s.mu.Unlock()
 		return fmt.Errorf("proxyfwd: closed")
 	}
-	if s.ln != nil && listenIPPresent(s.listenIP) {
+	if s.ln != nil && listenStillCurrent(s.listenIP, s.ifaceIndex, s.ifaceName) {
 		s.mu.Unlock()
 		return nil
 	}
-	if s.ln != nil {
-		_ = s.ln.Close()
-		s.ln = nil
-		if s.cancel != nil {
-			s.cancel()
-			s.cancel = nil
-		}
-	}
+	old := s.ln
+	oldCancel := s.cancel
+	s.ln = nil
+	s.cancel = nil
 	s.mu.Unlock()
+	if oldCancel != nil {
+		oldCancel()
+	}
+	if old != nil {
+		_ = old.Close()
+	}
 
 	host, port, err := net.SplitHostPort(s.Listen)
 	if err != nil {
@@ -115,12 +127,11 @@ func (s *Server) EnsureListening(ctx context.Context) error {
 	if retry <= 0 {
 		retry = DefaultBindRetry
 	}
-	var ln net.Listener
 	for {
 		if err := ctx.Err(); err != nil {
 			return err
 		}
-		allowed, ok := subnetForIP(listenIP)
+		bind, ok := ifaceForIP(listenIP)
 		if !ok {
 			select {
 			case <-ctx.Done():
@@ -129,33 +140,39 @@ func (s *Server) EnsureListening(ctx context.Context) error {
 				continue
 			}
 		}
-		ln, err = net.Listen("tcp", net.JoinHostPort(listenIP.String(), port))
-		if err == nil {
-			s.mu.Lock()
-			if s.closed {
-				s.mu.Unlock()
-				_ = ln.Close()
-				return fmt.Errorf("proxyfwd: closed")
+		if !listenIP.IsLoopback() && !strings.HasPrefix(bind.name, "bridge") {
+			return fmt.Errorf("proxyfwd listen %s is on %q; want a Tart vmnet bridge interface", s.Listen, bind.name)
+		}
+		ln, err := net.Listen("tcp", net.JoinHostPort(listenIP.String(), port))
+		if err != nil {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(retry):
+				continue
 			}
-			serveCtx, cancel := context.WithCancel(context.Background())
-			s.ln = ln
-			s.listenIP = listenIP
-			s.allowed = allowed
-			s.cancel = cancel
+		}
+		s.mu.Lock()
+		if s.closed {
 			s.mu.Unlock()
-			s.Logger.Info("proxy forward listening", "listen", s.Listen, "upstream", s.Upstream)
-			s.wg.Add(1)
-			go func() {
-				defer s.wg.Done()
-				s.acceptLoop(serveCtx, ln)
-			}()
-			return nil
+			_ = ln.Close()
+			return fmt.Errorf("proxyfwd: closed")
 		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-time.After(retry):
-		}
+		serveCtx, cancel := context.WithCancel(context.Background())
+		s.ln = ln
+		s.listenIP = listenIP
+		s.ifaceIndex = bind.index
+		s.ifaceName = bind.name
+		s.allowed = bind.net
+		s.cancel = cancel
+		s.mu.Unlock()
+		s.Logger.Info("proxy forward listening", "listen", s.Listen, "upstream", s.Upstream, "iface", bind.name)
+		s.wg.Add(1)
+		go func() {
+			defer s.wg.Done()
+			s.acceptLoop(serveCtx, ln)
+		}()
+		return nil
 	}
 }
 
@@ -184,18 +201,24 @@ func (s *Server) Close() error {
 }
 
 func (s *Server) acceptLoop(ctx context.Context, ln net.Listener) {
+	defer func() {
+		s.mu.Lock()
+		if s.ln == ln {
+			s.ln = nil
+		}
+		s.mu.Unlock()
+	}()
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			select {
-			case <-ctx.Done():
+			if ctx.Err() != nil {
 				return
-			default:
 			}
 			if ne, ok := err.(net.Error); ok && ne.Temporary() {
 				time.Sleep(50 * time.Millisecond)
 				continue
 			}
+			s.Logger.Warn("proxy forward accept stopped", "listen", s.Listen, "error", err)
 			return
 		}
 		if !s.allowSrc(conn.RemoteAddr()) {
@@ -204,7 +227,9 @@ func (s *Server) acceptLoop(ctx context.Context, ln net.Listener) {
 			continue
 		}
 		if int(atomic.LoadInt32(&s.active)) >= s.maxConns() {
-			s.Logger.Warn("proxy forward max connections", "max", s.maxConns(), "listen", s.Listen)
+			if s.allowLimitLog() {
+				s.Logger.Warn("proxy forward max connections", "max", s.maxConns(), "listen", s.Listen)
+			}
 			_ = conn.Close()
 			continue
 		}
@@ -400,18 +425,34 @@ func (s *Server) invalidateResolve() {
 	s.resolveMu.Unlock()
 }
 
-func listenIPPresent(ip netip.Addr) bool {
-	if !ip.IsValid() {
+func (s *Server) allowLimitLog() bool {
+	const gap = int64(10 * time.Second)
+	now := time.Now().UnixNano()
+	prev := s.lastLimitLog.Load()
+	if prev != 0 && now-prev < gap {
 		return false
 	}
-	_, ok := subnetForIP(ip)
-	return ok
+	return s.lastLimitLog.CompareAndSwap(prev, now)
 }
 
-func subnetForIP(want netip.Addr) (*net.IPNet, bool) {
+type ifaceBind struct {
+	index int
+	name  string
+	net   *net.IPNet
+}
+
+func listenStillCurrent(ip netip.Addr, index int, name string) bool {
+	b, ok := ifaceForIP(ip)
+	return ok && b.index == index && b.name == name
+}
+
+func ifaceForIP(want netip.Addr) (ifaceBind, bool) {
+	if !want.IsValid() {
+		return ifaceBind{}, false
+	}
 	ifaces, err := net.Interfaces()
 	if err != nil {
-		return nil, false
+		return ifaceBind{}, false
 	}
 	for _, iface := range ifaces {
 		addrs, err := iface.Addrs()
@@ -427,13 +468,21 @@ func subnetForIP(want netip.Addr) (*net.IPNet, bool) {
 			if !ok {
 				continue
 			}
-			got = got.Unmap()
-			if got == want.Unmap() {
-				return ipnet, true
+			if got.Unmap() == want.Unmap() {
+				return ifaceBind{index: iface.Index, name: iface.Name, net: ipnet}, true
 			}
 		}
 	}
-	return nil, false
+	return ifaceBind{}, false
+}
+
+// InterfaceName returns the host interface that currently owns ip.
+func InterfaceName(ip netip.Addr) (string, bool) {
+	b, ok := ifaceForIP(ip)
+	if !ok {
+		return "", false
+	}
+	return b.name, true
 }
 
 // ActiveConns returns the number of in-flight relays (for tests).

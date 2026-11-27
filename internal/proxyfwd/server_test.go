@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -246,6 +247,112 @@ func TestCloseReleases(t *testing.T) {
 	if err := s.EnsureListening(context.Background()); err == nil {
 		t.Fatal("expected error after close")
 	}
+}
+
+func TestEnsureListeningConcurrentAndRebind(t *testing.T) {
+	upAddr, closeUp := startEcho(t)
+	defer closeUp()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	listen := ln.Addr().String()
+	_ = ln.Close()
+
+	s := New(listen, upAddr, &fakeResolver{}, nil)
+	s.BindRetry = 5 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	errc := make(chan error, 8)
+	var wg sync.WaitGroup
+	for i := 0; i < 8; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			errc <- s.EnsureListening(ctx)
+		}()
+	}
+	wg.Wait()
+	close(errc)
+	for err := range errc {
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	defer s.Close()
+
+	first := s.ln
+	if first == nil {
+		t.Fatal("listener missing")
+	}
+	if err := s.EnsureListening(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if s.ln != first {
+		t.Fatal("same interface should keep the listener")
+	}
+	s.ifaceIndex = -1
+	if err := s.EnsureListening(ctx); err != nil {
+		t.Fatal(err)
+	}
+	if s.ln == first || s.ln == nil {
+		t.Fatal("interface index change should rebind")
+	}
+	c, err := net.DialTimeout("tcp", listen, time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.Close()
+	if _, err := c.Write([]byte("ping")); err != nil {
+		t.Fatal(err)
+	}
+	buf := make([]byte, 4)
+	if _, err := io.ReadFull(c, buf); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestRejectNonBridgeListen(t *testing.T) {
+	ip := nonBridgeIPv4(t)
+	if ip == "" {
+		t.Skip("no non-bridge IPv4")
+	}
+	upAddr, closeUp := startEcho(t)
+	defer closeUp()
+	s := New(net.JoinHostPort(ip, "19998"), upAddr, &fakeResolver{}, nil)
+	s.BindRetry = 10 * time.Millisecond
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	err := s.EnsureListening(ctx)
+	if err == nil || !strings.Contains(err.Error(), "bridge") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func nonBridgeIPv4(t *testing.T) string {
+	t.Helper()
+	ifaces, err := net.Interfaces()
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, iface := range ifaces {
+		if strings.HasPrefix(iface.Name, "bridge") || strings.HasPrefix(iface.Name, "lo") {
+			continue
+		}
+		addrs, err := iface.Addrs()
+		if err != nil {
+			continue
+		}
+		for _, a := range addrs {
+			ipnet, ok := a.(*net.IPNet)
+			if !ok || ipnet.IP == nil || ipnet.IP.To4() == nil || ipnet.IP.IsLoopback() {
+				continue
+			}
+			return ipnet.IP.String()
+		}
+	}
+	return ""
 }
 
 func TestRejectOutsideSubnet(t *testing.T) {

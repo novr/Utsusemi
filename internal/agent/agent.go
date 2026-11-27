@@ -20,6 +20,7 @@ import (
 	"github.com/novr/utsusemi/internal/proxyfwd"
 	"github.com/novr/utsusemi/internal/registrar"
 	"github.com/novr/utsusemi/internal/runnercache"
+	"github.com/novr/utsusemi/internal/spawn"
 	"github.com/novr/utsusemi/internal/target"
 )
 
@@ -62,10 +63,7 @@ func New(opts Options) (*Agent, error) {
 	// Freeze Load-time config for this process; respawns must not follow later
 	// mutations of the caller's *Config (or a future reload).
 	cfg := config.Clone(opts.Config)
-	var fwd *proxyfwd.Server
-	if cfg.ProxyForward != nil {
-		fwd = proxyfwd.New(cfg.ProxyForward.Listen, cfg.ProxyForward.Upstream, nil, logger)
-	}
+	fwd, forwarder := proxyForwarder(cfg, logger)
 	return &Agent{
 		cfg:      cfg,
 		tgt:      opts.Target,
@@ -78,12 +76,23 @@ func New(opts Options) (*Agent, error) {
 			Logger:     logger,
 			Notifier:   opts.Notifier,
 			StuckAfter: opts.StuckAfter,
-			Forwarder:  fwd,
+			Forwarder:  forwarder,
 		}),
 		forwarder:   fwd,
 		logger:      logger,
 		logFilePath: opts.LogFilePath,
 	}, nil
+}
+
+// proxyForwarder returns a nil interface when proxy_forward is unset.
+// A typed nil *proxyfwd.Server must not be stored in spawn.ProxyForwarder:
+// the interface would be non-nil and EnsureListening would panic.
+func proxyForwarder(cfg *config.Config, logger *slog.Logger) (*proxyfwd.Server, spawn.ProxyForwarder) {
+	if cfg == nil || cfg.ProxyForward == nil {
+		return nil, nil
+	}
+	srv := proxyfwd.New(cfg.ProxyForward.Listen, cfg.ProxyForward.Upstream, nil, logger)
+	return srv, srv
 }
 
 // Config returns the agent-owned frozen config (read-only by convention).
