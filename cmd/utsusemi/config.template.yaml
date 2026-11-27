@@ -46,4 +46,4 @@ pool_size: 1
 # The legacy top-level system_proxy: {} form remains supported.
 # proxy_forward:
 #   upstream: proxy.example:8080
-#   system_proxy: true
+#   system_proxy: true   # optional

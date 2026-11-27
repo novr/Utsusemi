@@ -69,7 +69,7 @@ func FromConfig(cfg *config.Config, agentID string) Snapshot {
 	}
 	var fwdListen, fwdUpstream string
 	if cfg.ProxyForward != nil {
-		fwdListen = cfg.ProxyForward.Listen
+		fwdListen = cfg.ProxyForward.EffectiveListen()
 		fwdUpstream = cfg.ProxyForward.Upstream
 	}
 	return Snapshot{

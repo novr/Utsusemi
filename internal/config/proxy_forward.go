@@ -19,6 +19,19 @@ type ProxyForward struct {
 	SystemProxy bool   `yaml:"system_proxy,omitempty"`
 }
 
+// EffectiveListen returns the normalized guest listen address, applying the
+// default when unset. An invalid value is returned trimmed so Validate reports it.
+func (pf *ProxyForward) EffectiveListen() string {
+	if pf == nil {
+		return ""
+	}
+	host, port, err := normalizedProxyForwardListen(pf.Listen)
+	if err != nil {
+		return strings.TrimSpace(pf.Listen)
+	}
+	return net.JoinHostPort(host, port)
+}
+
 // ApplyProxyForwardDefaults fills only unset proxy settings on the effective
 // runtime config; operator-supplied values are never overwritten and nothing is
 // written back to YAML.
@@ -31,12 +44,10 @@ func ApplyProxyForwardDefaults(cfg *Config) {
 		return
 	}
 	pf := cfg.ProxyForward
-	host, port, err := normalizedProxyForwardListen(pf.Listen)
-	if err != nil {
+	if _, _, err := normalizedProxyForwardListen(pf.Listen); err != nil {
 		return
 	}
-	listen := net.JoinHostPort(host, port)
-	pf.Listen = listen
+	listen := pf.EffectiveListen()
 
 	if cfg.Env == nil {
 		cfg.Env = make(map[string]string)
@@ -95,7 +106,7 @@ func validateProxyForward(cfg *Config) error {
 		return err
 	}
 	if cfg.ActionCache && net.JoinHostPort(listenHost, listenPort) == reservedActionCacheAddr {
-		return fmt.Errorf("proxy_forward.listen %s conflicts with action_cache (%s)", pf.Listen, reservedActionCacheAddr)
+		return fmt.Errorf("proxy_forward.listen %s conflicts with action_cache (%s)", pf.EffectiveListen(), reservedActionCacheAddr)
 	}
 	return nil
 }

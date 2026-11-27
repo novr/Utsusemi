@@ -91,7 +91,7 @@ func proxyForwarder(cfg *config.Config, logger *slog.Logger) (*proxyfwd.Forwarde
 	if cfg == nil || cfg.ProxyForward == nil {
 		return nil, nil
 	}
-	fwd := proxyfwd.New(cfg.ProxyForward.Listen, cfg.ProxyForward.Upstream, nil, logger)
+	fwd := proxyfwd.New(cfg.ProxyForward.EffectiveListen(), cfg.ProxyForward.Upstream, nil, logger)
 	return fwd, fwd
 }
 
@@ -188,7 +188,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 	if a.forwarder != nil {
 		startAttrs = append(startAttrs,
-			"proxy_forward_listen", a.cfg.ProxyForward.Listen,
+			"proxy_forward_listen", a.cfg.ProxyForward.EffectiveListen(),
 			"proxy_forward_upstream", a.cfg.ProxyForward.Upstream,
 		)
 	}
