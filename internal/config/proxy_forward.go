@@ -11,11 +11,56 @@ import (
 const reservedActionCacheAddr = "127.0.0.1:19527"
 
 // ProxyForward tunnels guest loopback TCP connections over `tart exec -i` to
-// one fixed upstream proxy dialed from the host. It does not rewrite env or
-// system_proxy.
+// one fixed upstream proxy dialed from the host.
 type ProxyForward struct {
 	Listen   string `yaml:"listen"`
 	Upstream string `yaml:"upstream"`
+}
+
+// ApplyProxyForwardDefaults fills only unset proxy settings on the effective
+// runtime config. It does not override values supplied by the operator.
+func ApplyProxyForwardDefaults(cfg *Config) {
+	if cfg == nil || cfg.ProxyForward == nil {
+		return
+	}
+
+	proxyURL := "http://" + cfg.ProxyForward.Listen
+	if cfg.Env == nil {
+		cfg.Env = make(map[string]string)
+	}
+	if !hasEnvKey(cfg.Env, "http_proxy", "HTTP_PROXY") {
+		cfg.Env["http_proxy"] = proxyURL
+	}
+	if !hasEnvKey(cfg.Env, "https_proxy", "HTTPS_PROXY") {
+		cfg.Env["https_proxy"] = proxyURL
+	}
+	if !hasEnvKey(cfg.Env, "no_proxy", "NO_PROXY") {
+		cfg.Env["no_proxy"] = "localhost,127.0.0.1"
+	}
+
+	// system_proxy remains opt-in because it changes the guest-wide macOS
+	// network service. When present, only its missing fields are filled.
+	if cfg.SystemProxy == nil {
+		return
+	}
+	if strings.TrimSpace(cfg.SystemProxy.HTTP) == "" {
+		cfg.SystemProxy.HTTP = cfg.ProxyForward.Listen
+	}
+	if strings.TrimSpace(cfg.SystemProxy.HTTPS) == "" {
+		cfg.SystemProxy.HTTPS = cfg.ProxyForward.Listen
+	}
+	if cfg.SystemProxy.Bypass == nil {
+		cfg.SystemProxy.Bypass = []string{"localhost", "127.0.0.1"}
+	}
+}
+
+func hasEnvKey(env map[string]string, keys ...string) bool {
+	for _, key := range keys {
+		if _, ok := env[key]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func validateProxyForward(cfg *Config) error {

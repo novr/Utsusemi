@@ -38,7 +38,8 @@ pool_size: 1
 #     - "*.local"
 # Host resolves proxy hostnames into guest /etc/hosts (split DNS). Passwordless sudo required.
 # resolve_proxy_on_host: true
-# Guest loopback TCP tunnel over tart exec → fixed host upstream. Point env/system_proxy at listen.
+# Guest loopback TCP tunnel over tart exec → fixed host upstream. Missing env proxy keys are filled automatically.
+# An existing system_proxy is filled too; system_proxy itself is not created automatically.
 # proxy_forward:
 #   listen: 127.0.0.1:8888
 #   upstream: proxy.example:8080

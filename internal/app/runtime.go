@@ -20,11 +20,11 @@ import (
 )
 
 type Runtime struct {
-	Config     *config.Config
-	Target     target.Target
-	Provider   provider.VMProvider
-	Registrar  registrar.RunnerRegistrar
-	Logger     *slog.Logger
+	Config      *config.Config
+	Target      target.Target
+	Provider    provider.VMProvider
+	Registrar   registrar.RunnerRegistrar
+	Logger      *slog.Logger
 	LogFilePath string
 }
 
@@ -41,6 +41,7 @@ func Load(ctx context.Context, opts LoadOptions) (*Runtime, error) {
 	if err != nil {
 		return nil, err
 	}
+	config.ApplyProxyForwardDefaults(cfg)
 
 	exec := opts.Exec
 	if exec == nil {
