@@ -288,10 +288,10 @@ func TestCheckProxyForward(t *testing.T) {
 
 	okCfg := &config.Config{
 		ProxyForward: &config.ProxyForward{
-			Listen:   "192.168.64.1:8888",
+			Listen:   "127.0.0.1:8888",
 			Upstream: upAddr,
 		},
-		Env: map[string]string{"https_proxy": "http://192.168.64.1:8888"},
+		Env: map[string]string{"https_proxy": "http://127.0.0.1:8888"},
 	}
 	checks = recordChecks(func(add checkFn) {
 		checkProxyForward(context.Background(), Input{Cfg: okCfg}, add)
@@ -302,7 +302,7 @@ func TestCheckProxyForward(t *testing.T) {
 
 	warnCfg := &config.Config{
 		ProxyForward: &config.ProxyForward{
-			Listen:   "192.168.64.1:8888",
+			Listen:   "127.0.0.1:8888",
 			Upstream: upAddr,
 		},
 	}
@@ -315,7 +315,7 @@ func TestCheckProxyForward(t *testing.T) {
 
 	failCfg := &config.Config{
 		ProxyForward: &config.ProxyForward{
-			Listen:   "192.168.64.1:8888",
+			Listen:   "127.0.0.1:8888",
 			Upstream: "proxy.missing:9",
 		},
 	}

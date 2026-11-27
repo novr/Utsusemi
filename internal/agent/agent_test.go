@@ -65,7 +65,7 @@ func TestProxyForwarderUnsetIsNilInterface(t *testing.T) {
 		t.Fatalf("unset proxy_forward: srv=%v fwd=%v", srv, fwd)
 	}
 	srv, fwd = proxyForwarder(&config.Config{
-		ProxyForward: &config.ProxyForward{Listen: "192.168.64.1:8888", Upstream: "127.0.0.1:3128"},
+		ProxyForward: &config.ProxyForward{Listen: "127.0.0.1:8888", Upstream: "127.0.0.1:3128"},
 	}, nil)
 	if srv == nil || fwd == nil {
 		t.Fatal("configured proxy_forward must yield a forwarder")

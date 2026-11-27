@@ -40,7 +40,7 @@ type Agent struct {
 	tgt         target.Target
 	provider    provider.VMProvider
 	pool        *pool.Pool
-	forwarder   *proxyfwd.Server
+	forwarder   *proxyfwd.Forwarder
 	logger      *slog.Logger
 	logFilePath string
 }
@@ -85,14 +85,14 @@ func New(opts Options) (*Agent, error) {
 }
 
 // proxyForwarder returns a nil interface when proxy_forward is unset.
-// A typed nil *proxyfwd.Server must not be stored in spawn.ProxyForwarder:
-// the interface would be non-nil and EnsureListening would panic.
-func proxyForwarder(cfg *config.Config, logger *slog.Logger) (*proxyfwd.Server, spawn.ProxyForwarder) {
+// A typed nil *proxyfwd.Forwarder must not be stored in spawn.ProxyForwarder:
+// the interface would be non-nil and Start would panic.
+func proxyForwarder(cfg *config.Config, logger *slog.Logger) (*proxyfwd.Forwarder, spawn.ProxyForwarder) {
 	if cfg == nil || cfg.ProxyForward == nil {
 		return nil, nil
 	}
-	srv := proxyfwd.New(cfg.ProxyForward.Listen, cfg.ProxyForward.Upstream, nil, logger)
-	return srv, srv
+	fwd := proxyfwd.New(cfg.ProxyForward.Listen, cfg.ProxyForward.Upstream, nil, logger)
+	return fwd, fwd
 }
 
 // Config returns the agent-owned frozen config (read-only by convention).
@@ -155,6 +155,15 @@ func (a *Agent) Run(ctx context.Context) error {
 		}
 		a.logger.Info("action cache enabled", "data", actioncache.Dir(a.cfg.StateDir))
 	}
+	if a.forwarder != nil {
+		if err := proxyfwd.StageBin(a.cfg.StateDir); err != nil {
+			err = fmt.Errorf("stage proxy forward binary: %w", err)
+			if shouldAlertFatal(ctx, err) {
+				a.pool.AlertFatal(ctx, err)
+			}
+			return err
+		}
+	}
 
 	ctx, stop := signal.NotifyContext(ctx, syscall.SIGINT, syscall.SIGTERM)
 	defer stop()
@@ -185,11 +194,6 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 	a.logger.Info("agent started", startAttrs...)
 	err = a.pool.Run(ctx)
-	if a.forwarder != nil {
-		if closeErr := a.forwarder.Close(); closeErr != nil {
-			a.logger.Warn("proxy forward close failed", "error", closeErr)
-		}
-	}
 	if cause := runAlertCause(ctx, err, a.pool.FatalErr()); cause != nil {
 		a.pool.AlertFatal(ctx, cause)
 	}

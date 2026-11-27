@@ -62,6 +62,9 @@ func TestShellCompletionTopLevel(t *testing.T) {
 	if slices.Contains(names, "cache-serve") {
 		t.Fatalf("hidden cache-serve must not appear in completion: %v", names)
 	}
+	if slices.Contains(names, "proxy-guest") {
+		t.Fatalf("hidden proxy-guest must not appear in completion: %v", names)
+	}
 }
 
 func TestShellCompletionTopLevelPrefix(t *testing.T) {

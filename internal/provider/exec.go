@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -108,6 +109,110 @@ func outputCommand(ctx context.Context, name string, args []string) ([]byte, err
 		return nil, fmt.Errorf("%s %v: %w: %s", name, args, err, stderr.String())
 	}
 	return out, nil
+}
+
+type limitedStderr struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+	max int
+}
+
+func (l *limitedStderr) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if rem := l.max - l.buf.Len(); rem > 0 {
+		if len(p) > rem {
+			_, _ = l.buf.Write(p[:rem])
+		} else {
+			_, _ = l.buf.Write(p)
+		}
+	}
+	return len(p), nil
+}
+
+func (l *limitedStderr) String() string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return strings.TrimSpace(l.buf.String())
+}
+
+type cmdExecPipe struct {
+	cmd       *exec.Cmd
+	inW       *os.File
+	outR      *os.File
+	stderr    *limitedStderr
+	done      chan struct{}
+	closeOnce sync.Once
+}
+
+// openExecPipe starts name with dedicated OS pipes for binary stdin/stdout so
+// cmd.Wait never races with stdout reads.
+func openExecPipe(ctx context.Context, name string, args []string) (ExecPipe, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	inR, inW, err := os.Pipe()
+	if err != nil {
+		return nil, fmt.Errorf("stdin pipe: %w", err)
+	}
+	outR, outW, err := os.Pipe()
+	if err != nil {
+		_ = inR.Close()
+		_ = inW.Close()
+		return nil, fmt.Errorf("stdout pipe: %w", err)
+	}
+
+	cmd := exec.CommandContext(ctx, name, args...)
+	cmd.Env = os.Environ()
+	cmd.Stdin = inR
+	cmd.Stdout = outW
+	stderr := &limitedStderr{max: 4096}
+	cmd.Stderr = stderr
+
+	if err := cmd.Start(); err != nil {
+		_ = inR.Close()
+		_ = inW.Close()
+		_ = outR.Close()
+		_ = outW.Close()
+		return nil, fmt.Errorf("%s %v: %w", name, args, err)
+	}
+	_ = inR.Close()
+	_ = outW.Close()
+
+	done := make(chan struct{})
+	go func() {
+		_ = cmd.Wait()
+		close(done)
+	}()
+
+	return &cmdExecPipe{
+		cmd:    cmd,
+		inW:    inW,
+		outR:   outR,
+		stderr: stderr,
+		done:   done,
+	}, nil
+}
+
+func (p *cmdExecPipe) Read(b []byte) (int, error)  { return p.outR.Read(b) }
+func (p *cmdExecPipe) Write(b []byte) (int, error) { return p.inW.Write(b) }
+func (p *cmdExecPipe) Stderr() string              { return p.stderr.String() }
+
+func (p *cmdExecPipe) Close() error {
+	p.closeOnce.Do(func() {
+		_ = p.inW.Close()
+		_ = p.outR.Close()
+		select {
+		case <-p.done:
+			return
+		case <-time.After(250 * time.Millisecond):
+		}
+		if p.cmd.Process != nil {
+			_ = p.cmd.Process.Kill()
+		}
+		<-p.done
+	})
+	return nil
 }
 
 func freeDiskGB(path string) (float64, error) {

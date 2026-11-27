@@ -22,7 +22,6 @@ import (
 	"github.com/novr/utsusemi/internal/keychain"
 	"github.com/novr/utsusemi/internal/notify"
 	"github.com/novr/utsusemi/internal/provider"
-	"github.com/novr/utsusemi/internal/proxyfwd"
 	"github.com/novr/utsusemi/internal/registrar"
 	"github.com/novr/utsusemi/internal/runnercache"
 	"github.com/novr/utsusemi/internal/runnerrelease"
@@ -213,13 +212,6 @@ func checkProxyForward(ctx context.Context, in Input, add func(string, Status, s
 		add("proxy_forward", StatusWarn, msg+"; env/system_proxy do not mention listen address — set guest proxy to http://"+pf.Listen)
 	} else {
 		add("proxy_forward", StatusOK, msg)
-	}
-	if listenHost, _, err := net.SplitHostPort(pf.Listen); err == nil {
-		if ip, err := netip.ParseAddr(listenHost); err == nil && !ip.IsLoopback() {
-			if name, ok := proxyfwd.InterfaceName(ip); ok && !strings.HasPrefix(name, "bridge") {
-				add("proxy_forward_listen", StatusWarn, fmt.Sprintf("listen %s is on %s; use the Tart NAT bridge address, not a LAN interface", pf.Listen, name))
-			}
-		}
 	}
 
 	var lim syscall.Rlimit

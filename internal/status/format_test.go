@@ -20,7 +20,7 @@ func TestFormatTextRunning(t *testing.T) {
 			SystemProxyHTTPS:     "proxy.example:8080",
 			SystemProxyBypass:    []string{"localhost", "*.local"},
 			ResolveProxyOnHost:   true,
-			ProxyForwardListen:   "192.168.64.1:8888",
+			ProxyForwardListen:   "127.0.0.1:8888",
 			ProxyForwardUpstream: "proxy.example:8080",
 		},
 		RunnerVersion: RunnerVersionInfo{
@@ -53,7 +53,7 @@ func TestFormatTextRunning(t *testing.T) {
 		"runtime: active",
 		"system_proxy: http=proxy.example:8080 https=proxy.example:8080 bypass=localhost,*.local",
 		"resolve_proxy_on_host: true",
-		"proxy_forward: listen=192.168.64.1:8888 upstream=proxy.example:8080",
+		"proxy_forward: listen=127.0.0.1:8888 upstream=proxy.example:8080",
 		"base_image: ghcr.io/example/image:1",
 		"runner_version: 2.337.0 (config.yaml 2.400.0)",
 		"agent: running (pid 12345, uptime 2h15m)",

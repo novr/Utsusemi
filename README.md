@@ -283,19 +283,19 @@ Keep `runner_version` at GitHub’s current [Actions runner](https://github.com/
 >   https_proxy: http://proxy.example:8080
 > ```
 >
-> When the guest can resolve the proxy but **cannot open TCP** to it (corporate ACL that allows the Mac host but rejects Tart NAT source addresses), use `proxy_forward` instead of (or together with) `resolve_proxy_on_host`. The agent binds a TCP relay on a Tart NAT gateway address after each VM is ready, and dials a fixed upstream from the host. Point `env` / `system_proxy` at the **listen** address (not the corporate hostname). `listen` must be the vmnet bridge address (typically `192.168.64.1`); an address on a LAN interface such as Wi-Fi is rejected when the agent binds, because every guest job would share the host's route to `upstream`. `upstream` may be a corporate `host:port` or `127.0.0.1:port` (local tinyproxy/squid that stays bound while the NAT bridge appears and disappears). `localhost` is rejected — use `127.0.0.1`. Incompatible with `softnet: true`. Keep `127.0.0.1` / `localhost` in `no_proxy` / `bypass` so local Action cache and similar loopback services are not proxied. Restart the agent after changing this. Not a generic open HTTP proxy: no PAC, no CONNECT termination without upstream, no proxy auth management.
+> When the guest cannot open TCP to the proxy directly (corporate ACL blocking Tart NAT source addresses, `softnet: true`, or host firewall restrictions), use `proxy_forward` instead of (or together with) `resolve_proxy_on_host`. For each VM, the agent starts a guest loopback listener (`utsusemi proxy-guest`) over `tart exec -i` and dials a fixed `upstream` from the host — the host opens no listening port, so macOS Application Firewall (including MDM-managed Macs) and `softnet` do not block it. `listen` must be a guest loopback `IP:port` (typically `127.0.0.1:8888`, and not `127.0.0.1:19527` when `action_cache: true`). Point `env` / `system_proxy` at the **listen** address (not the corporate hostname). `upstream` may be a corporate `host:port` or `127.0.0.1:port` (local tinyproxy/squid). `localhost` is rejected — use `127.0.0.1`. Keep `127.0.0.1` / `localhost` in `no_proxy` / `bypass` so local Action cache and similar loopback services are not proxied. Restart the agent after changing this. Not a generic open HTTP proxy: no PAC, no CONNECT termination without upstream, no proxy auth management.
 >
 > ```yaml
 > proxy_forward:
->   listen: 192.168.64.1:8888
+>   listen: 127.0.0.1:8888
 >   upstream: proxy.example:8080
 > env:
->   http_proxy: http://192.168.64.1:8888
->   https_proxy: http://192.168.64.1:8888
+>   http_proxy: http://127.0.0.1:8888
+>   https_proxy: http://127.0.0.1:8888
 >   no_proxy: localhost,127.0.0.1
 > system_proxy:
->   http: 192.168.64.1:8888
->   https: 192.168.64.1:8888
+>   http: 127.0.0.1:8888
+>   https: 127.0.0.1:8888
 >   bypass:
 >     - localhost
 >     - 127.0.0.1

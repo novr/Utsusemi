@@ -576,12 +576,12 @@ type failForwarder struct {
 	err   error
 }
 
-func (f *failForwarder) EnsureListening(context.Context) error {
+func (f *failForwarder) Start(context.Context, provider.VMProvider, string) (io.Closer, error) {
 	f.calls++
-	return f.err
+	return nil, f.err
 }
 
-func TestProxyForwardEnsureListeningFailureSkipsJIT(t *testing.T) {
+func TestProxyForwardStartFailureSkipsJIT(t *testing.T) {
 	readyTimeout = 50 * time.Millisecond
 	readyPollInterval = 5 * time.Millisecond
 	t.Cleanup(func() {
@@ -594,7 +594,7 @@ func TestProxyForwardEnsureListeningFailureSkipsJIT(t *testing.T) {
 		Encoded: "jit",
 		Runner:  registrar.Runner{ID: 9, Name: "vm"},
 	}}}
-	fwd := &failForwarder{err: errors.New("bind failed")}
+	fwd := &failForwarder{err: errors.New("tunnel failed")}
 	spawner := testSpawner(t, gp)
 	spawner.opts.Registrar = reg
 	spawner.opts.Forwarder = fwd
@@ -603,11 +603,11 @@ func TestProxyForwardEnsureListeningFailureSkipsJIT(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected proxy forward error")
 	}
-	if !strings.Contains(err.Error(), "proxy forward listen") {
+	if !strings.Contains(err.Error(), "proxy forward start") {
 		t.Fatalf("error=%v", err)
 	}
 	if fwd.calls != 1 {
-		t.Fatalf("EnsureListening calls=%d, want 1", fwd.calls)
+		t.Fatalf("Start calls=%d, want 1", fwd.calls)
 	}
 	if reg.deleteCount() != 0 {
 		t.Fatalf("JIT should not run; deletes=%d", reg.deleteCount())

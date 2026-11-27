@@ -90,7 +90,7 @@ type Config struct {
 	// ResolveProxyOnHost injects host-resolved proxy hostnames into the guest
 	// /etc/hosts (opt-in). Proxy URL hostnames are left unchanged.
 	ResolveProxyOnHost bool `yaml:"resolve_proxy_on_host,omitempty"`
-	// ProxyForward is an opt-in host TCP relay (NAT listen → fixed upstream).
+	// ProxyForward is an opt-in guest-loopback → host-upstream TCP tunnel over tart exec.
 	ProxyForward  *ProxyForward `yaml:"proxy_forward,omitempty"`
 	ReclaimPolicy string        `yaml:"reclaim_policy,omitempty"`
 	ReclaimGrace  Duration      `yaml:"reclaim_grace,omitempty"`

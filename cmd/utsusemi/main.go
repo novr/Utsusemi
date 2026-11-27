@@ -42,6 +42,7 @@ func initRootCmd() {
 		rootCmd.AddCommand(newStopCmd())
 		rootCmd.AddCommand(newPullCmd())
 		rootCmd.AddCommand(newCacheServeCmd())
+		rootCmd.AddCommand(newProxyGuestCmd())
 	})
 }
 

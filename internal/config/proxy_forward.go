@@ -8,8 +8,11 @@ import (
 	"strings"
 )
 
-// ProxyForward is an opt-in host-side TCP relay from a Tart NAT listen address
-// to one fixed upstream proxy. It does not rewrite env or system_proxy.
+const reservedActionCacheAddr = "127.0.0.1:19527"
+
+// ProxyForward tunnels guest loopback TCP connections over `tart exec -i` to
+// one fixed upstream proxy dialed from the host. It does not rewrite env or
+// system_proxy.
 type ProxyForward struct {
 	Listen   string `yaml:"listen"`
 	Upstream string `yaml:"upstream"`
@@ -24,21 +27,17 @@ func validateProxyForward(cfg *Config) error {
 	if err != nil {
 		return err
 	}
-	upHost, upPort, err := splitForwardEndpoint("proxy_forward.upstream", pf.Upstream, false)
-	if err != nil {
+	if _, _, err := splitForwardEndpoint("proxy_forward.upstream", pf.Upstream, false); err != nil {
 		return err
 	}
-	if listenHost == upHost && listenPort == upPort {
-		return fmt.Errorf("proxy_forward.listen must not equal proxy_forward.upstream")
-	}
-	if cfg.Softnet {
-		return fmt.Errorf("proxy_forward cannot be used with softnet: true (guest cannot reach the host listen address)")
+	if cfg.ActionCache && net.JoinHostPort(listenHost, listenPort) == reservedActionCacheAddr {
+		return fmt.Errorf("proxy_forward.listen %s conflicts with action_cache (%s)", pf.Listen, reservedActionCacheAddr)
 	}
 	return nil
 }
 
 // splitForwardEndpoint parses host:port.
-// listenStrict rejects hostnames and loopback/unspecified/link-local/multicast.
+// listenStrict requires a guest loopback IP:port (e.g. 127.0.0.1:8888).
 // upstream allows hostnames and 127.0.0.1, but rejects localhost / 0.0.0.0 / ::.
 func splitForwardEndpoint(kind, raw string, listenStrict bool) (host, port string, err error) {
 	raw = strings.TrimSpace(raw)
@@ -65,19 +64,19 @@ func splitForwardEndpoint(kind, raw string, listenStrict bool) (host, port strin
 	addr, parseErr := netip.ParseAddr(host)
 	if listenStrict {
 		if parseErr != nil {
-			return "", "", fmt.Errorf("%s %q must be an IP:port (hostname not allowed)", kind, raw)
+			return "", "", fmt.Errorf("%s %q must be a guest loopback IP:port (e.g. 127.0.0.1:8888)", kind, raw)
 		}
-		if err := rejectListenAddr(kind, addr); err != nil {
+		if err := requireLoopbackListen(kind, addr); err != nil {
 			return "", "", err
 		}
-		return addr.String(), port, nil
+		return addr.Unmap().String(), port, nil
 	}
 
 	if parseErr == nil {
 		if err := rejectUpstreamAddr(kind, addr); err != nil {
 			return "", "", err
 		}
-		return addr.String(), port, nil
+		return addr.Unmap().String(), port, nil
 	}
 	if err := validateForwardHostname(kind, host); err != nil {
 		return "", "", err
@@ -100,17 +99,13 @@ func validateForwardHostname(kind, host string) error {
 	return nil
 }
 
-func rejectListenAddr(kind string, addr netip.Addr) error {
+func requireLoopbackListen(kind string, addr netip.Addr) error {
 	addr = addr.Unmap()
-	switch {
-	case !addr.IsValid():
+	if !addr.IsValid() {
 		return fmt.Errorf("%s address is invalid", kind)
-	case addr.IsUnspecified():
-		return fmt.Errorf("%s must not be 0.0.0.0 or ::", kind)
-	case addr.IsLoopback():
-		return fmt.Errorf("%s must not be loopback (guest cannot reach 127.0.0.1)", kind)
-	case addr.IsLinkLocalUnicast(), addr.IsMulticast():
-		return fmt.Errorf("%s address %s is not allowed", kind, addr)
+	}
+	if !addr.IsLoopback() {
+		return fmt.Errorf("%s must be a guest loopback IP:port (e.g. 127.0.0.1:8888), got %s", kind, addr)
 	}
 	return nil
 }
